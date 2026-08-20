@@ -116,6 +116,7 @@ export default function JarvisOrb() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action,
+            broadcastAll: true,
             pinCode: payload?.pinCode || savedPin,
             ...payload,
           }),
@@ -345,73 +346,73 @@ export default function JarvisOrb() {
       let response: string;
 
       // Device Control Commands
-      if (normalized.includes("open youtube") || normalized === "youtube") {
+      if (normalized.includes("youtube") || normalized.includes("open youtube") || normalized.includes("launch youtube")) {
         response = await controlDevice("launch_app", { targetApp: "youtube" });
-      } else if (normalized.includes("open instagram") || normalized === "instagram") {
+      } else if (normalized.includes("instagram") || normalized.includes("open instagram") || normalized.includes("launch instagram")) {
         response = await controlDevice("launch_app", { targetApp: "instagram" });
-      } else if (normalized.includes("open camera") || normalized === "camera") {
+      } else if (normalized.includes("camera") || normalized.includes("open camera") || normalized.includes("launch camera") || normalized.includes("take photo")) {
         response = await controlDevice("launch_app", { targetApp: "camera" });
-      } else if (normalized.includes("unlock phone") || normalized.includes("unlock device") || normalized === "unlock") {
+      } else if (normalized.includes("unlock") || normalized.includes("unlock phone") || normalized.includes("unlock device")) {
         response = await controlDevice("unlock");
-      } else if (normalized.includes("lock phone") || normalized.includes("lock device")) {
+      } else if (normalized.includes("lock") || normalized.includes("lock phone") || normalized.includes("lock device")) {
         response = await controlDevice("lock");
-      } else if (normalized.includes("go home") || normalized === "home") {
+      } else if (normalized.includes("home") || normalized.includes("go home") || normalized.includes("main screen")) {
         response = await controlDevice("go_home");
-      } else if (normalized.includes("take screenshot") || normalized === "screenshot") {
+      } else if (normalized.includes("screenshot") || normalized.includes("take screenshot") || normalized.includes("screen shot") || normalized.includes("capture screen")) {
         response = await controlDevice("take_screenshot");
-      } else if (normalized.includes("volume up") || normalized === "vol+") {
+      } else if (normalized.includes("volume up") || normalized.includes("vol+") || normalized.includes("increase volume") || normalized.includes("louder")) {
         response = await controlDevice("volume_up");
-      } else if (normalized.includes("volume down") || normalized === "vol-") {
+      } else if (normalized.includes("volume down") || normalized.includes("vol-") || normalized.includes("decrease volume") || normalized.includes("quieter")) {
         response = await controlDevice("volume_down");
-      } else if (normalized.includes("search youtube for")) {
-        const query = rawCommand.replace(/.*search youtube for/i, "").trim();
+      } else if (normalized.includes("search youtube for") || normalized.includes("search for")) {
+        const query = rawCommand.replace(/.*search (youtube )?for/i, "").trim();
         response = await controlDevice("search_youtube", { searchQuery: query });
-      } else if (normalized === "device status" || normalized === "connected devices") {
+      } else if (normalized.includes("device status") || normalized.includes("connected devices")) {
         response = activeDevice && activeDevice.status === "CONNECTED"
           ? `DEVICE ${activeDevice.name} IS CONNECTED VIA ${activeDevice.connectionType} · BATTERY: ${activeDevice.batteryLevel}%`
           : "NO PHYSICAL PHONE CONNECTED VIA ADB OR BLUETOOTH.";
       }
       // Orb UI Commands
-      else if (normalized === "help" || normalized === "commands") {
+      else if (normalized.includes("help") || normalized.includes("commands")) {
         response = "COMMANDS: STATUS, OPEN YOUTUBE, UNLOCK PHONE, TAKE SCREENSHOT, RED ALERT, CYAN, AMBER, EMERALD, MUTE, SPEECH, CLEAR";
-      } else if (normalized === "status" || normalized === "system check") {
+      } else if (normalized.includes("status") || normalized.includes("system check")) {
         response = camera === "on"
           ? `${status.hands} HAND(S) DETECTED · MODE: ${MODE_LABEL[status.mode]} · ZOOM: ${telemetry.zoomDist}x · FPS: ${telemetry.fps}`
           : `D-ASK ONLINE · CORE: ACTIVE · ZOOM: ${telemetry.zoomDist}x · FPS: ${telemetry.fps}`;
-      } else if (normalized === "zoom in" || normalized === "zoom +") {
+      } else if (normalized.includes("zoom in") || normalized.includes("zoom +")) {
         sceneRef.current?.zoomIn();
         response = "VISUAL CORE MAGNIFIED";
-      } else if (normalized === "zoom out" || normalized === "zoom -") {
+      } else if (normalized.includes("zoom out") || normalized.includes("zoom -")) {
         sceneRef.current?.zoomOut();
         response = "VISUAL CORE RETRACTED";
-      } else if (normalized === "reset" || normalized === "reset view") {
+      } else if (normalized.includes("reset") || normalized.includes("reset view")) {
         sceneRef.current?.resetView();
         response = "VIEW RECALIBRATED";
-      } else if (normalized === "red alert" || normalized === "alert" || normalized === "crimson") {
+      } else if (normalized.includes("red alert") || normalized.includes("alert") || normalized.includes("crimson")) {
         changeTheme("crimson");
         response = "RED ALERT ENGAGED · WARNING PROTOCOLS ACTIVE";
-      } else if (normalized === "cyan" || normalized === "blue" || normalized === "arc mode") {
+      } else if (normalized.includes("cyan") || normalized.includes("blue") || normalized.includes("arc mode")) {
         changeTheme("cyan");
         response = "ARC REACTOR CYAN FREQUENCY ENGAGED";
-      } else if (normalized === "amber" || normalized === "gold" || normalized === "ultron") {
+      } else if (normalized.includes("amber") || normalized.includes("gold") || normalized.includes("ultron")) {
         changeTheme("amber");
         response = "STANDARD ULTRON AMBER MATRIX ACTIVE";
-      } else if (normalized === "emerald" || normalized === "green" || normalized === "matrix") {
+      } else if (normalized.includes("emerald") || normalized.includes("green") || normalized.includes("matrix")) {
         changeTheme("emerald");
         response = "STEALTH EMERALD MATRIX ENGAGED";
-      } else if (normalized === "mute" || normalized === "unmute") {
+      } else if (normalized.includes("mute") || normalized.includes("unmute")) {
         toggleMute();
         response = soundFx.isMuted() ? "AUDIO SOUND EFFECTS MUTED" : "AUDIO SOUND EFFECTS UNMUTED";
-      } else if (normalized === "speech" || normalized === "speech on" || normalized === "speech off") {
+      } else if (normalized.includes("speech") || normalized.includes("speech on") || normalized.includes("speech off")) {
         toggleSpeech();
         response = speechFx.isEnabled() ? "D-ASK VOICE OUTPUT ENABLED" : "D-ASK VOICE OUTPUT MUTED";
-      } else if (normalized === "gestures on" || normalized === "enable gestures") {
+      } else if (normalized.includes("gestures on") || normalized.includes("enable gestures")) {
         if (trackerRef.current) response = "GESTURE TRACKING ALREADY ACTIVE";
         else {
           void startGestures();
           response = "INITIALIZING GESTURE TRACKING";
         }
-      } else if (normalized === "gestures off" || normalized === "disable gestures") {
+      } else if (normalized.includes("gestures off") || normalized.includes("disable gestures")) {
         if (!trackerRef.current) response = "GESTURE TRACKING ALREADY STANDBY";
         else {
           stopGestures();
@@ -514,6 +515,9 @@ export default function JarvisOrb() {
 
         const isFinal = (item as unknown as { isFinal?: boolean }).isFinal;
 
+        // Show live transcript in HUD command input box so user sees voice input working
+        setCommand(transcript);
+
         // Phonetic wake-word regex pattern
         const wakeMatch = /(?:^|\b)(?:d[\s-]*ask|the[\s-]*ask|deask|task|desk|hey[\s-]*d[\s-]*ask|jarvis|ultron)\b/i.exec(transcript);
 
@@ -528,12 +532,12 @@ export default function JarvisOrb() {
             .replace(/^[\s,.:;!?-]+/, "")
             .trim();
 
-          if (requestedCommand && isFinal) {
+          if (requestedCommand && (isFinal || requestedCommand.length > 2)) {
             void runCommand(requestedCommand);
-          } else if (!requestedCommand && isFinal) {
+          } else if (!requestedCommand) {
             addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
           }
-        } else if (wakeActive && isFinal) {
+        } else if (isFinal) {
           void runCommand(transcript);
         }
       }
