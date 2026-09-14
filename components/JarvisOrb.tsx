@@ -5,6 +5,8 @@ import { createOrbScene, type OrbSceneApi, type TelemetryData } from "@/lib/orbS
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { soundFx, speechFx, type ThemeColor } from "@/lib/soundEngine";
 import DevicePanel from "@/components/DevicePanel";
+import { AgentStatusPanel } from "@/components/AgentStatusPanel";
+import { useTask } from "@/hooks/useTask";
 import type { DeviceInfo } from "@/app/api/devices/route";
 
 type CameraState = "off" | "starting" | "on" | "error";
@@ -46,6 +48,91 @@ const THEMES: { key: ThemeColor; label: string; color: string }[] = [
   { key: "emerald", label: "EMERALD", color: "#00ff88" },
 ];
 
+// ── Local command matcher — handles UI and device commands with NO API call ───
+type LocalCommand = {
+  command: string;
+  theme?: string;
+  // device fields
+  deviceCommand?: "launch_app" | "lock" | "unlock" | "volume_up" | "volume_down" | "home" | "screenshot" | "search_youtube";
+  targetApp?: string;
+  searchQuery?: string;
+} | null;
+
+// Known apps users might ask for
+const APP_ALIASES: Record<string, string> = {
+  youtube: "youtube", yt: "youtube",
+  instagram: "instagram", insta: "instagram",
+  camera: "camera",
+  chrome: "chrome", google: "chrome",
+  spotify: "spotify",
+  maps: "maps", "google maps": "maps",
+};
+
+function matchLocalCommand(normalized: string): LocalCommand {
+  // ── UI / Orb commands ──────────────────────────────────────────────────────
+  if (normalized === "clear" || normalized === "clear history") return { command: "clear" };
+  if (normalized.includes("zoom in") || normalized === "zoom +") return { command: "zoom_in" };
+  if (normalized.includes("zoom out") || normalized === "zoom -") return { command: "zoom_out" };
+  if (normalized.includes("reset view") || normalized === "reset") return { command: "reset_view" };
+  if (normalized.includes("mute") && !normalized.includes("unmute")) return { command: "mute" };
+  if (normalized.includes("unmute")) return { command: "unmute" };
+  if (normalized.includes("speech on") || normalized.includes("voice on")) return { command: "speech_on" };
+  if (normalized.includes("speech off") || normalized.includes("voice off")) return { command: "speech_off" };
+  if (normalized.includes("gesture") && normalized.includes("on")) return { command: "gestures_on" };
+  if (normalized.includes("gesture") && normalized.includes("off")) return { command: "gestures_off" };
+  for (const { key } of THEMES) {
+    if (normalized.includes(`theme ${key}`) || normalized.includes(`${key} theme`) || normalized === key) {
+      return { command: "theme", theme: key };
+    }
+  }
+
+  // ── Device commands (zero API calls needed) ────────────────────────────────
+  // Lock
+  if (/\b(lock|sleep)\b.*\b(phone|device|screen)?\b/.test(normalized) && !normalized.includes("unlock")) {
+    return { command: "device", deviceCommand: "lock" };
+  }
+  // Unlock
+  if (/\b(unlock|wake up|wake)\b.*\b(phone|device|screen)?\b/.test(normalized)) {
+    return { command: "device", deviceCommand: "unlock" };
+  }
+  // Volume up
+  if (/\b(volume up|vol up|increase volume|louder)\b/.test(normalized)) {
+    return { command: "device", deviceCommand: "volume_up" };
+  }
+  // Volume down
+  if (/\b(volume down|vol down|decrease volume|quieter|lower volume)\b/.test(normalized)) {
+    return { command: "device", deviceCommand: "volume_down" };
+  }
+  // Home button
+  if (/\b(go home|press home|home button|home screen)\b/.test(normalized)) {
+    return { command: "device", deviceCommand: "home" };
+  }
+  // Screenshot
+  if (/\b(take screenshot|screenshot|screen cap|screen capture)\b/.test(normalized)) {
+    return { command: "device", deviceCommand: "screenshot" };
+  }
+  // YouTube search: "search youtube for X" / "youtube search X" / "play X on youtube"
+  const ytSearch = normalized.match(/(?:search youtube for|youtube search|search for|play)\s+(.+?)(?:\s+on youtube)?$/);
+  if (ytSearch && (normalized.includes("youtube") || normalized.includes("search"))) {
+    const query = ytSearch[1]!.trim();
+    if (query.length > 1) return { command: "device", deviceCommand: "search_youtube", searchQuery: query };
+  }
+  // Launch app: "open X" / "launch X" / "start X"
+  // Reject generic words that mean nothing ("launch app", "open application", etc.)
+  const JUNK_APP_NAMES = new Set(["app", "application", "the app", "it", "that", "this", "the"]);
+  const launchMatch = normalized.match(/^(?:open|launch|start|run)\s+(.+)$/);
+  if (launchMatch) {
+    const appName = launchMatch[1]!.trim();
+    if (!JUNK_APP_NAMES.has(appName) && appName.length > 1) {
+      const resolved = APP_ALIASES[appName] ?? appName;
+      return { command: "device", deviceCommand: "launch_app", targetApp: resolved };
+    }
+  }
+
+  return null;
+}
+
+
 export default function JarvisOrb() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -56,6 +143,10 @@ export default function JarvisOrb() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const wakeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Debounce: prevent the same command from firing twice within 5 seconds
+  const lastCommandRef = useRef<{ text: string; time: number } | null>(null);
+  // TTS echo guard: true while D-ASK is speaking — suppresses mic input
+  const isSpeakingRef = useRef<boolean>(false);
 
   const [camera, setCamera] = useState<CameraState>("off");
   const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
@@ -65,6 +156,50 @@ export default function JarvisOrb() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [aiThinking, setAiThinking] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
+
+  // ── Agentic Task System ──────────────────────────────────────────────────
+  // Callbacks update history ONCE when the task terminates
+  const taskCallbacksRef = useRef({
+    onComplete: (response: string) => {
+      setAiThinking(false);
+      // Replace the ⏳ placeholder with the real result
+      setHistory((current) => {
+        const updated = [...current];
+        const idx = updated.findIndex((e) => e.response.startsWith("⏳"));
+        if (idx >= 0) updated[idx] = { ...updated[idx]!, response };
+        else updated.unshift({ id: `done-${Date.now()}`, command: "TASK", response, time: new Date().toLocaleTimeString("en", { hour12: false, hour: "2-digit", minute: "2-digit" }) });
+        return updated;
+      });
+      soundFx.playLockSound();
+    },
+    onFail: (error: string) => {
+      setAiThinking(false);
+      setHistory((current) => {
+        const updated = [...current];
+        const idx = updated.findIndex((e) => e.response.startsWith("⏳"));
+        const msg = `✗ ${error}`;
+        if (idx >= 0) updated[idx] = { ...updated[idx]!, response: msg };
+        else updated.unshift({ id: `fail-${Date.now()}`, command: "TASK", response: msg, time: new Date().toLocaleTimeString("en", { hour12: false, hour: "2-digit", minute: "2-digit" }) });
+        return updated;
+      });
+      soundFx.playAlertSound();
+    },
+  });
+
+  const {
+    isActive: taskActive,
+    orbState,
+    lastMessage: taskMessage,
+    events: taskEvents,
+    nodes: taskNodes,
+    progressPct,
+    taskId: activeTaskId,
+    submitTask,
+    cancelTask,
+  } = useTask({
+    onComplete: (response) => taskCallbacksRef.current.onComplete(response),
+    onFail: (error) => taskCallbacksRef.current.onFail(error),
+  });
 
   // Device Link State
   const [activeDevice, setActiveDevice] = useState<DeviceInfo | null>(null);
@@ -271,6 +406,8 @@ export default function JarvisOrb() {
   const speakResponse = useCallback(
     (text: string) => {
       if (!isSpeechEnabled) return;
+      // Set speaking guard: suppresses mic input while D-ASK is talking
+      isSpeakingRef.current = true;
       speechFx.speak(
         text,
         (level) => {
@@ -280,6 +417,8 @@ export default function JarvisOrb() {
         () => {
           setAudioLevel(0);
           sceneRef.current?.setAudioLevel(0);
+          // Re-enable mic input 1.2 seconds after speech ends
+          setTimeout(() => { isSpeakingRef.current = false; }, 1200);
         },
       );
     },
@@ -304,27 +443,204 @@ export default function JarvisOrb() {
     [speakResponse],
   );
 
+  // ── Command routing ───────────────────────────────────────────────────────
+  // 1. Pure local UI commands (zoom/theme/mute) → handled instantly, no API.
+  // 2. Device / simple AI commands → /api/assistant (ONE Gemini call).
+  // 3. Complex multi-step tasks → orchestrator (future).
   const askAssistant = useCallback(
     async (prompt: string) => {
-      setAiThinking(true);
+      // Guard: don't submit a new task while one is already in progress
+      if (aiThinking || taskActive) return;
       soundFx.playProcessSound();
+      const normalized = prompt.trim().toLowerCase();
+
+      // Fast-path: pure orb/UI commands handled locally
+      const localOrbCommand = matchLocalCommand(normalized);
+      if (localOrbCommand) {
+        switch (localOrbCommand.command) {
+          case "theme":
+            if (localOrbCommand.theme) changeTheme(localOrbCommand.theme as ThemeColor);
+            addHistoryEntry(prompt.toUpperCase(), `THEME SET: ${localOrbCommand.theme?.toUpperCase()}`);
+            return;
+          case "zoom_in":
+            sceneRef.current?.zoomIn();
+            addHistoryEntry(prompt.toUpperCase(), "ZOOM IN");
+            return;
+          case "zoom_out":
+            sceneRef.current?.zoomOut();
+            addHistoryEntry(prompt.toUpperCase(), "ZOOM OUT");
+            return;
+          case "reset_view":
+            sceneRef.current?.resetView();
+            addHistoryEntry(prompt.toUpperCase(), "VIEW RESET");
+            return;
+          case "mute":
+            if (!soundFx.isMuted()) toggleMute();
+            addHistoryEntry(prompt.toUpperCase(), "SOUND MUTED");
+            return;
+          case "unmute":
+            if (soundFx.isMuted()) toggleMute();
+            addHistoryEntry(prompt.toUpperCase(), "SOUND ENABLED");
+            return;
+          case "speech_on":
+            if (!isSpeechEnabled) toggleSpeech();
+            addHistoryEntry(prompt.toUpperCase(), "VOICE SYNTHESIS ENABLED");
+            return;
+          case "speech_off":
+            if (isSpeechEnabled) toggleSpeech();
+            addHistoryEntry(prompt.toUpperCase(), "VOICE SYNTHESIS DISABLED");
+            return;
+          case "gestures_on":
+            if (!trackerRef.current) void startGestures();
+            addHistoryEntry(prompt.toUpperCase(), "GESTURE TRACKING ENABLED");
+            return;
+          case "gestures_off":
+            if (trackerRef.current) stopGestures();
+            addHistoryEntry(prompt.toUpperCase(), "GESTURE TRACKING DISABLED");
+            return;
+          case "clear":
+            setHistory([]);
+            setCommand("");
+            return;
+
+          // ── Device commands — zero API calls ─────────────────────────────
+          case "device": {
+            const dc = localOrbCommand.deviceCommand;
+            if (!dc) return;
+            addHistoryEntry(prompt.toUpperCase(), `⏳ ${dc.replace(/_/g, " ").toUpperCase()}...`);
+            let result: string;
+            try {
+              if (dc === "launch_app") {
+                result = await controlDevice("launch_app", { targetApp: localOrbCommand.targetApp ?? "" });
+              } else if (dc === "search_youtube") {
+                result = await controlDevice("search_youtube", { searchQuery: localOrbCommand.searchQuery ?? "" });
+              } else {
+                result = await controlDevice(dc, {});
+              }
+            } catch (e) {
+              result = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+            }
+            setHistory((current) => {
+              const u = [...current];
+              const i = u.findLastIndex((e) => e.command === prompt.toUpperCase());
+              if (i >= 0) u[i] = { ...u[i]!, response: result };
+              return u;
+            });
+            soundFx.playLockSound();
+            return;
+          }
+        }
+      }
+
+      // Lightweight path: /api/assistant (ONE Gemini call — only for unknown/conversational input)
+      setAiThinking(true);
+      addHistoryEntry(prompt.toUpperCase(), "⏳ D-ASK PROCESSING...");
+
       try {
-        const response = await fetch("/api/assistant", {
+        const res = await fetch("/api/assistant", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: prompt }),
+          body: JSON.stringify({ message: prompt.trim() }),
         });
-        const data = (await response.json()) as { reply?: string; error?: string };
-        const replyText = data.reply ?? data.error ?? "D-ASK DID NOT RETURN A RESPONSE.";
-        addHistoryEntry("D-ASK", replyText);
-      } catch {
-        addHistoryEntry("D-ASK", "CONNECTION FAILED · CHECK LOCAL SERVER.");
-      } finally {
+
+        const data = await res.json() as {
+          reply: string;
+          actionType: "device" | "orb" | "task" | "none";
+          actionCommand?: string;
+          actionPayload?: { targetApp?: string; theme?: string; searchQuery?: string };
+        };
+
+        // Orb-level AI commands
+        if (data.actionType === "orb" && data.actionCommand) {
+          switch (data.actionCommand) {
+            case "theme": if (data.actionPayload?.theme) changeTheme(data.actionPayload.theme as ThemeColor); break;
+            case "zoom_in": sceneRef.current?.zoomIn(); break;
+            case "zoom_out": sceneRef.current?.zoomOut(); break;
+            case "reset_view": sceneRef.current?.resetView(); break;
+            case "mute": if (!soundFx.isMuted()) toggleMute(); break;
+            case "unmute": if (soundFx.isMuted()) toggleMute(); break;
+            case "speech_on": if (!isSpeechEnabled) toggleSpeech(); break;
+            case "speech_off": if (isSpeechEnabled) toggleSpeech(); break;
+          }
+          setHistory((current) => {
+            const u = [...current];
+            const i = u.findIndex((e) => e.response.startsWith("⏳"));
+            if (i >= 0) u[i] = { ...u[i]!, response: data.reply || "COMMAND EXECUTED" };
+            return u;
+          });
+          setAiThinking(false);
+          return;
+        }
+
+        // Device commands directly (no orchestrator)
+        if (data.actionType === "device" && data.actionCommand) {
+          setHistory((current) => {
+            const u = [...current];
+            const i = u.findIndex((e) => e.response.startsWith("⏳"));
+            if (i >= 0) u[i] = { ...u[i]!, response: data.reply || "⏳ EXECUTING ON DEVICE..." };
+            return u;
+          });
+          const payload = data.actionPayload ?? {};
+          let deviceResult: string;
+          if (data.actionCommand === "launch_app" && payload.targetApp) {
+            deviceResult = await controlDevice("launch_app", { targetApp: payload.targetApp });
+          } else if (data.actionCommand === "search_youtube" && payload.searchQuery) {
+            deviceResult = await controlDevice("search_youtube", { searchQuery: payload.searchQuery });
+          } else {
+            deviceResult = await controlDevice(data.actionCommand, {});
+          }
+          setHistory((current) => {
+            const u = [...current];
+            const i = u.findLastIndex((e) => e.command === prompt.toUpperCase());
+            if (i >= 0) u[i] = { ...u[i]!, response: deviceResult };
+            return u;
+          });
+          soundFx.playLockSound();
+          setAiThinking(false);
+          return;
+        }
+
+        // Orchestrator task (complex PC actions, files, browsing, etc)
+        if (data.actionType === "task") {
+          const reply = data.reply || "INITIALIZING PROTOCOL...";
+          setHistory((current) => {
+            const u = [...current];
+            const i = u.findIndex((e) => e.response.startsWith("⏳"));
+            if (i >= 0) u[i] = { ...u[i]!, response: reply };
+            return u;
+          });
+          speakResponse(reply);
+          // Pass the original prompt to the orchestrator
+          void submitTask(prompt);
+          // Don't setAiThinking(false) yet, the useTask hook handles its own loading state (taskActive)
+          return;
+        }
+
+        // Conversation
+        const reply = data.reply || "ACKNOWLEDGED.";
+        setHistory((current) => {
+          const u = [...current];
+          const i = u.findIndex((e) => e.response.startsWith("⏳"));
+          if (i >= 0) u[i] = { ...u[i]!, response: reply };
+          return u;
+        });
+        speakResponse(reply);
+        setAiThinking(false);
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setHistory((current) => {
+          const u = [...current];
+          const i = u.findIndex((e) => e.response.startsWith("⏳"));
+          if (i >= 0) u[i] = { ...u[i]!, response: `ERROR: ${msg}` };
+          return u;
+        });
+        soundFx.playAlertSound();
         setAiThinking(false);
       }
     },
-    [addHistoryEntry],
-  );
+    [addHistoryEntry, aiThinking, taskActive, changeTheme, controlDevice, isSpeechEnabled, speakResponse, startGestures, stopGestures, toggleMute, toggleSpeech, submitTask],
+  );
 
   // Command Execution (Orb HUD & Device Controls)
   const runCommand = useCallback(
@@ -337,98 +653,27 @@ export default function JarvisOrb() {
         .replace(/\s+/g, " ");
       if (!normalized) return;
 
+      // Debounce: ignore if the exact same command ran within the last 5 seconds
+      const now = Date.now();
+      if (
+        lastCommandRef.current &&
+        lastCommandRef.current.text === normalized &&
+        now - lastCommandRef.current.time < 5000
+      ) {
+        return;
+      }
+      lastCommandRef.current = { text: normalized, time: now };
+
       if (normalized === "clear" || normalized === "clear history") {
         setHistory([]);
         setCommand("");
         return;
       }
 
-      let response: string;
-
-      // Device Control Commands
-      if (normalized.includes("youtube") || normalized.includes("open youtube") || normalized.includes("launch youtube")) {
-        response = await controlDevice("launch_app", { targetApp: "youtube" });
-      } else if (normalized.includes("instagram") || normalized.includes("open instagram") || normalized.includes("launch instagram")) {
-        response = await controlDevice("launch_app", { targetApp: "instagram" });
-      } else if (normalized.includes("camera") || normalized.includes("open camera") || normalized.includes("launch camera") || normalized.includes("take photo")) {
-        response = await controlDevice("launch_app", { targetApp: "camera" });
-      } else if (normalized.includes("unlock") || normalized.includes("unlock phone") || normalized.includes("unlock device")) {
-        response = await controlDevice("unlock");
-      } else if (normalized.includes("lock") || normalized.includes("lock phone") || normalized.includes("lock device")) {
-        response = await controlDevice("lock");
-      } else if (normalized.includes("home") || normalized.includes("go home") || normalized.includes("main screen")) {
-        response = await controlDevice("go_home");
-      } else if (normalized.includes("screenshot") || normalized.includes("take screenshot") || normalized.includes("screen shot") || normalized.includes("capture screen")) {
-        response = await controlDevice("take_screenshot");
-      } else if (normalized.includes("volume up") || normalized.includes("vol+") || normalized.includes("increase volume") || normalized.includes("louder")) {
-        response = await controlDevice("volume_up");
-      } else if (normalized.includes("volume down") || normalized.includes("vol-") || normalized.includes("decrease volume") || normalized.includes("quieter")) {
-        response = await controlDevice("volume_down");
-      } else if (normalized.includes("search youtube for") || normalized.includes("search for")) {
-        const query = rawCommand.replace(/.*search (youtube )?for/i, "").trim();
-        response = await controlDevice("search_youtube", { searchQuery: query });
-      } else if (normalized.includes("device status") || normalized.includes("connected devices")) {
-        response = activeDevice && activeDevice.status === "CONNECTED"
-          ? `DEVICE ${activeDevice.name} IS CONNECTED VIA ${activeDevice.connectionType} · BATTERY: ${activeDevice.batteryLevel}%`
-          : "NO PHYSICAL PHONE CONNECTED VIA ADB OR BLUETOOTH.";
-      }
-      // Orb UI Commands
-      else if (normalized.includes("help") || normalized.includes("commands")) {
-        response = "COMMANDS: STATUS, OPEN YOUTUBE, UNLOCK PHONE, TAKE SCREENSHOT, RED ALERT, CYAN, AMBER, EMERALD, MUTE, SPEECH, CLEAR";
-      } else if (normalized.includes("status") || normalized.includes("system check")) {
-        response = camera === "on"
-          ? `${status.hands} HAND(S) DETECTED · MODE: ${MODE_LABEL[status.mode]} · ZOOM: ${telemetry.zoomDist}x · FPS: ${telemetry.fps}`
-          : `D-ASK ONLINE · CORE: ACTIVE · ZOOM: ${telemetry.zoomDist}x · FPS: ${telemetry.fps}`;
-      } else if (normalized.includes("zoom in") || normalized.includes("zoom +")) {
-        sceneRef.current?.zoomIn();
-        response = "VISUAL CORE MAGNIFIED";
-      } else if (normalized.includes("zoom out") || normalized.includes("zoom -")) {
-        sceneRef.current?.zoomOut();
-        response = "VISUAL CORE RETRACTED";
-      } else if (normalized.includes("reset") || normalized.includes("reset view")) {
-        sceneRef.current?.resetView();
-        response = "VIEW RECALIBRATED";
-      } else if (normalized.includes("red alert") || normalized.includes("alert") || normalized.includes("crimson")) {
-        changeTheme("crimson");
-        response = "RED ALERT ENGAGED · WARNING PROTOCOLS ACTIVE";
-      } else if (normalized.includes("cyan") || normalized.includes("blue") || normalized.includes("arc mode")) {
-        changeTheme("cyan");
-        response = "ARC REACTOR CYAN FREQUENCY ENGAGED";
-      } else if (normalized.includes("amber") || normalized.includes("gold") || normalized.includes("ultron")) {
-        changeTheme("amber");
-        response = "STANDARD ULTRON AMBER MATRIX ACTIVE";
-      } else if (normalized.includes("emerald") || normalized.includes("green") || normalized.includes("matrix")) {
-        changeTheme("emerald");
-        response = "STEALTH EMERALD MATRIX ENGAGED";
-      } else if (normalized.includes("mute") || normalized.includes("unmute")) {
-        toggleMute();
-        response = soundFx.isMuted() ? "AUDIO SOUND EFFECTS MUTED" : "AUDIO SOUND EFFECTS UNMUTED";
-      } else if (normalized.includes("speech") || normalized.includes("speech on") || normalized.includes("speech off")) {
-        toggleSpeech();
-        response = speechFx.isEnabled() ? "D-ASK VOICE OUTPUT ENABLED" : "D-ASK VOICE OUTPUT MUTED";
-      } else if (normalized.includes("gestures on") || normalized.includes("enable gestures")) {
-        if (trackerRef.current) response = "GESTURE TRACKING ALREADY ACTIVE";
-        else {
-          void startGestures();
-          response = "INITIALIZING GESTURE TRACKING";
-        }
-      } else if (normalized.includes("gestures off") || normalized.includes("disable gestures")) {
-        if (!trackerRef.current) response = "GESTURE TRACKING ALREADY STANDBY";
-        else {
-          stopGestures();
-          response = "GESTURE TRACKING STANDBY";
-        }
-      } else {
-        addHistoryEntry(rawCommand.trim().toUpperCase(), "D-ASK IS PROCESSING YOUR REQUEST...");
-        setCommand("");
-        void askAssistant(rawCommand.trim());
-        return;
-      }
-
-      addHistoryEntry(rawCommand.trim().toUpperCase(), response);
       setCommand("");
+      void askAssistant(rawCommand.trim());
     },
-    [activeDevice, addHistoryEntry, askAssistant, camera, changeTheme, controlDevice, startGestures, status, stopGestures, telemetry.fps, telemetry.zoomDist, toggleMute, toggleSpeech],
+    [askAssistant],
   );
 
   // Trigger wake-word test manually
@@ -521,6 +766,9 @@ export default function JarvisOrb() {
         // Phonetic wake-word regex pattern
         const wakeMatch = /(?:^|\b)(?:d[\s-]*ask|the[\s-]*ask|deask|task|desk|hey[\s-]*d[\s-]*ask|jarvis|ultron)\b/i.exec(transcript);
 
+        // Skip ALL voice input while D-ASK is speaking (prevents TTS echo loop)
+        if (isSpeakingRef.current) continue;
+
         if (wakeMatch && wakeMatch.index !== undefined) {
           soundFx.playWakeSound();
           setWakeActive(true);
@@ -532,13 +780,19 @@ export default function JarvisOrb() {
             .replace(/^[\s,.:;!?-]+/, "")
             .trim();
 
-          if (requestedCommand && (isFinal || requestedCommand.length > 2)) {
-            void runCommand(requestedCommand);
-          } else if (!requestedCommand) {
+          if (requestedCommand && isFinal) {
+            // Require minimum quality: at least 2 chars and not pure junk
+            if (requestedCommand.length >= 3) void runCommand(requestedCommand);
+          } else if (!requestedCommand && isFinal) {
             addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
           }
         } else if (isFinal) {
-          void runCommand(transcript);
+          // Only fire on non-wake-word finals if the transcript has substance
+          // (>= 3 words or >= 10 chars) to filter noise/single-word mishears
+          const wordCount = transcript.split(/\s+/).length;
+          if (wordCount >= 2 || transcript.length >= 10) {
+            void runCommand(transcript);
+          }
         }
       }
     };
@@ -574,7 +828,7 @@ export default function JarvisOrb() {
     } catch {
       // Ignore initial start retry
     }
-  }, [addHistoryEntry, runCommand, wakeActive]);
+  }, [addHistoryEntry, runCommand]);
 
   // Keyboard controls
   useEffect(() => {
@@ -859,6 +1113,18 @@ export default function JarvisOrb() {
           </button>
         </div>
       </div>
+
+      {/* ── Agentic Task Status Panel ─────────────────────────────────── */}
+      <AgentStatusPanel
+        isActive={taskActive}
+        orbState={orbState}
+        lastMessage={taskMessage}
+        events={taskEvents}
+        nodes={taskNodes}
+        progressPct={progressPct}
+        taskId={activeTaskId}
+        onCancel={cancelTask}
+      />
     </>
   );
 }
