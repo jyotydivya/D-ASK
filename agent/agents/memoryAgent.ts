@@ -99,16 +99,19 @@ Return JSON array of tool calls:
       
       case "memory.store_memory":
         const storeText = String(args.text);
+        const storeCategory = args.category ? String(args.category) as any : "notes";
         const storeVec = await embeddingService.generateEmbedding(storeText);
-        memoryService.storeMemory(storeText, storeVec);
-        return { status: "success", text: storeText };
+        memoryService.storeMemory(storeText, storeVec, storeCategory);
+        return { status: "success", text: storeText, category: storeCategory };
       
       case "memory.search_memories":
         const queryText = String(args.query);
         const limit = args.limit ? Number(args.limit) : 5;
+        const searchCategory = args.category ? String(args.category) as any : undefined;
+        // In case embeddings fail or are missing, we could fallback, but embeddingService is used here
         const queryVec = await embeddingService.generateEmbedding(queryText);
-        const results = memoryService.searchMemories(queryVec, limit);
-        return { query: queryText, results: results.map(r => ({ text: r.text, similarity: r.similarity })) };
+        const results = memoryService.searchMemories(queryVec, limit, searchCategory);
+        return { query: queryText, results: results.map(r => ({ text: r.text, category: r.category, similarity: r.similarity })) };
       
       default:
         throw new Error(`MemoryAgent cannot route tool: ${toolName}`);

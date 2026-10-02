@@ -44,23 +44,52 @@ def handle_command(command, args):
             return {"success": True, "size": {"width": w, "height": h}}
             
         elif command == "take_screenshot":
-            import mss
             import base64
             import io
             
-            with mss.mss() as sct:
-                # Capture the primary monitor
-                monitor = sct.monitors[1]
-                sct_img = sct.grab(monitor)
-                
-                # Convert to PIL Image for easy JPEG encoding
-                from PIL import Image
-                img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                
-                buffered = io.BytesIO()
-                img.save(buffered, format="JPEG")
-                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                return {"success": True, "image": img_str}
+            # Method 1: mss (fastest)
+            try:
+                import mss
+                with mss.mss() as sct:
+                    monitor = sct.monitors[1]
+                    sct_img = sct.grab(monitor)
+                    from PIL import Image
+                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                    buffered = io.BytesIO()
+                    img.save(buffered, format="JPEG", quality=80)
+                    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                    return {"success": True, "image": img_str}
+            except Exception as e1:
+                # Method 2: PIL ImageGrab
+                try:
+                    from PIL import ImageGrab
+                    img = ImageGrab.grab()
+                    buffered = io.BytesIO()
+                    img.save(buffered, format="JPEG", quality=80)
+                    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                    return {"success": True, "image": img_str}
+                except Exception as e2:
+                    # Method 3: PowerShell GDI
+                    try:
+                        import subprocess
+                        ps_script = (
+                            "[Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; "
+                            "[Reflection.Assembly]::LoadWithPartialName('System.Drawing') | Out-Null; "
+                            "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+                            "$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; "
+                            "$g = [System.Drawing.Graphics]::FromImage($bmp); "
+                            "$g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); "
+                            "$ms = New-Object System.IO.MemoryStream; "
+                            "$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Jpeg); "
+                            "[Convert]::ToBase64String($ms.ToArray())"
+                        )
+                        proc = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True)
+                        b64 = proc.stdout.strip().replace("\r", "").replace("\n", "")
+                        if b64 and len(b64) > 100:
+                            return {"success": True, "image": b64}
+                        raise RuntimeError(proc.stderr or "Empty base64 output")
+                    except Exception as e3:
+                        return {"success": False, "error": f"Screen grab failed (mss: {e1}, PIL: {e2}, PS: {e3})"}
             
         else:
             return {"success": False, "error": f"Unknown command: {command}"}

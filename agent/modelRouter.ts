@@ -1,93 +1,166 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// D-ASK Model Router — LLM provider abstraction
-// Phase 1: Gemini-only. Add Claude/OpenAI by implementing LLMProvider.
+// D-ASK Model Router — LLM provider abstraction with failover ladder
+// Inspired by Mark-LV's core/gemini.py — every rung has a cooldown so a model
+// that's down is skipped for a while instead of paid for on every call.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import type { LLMProvider, ModelRequest, ModelResponse, ModelTier } from "../agent/types";
 
-// ── Gemini Provider ───────────────────────────────────────────────────────────
+// ── Cooldown Tracker ──────────────────────────────────────────────────────────
+// When a model fails (429, 503, timeout), we skip it for COOLDOWN_MS.
+// This is the whole point of the ladder: one model's daily limit is one limit,
+// a ladder means the sum of them.
 
-// Use the same model that works in the existing assistant route
-const MODEL_MAP: Record<ModelTier, string> = {
-  fast:      "gemini-3.6-flash",   // classification, extraction
-  standard:  "gemini-3.6-flash",   // agent reasoning
-  reasoning: "gemini-3.6-flash",   // planning, verification
-  vision:    "gemini-3.1-pro",     // vision and spatial understanding
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const TIMEOUT_MS = 15_000; // 15 second timeout on all calls
+
+const _cooldowns = new Map<string, number>(); // model → timestamp when cooldown expires
+
+function isOnCooldown(model: string): boolean {
+  const until = _cooldowns.get(model);
+  if (!until) return false;
+  if (Date.now() > until) {
+    _cooldowns.delete(model);
+    return false;
+  }
+  return true;
+}
+
+function setCooldown(model: string): void {
+  _cooldowns.set(model, Date.now() + COOLDOWN_MS);
+  console.warn(`[ModelRouter] ⏱ ${model} on cooldown for ${COOLDOWN_MS / 1000}s`);
+}
+
+// ── Groq Provider ─────────────────────────────────────────────────────────────
+// Uses GROQ_API_KEY — fast inference, generous free tier.
+
+const GROQ_MODEL_LADDERS: Record<ModelTier, string[]> = {
+  fast: [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
+  ],
+  standard: [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+  ],
+  reasoning: [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+  ],
+  vision: [
+    "llama-3.2-90b-vision-preview",
+    "llama-3.2-11b-vision-preview",
+  ],
 };
 
-class GeminiProvider implements LLMProvider {
-  public readonly name = "gemini";
-  private client: GoogleGenAI;
+class GroqProvider implements LLMProvider {
+  public readonly name = "groq";
+  private client: OpenAI;
 
   constructor() {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not set in environment");
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error("GROQ_API_KEY is not set in environment");
     }
-    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    this.client = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
-    const model = MODEL_MAP[request.tier];
+    const ladder = GROQ_MODEL_LADDERS[request.tier];
     const start = Date.now();
+    let lastError: any = null;
 
-    const response = await this.client.models.generateContent({
-      model,
-      contents: request.userPrompt,
-      config: {
-        systemInstruction: request.systemPrompt,
-      },
-    });
+    const messages: any[] = [];
+    if (request.systemPrompt) {
+      messages.push({ role: "system", content: request.systemPrompt });
+    }
+    messages.push({ role: "user", content: formatContent(request.userPrompt) });
 
-    const text = response.text ?? "";
-    return {
-      text,
-      model,
-      durationMs: Date.now() - start,
-    };
+    for (const model of ladder) {
+      if (isOnCooldown(model)) continue;
+
+      try {
+        const completion = await Promise.race([
+          this.client.chat.completions.create({ model, messages }),
+          timeoutPromise<never>(TIMEOUT_MS),
+        ]);
+
+        const text = completion.choices[0]?.message?.content ?? "";
+        return { text, model, durationMs: Date.now() - start };
+      } catch (err: any) {
+        lastError = err;
+        setCooldown(model);
+        console.warn(`[Groq] ${model} failed (${err?.message?.slice(0, 80) ?? err}), trying next rung...`);
+      }
+    }
+
+    throw new Error(`All Groq models in ${request.tier} ladder failed. Last: ${lastError?.message || lastError}`);
   }
 
   async generateStructured<T>(request: ModelRequest): Promise<T> {
-    const model = MODEL_MAP[request.tier];
-    const start = Date.now();
+    const ladder = GROQ_MODEL_LADDERS[request.tier];
+    let lastError: any = null;
 
-    const config: Record<string, unknown> = {
-      systemInstruction: request.systemPrompt,
-      responseMimeType: "application/json",
-    };
+    const messages: any[] = [];
+    if (request.systemPrompt) {
+      messages.push({ role: "system", content: request.systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON. No markdown fences, no commentary." });
+    }
+    messages.push({ role: "user", content: formatContent(request.userPrompt) });
 
-    if (request.outputSchema) {
-      config.responseSchema = request.outputSchema;
+    for (const model of ladder) {
+      if (isOnCooldown(model)) continue;
+
+      try {
+        const completion = await Promise.race([
+          this.client.chat.completions.create({
+            model,
+            messages,
+            response_format: { type: "json_object" },
+          }),
+          timeoutPromise<never>(TIMEOUT_MS),
+        ]);
+
+        const text = completion.choices[0]?.message?.content ?? "{}";
+        return parseJSON<T>(text);
+      } catch (err: any) {
+        lastError = err;
+        setCooldown(model);
+        console.warn(`[Groq] Structured ${model} failed (${err?.message?.slice(0, 80) ?? err}), trying next rung...`);
+      }
     }
 
-    const response = await this.client.models.generateContent({
-      model,
-      contents: request.userPrompt,
-      config,
-    });
-
-    const text = response.text ?? "{}";
-    let parsed: T;
-    try {
-      // Strip markdown code fences if present
-      const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-      parsed = JSON.parse(cleaned) as T;
-    } catch {
-      throw new Error(`Model returned invalid JSON: ${text.slice(0, 300)}`);
-    }
-
-    return parsed;
+    throw new Error(`All Groq structured models in ${request.tier} ladder failed. Last: ${lastError?.message || lastError}`);
   }
 }
 
-// ── OpenRouter Provider ────────────────────────────────────────────────────────
+// ── OpenRouter Provider with Failover Ladder ──────────────────────────────────
 
-const OPENROUTER_MODEL_MAP: Record<ModelTier, string> = {
-  fast:      "openai/gpt-4o-mini",          // cheap and fast
-  standard:  "openai/gpt-4o-mini",          // agent reasoning
-  reasoning: "anthropic/claude-3.5-sonnet", // planning, complex parsing
-  vision:    "openai/gpt-4o",               // vision
+const OPENROUTER_MODEL_LADDERS: Record<ModelTier, string[]> = {
+  fast: [
+    "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash-preview",
+    "meta-llama/llama-3.3-70b-instruct",
+    "mistralai/mistral-small-3.1-24b-instruct",
+  ],
+  standard: [
+    "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash-preview",
+    "meta-llama/llama-3.3-70b-instruct",
+  ],
+  reasoning: [
+    "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash-preview",
+    "meta-llama/llama-3.3-70b-instruct",
+  ],
+  vision: [
+    "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash-preview",
+    "openai/gpt-4o",
+  ],
 };
 
 class OpenRouterProvider implements LLMProvider {
@@ -109,116 +182,223 @@ class OpenRouterProvider implements LLMProvider {
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
-    const model = OPENROUTER_MODEL_MAP[request.tier];
+    const ladder = OPENROUTER_MODEL_LADDERS[request.tier];
     const start = Date.now();
+    let lastError: any = null;
 
     const messages: any[] = [];
     if (request.systemPrompt) {
       messages.push({ role: "system", content: request.systemPrompt });
     }
-    messages.push({ role: "user", content: request.userPrompt });
+    messages.push({ role: "user", content: formatContent(request.userPrompt) });
 
-    const completion = await this.client.chat.completions.create({
-      model,
-      messages,
-    });
+    for (const model of ladder) {
+      if (isOnCooldown(model)) continue;
 
-    const text = completion.choices[0]?.message?.content ?? "";
-    return {
-      text,
-      model,
-      durationMs: Date.now() - start,
-    };
+      try {
+        const completion = await Promise.race([
+          this.client.chat.completions.create({ model, messages }),
+          timeoutPromise<never>(TIMEOUT_MS),
+        ]);
+
+        const text = completion.choices[0]?.message?.content ?? "";
+        return { text, model, durationMs: Date.now() - start };
+      } catch (err: any) {
+        lastError = err;
+        setCooldown(model);
+        console.warn(`[OpenRouter] ${model} failed (${err?.message?.slice(0, 80) ?? err}), trying next rung...`);
+      }
+    }
+
+    throw new Error(`All OpenRouter models in ${request.tier} ladder failed. Last: ${lastError?.message || lastError}`);
   }
 
   async generateStructured<T>(request: ModelRequest): Promise<T> {
-    const model = OPENROUTER_MODEL_MAP[request.tier];
-    
+    const ladder = OPENROUTER_MODEL_LADDERS[request.tier];
+    let lastError: any = null;
+
     const messages: any[] = [];
     if (request.systemPrompt) {
-      messages.push({ role: "system", content: request.systemPrompt });
+      messages.push({ role: "system", content: request.systemPrompt + "\n\nIMPORTANT: Return ONLY valid JSON. No markdown fences, no commentary." });
     }
-    messages.push({ role: "user", content: request.userPrompt });
+    messages.push({ role: "user", content: formatContent(request.userPrompt) });
 
-    const completion = await this.client.chat.completions.create({
-      model,
-      messages,
-      response_format: { type: "json_object" },
-    });
+    for (const model of ladder) {
+      if (isOnCooldown(model)) continue;
 
-    const text = completion.choices[0]?.message?.content ?? "{}";
-    let parsed: T;
-    try {
-      parsed = JSON.parse(text) as T;
-    } catch {
-      throw new Error(`Model returned invalid JSON: ${text.slice(0, 300)}`);
+      try {
+        const completion = await Promise.race([
+          this.client.chat.completions.create({
+            model,
+            messages,
+            response_format: { type: "json_object" },
+          }),
+          timeoutPromise<never>(TIMEOUT_MS),
+        ]);
+
+        const text = completion.choices[0]?.message?.content ?? "{}";
+        return parseJSON<T>(text);
+      } catch (err: any) {
+        lastError = err;
+        setCooldown(model);
+        console.warn(`[OpenRouter] Structured ${model} failed (${err?.message?.slice(0, 80) ?? err}), trying next rung...`);
+      }
     }
 
-    return parsed;
+    throw new Error(`All OpenRouter structured models in ${request.tier} ladder failed. Last: ${lastError?.message || lastError}`);
   }
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function formatContent(userPrompt: unknown): any {
+  if (typeof userPrompt === "string") return userPrompt;
+  if (Array.isArray(userPrompt)) {
+    return userPrompt.map((part: any) => {
+      if (typeof part === "string") return { type: "text", text: part };
+      if (part.text && !part.inlineData) return { type: "text", text: part.text };
+      if (part.inlineData) {
+        const mime = part.inlineData.mimeType || "image/jpeg";
+        return {
+          type: "image_url",
+          image_url: { url: `data:${mime};base64,${part.inlineData.data}` },
+        };
+      }
+      return part;
+    });
+  }
+  return userPrompt;
+}
+
+function parseJSON<T>(text: string): T {
+  // Strip markdown code fences if present
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    throw new Error(`Model returned invalid JSON: ${cleaned.slice(0, 300)}`);
+  }
+}
+
+function timeoutPromise<T>(ms: number): Promise<T> {
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Model call timed out after ${ms}ms`)), ms)
+  );
+}
+
 // ── Model Router ──────────────────────────────────────────────────────────────
+// Tries providers in order: Groq first (fastest, free), then OpenRouter.
+// If both fail, throws with the last error.
 
 class ModelRouter {
   private providers: Map<string, LLMProvider> = new Map();
-  private defaultProvider = "openrouter";
+  private providerOrder: string[] = [];
 
   constructor() {
-    // Register Gemini
-    if (process.env.GEMINI_API_KEY) {
-      this.providers.set("gemini", new GeminiProvider());
+    // Register Groq first — fastest inference, generous free tier
+    if (process.env.GROQ_API_KEY) {
+      try {
+        this.providers.set("groq", new GroqProvider());
+        this.providerOrder.push("groq");
+        console.log("[ModelRouter] ✓ Groq provider registered");
+      } catch (e) {
+        console.warn("[ModelRouter] ✗ Groq provider failed to initialize:", e);
+      }
     }
-    // Register OpenRouter
+
+    // Register OpenRouter — widest model selection, paid
     if (process.env.OPENROUTER_API_KEY) {
-      this.providers.set("openrouter", new OpenRouterProvider());
-    } else {
-      // Fallback if not configured
-      this.defaultProvider = "gemini";
+      try {
+        this.providers.set("openrouter", new OpenRouterProvider());
+        this.providerOrder.push("openrouter");
+        console.log("[ModelRouter] ✓ OpenRouter provider registered");
+      } catch (e) {
+        console.warn("[ModelRouter] ✗ OpenRouter provider failed to initialize:", e);
+      }
+    }
+
+    if (this.providerOrder.length === 0) {
+      console.error("[ModelRouter] ⚠ No LLM providers registered! Set GROQ_API_KEY or OPENROUTER_API_KEY.");
     }
   }
 
-  /**
-   * Register an additional LLM provider.
-   * Example: modelRouter.registerProvider("claude", new ClaudeProvider());
-   */
   registerProvider(name: string, provider: LLMProvider): void {
     this.providers.set(name, provider);
+    if (!this.providerOrder.includes(name)) {
+      this.providerOrder.push(name);
+    }
   }
 
   private getProvider(name?: string): LLMProvider {
-    const key = name ?? this.defaultProvider;
-    const provider = this.providers.get(key);
-    if (!provider) throw new Error(`LLM provider "${key}" not registered`);
-    return provider;
+    if (name) {
+      const provider = this.providers.get(name);
+      if (!provider) throw new Error(`LLM provider "${name}" not registered`);
+      return provider;
+    }
+    // Return first available
+    for (const key of this.providerOrder) {
+      const p = this.providers.get(key);
+      if (p) return p;
+    }
+    throw new Error("No LLM providers registered");
   }
 
   /**
-   * Generate a text response using the appropriate model tier.
+   * Generate a text response — tries providers in order with full failover.
    */
   async generate(request: ModelRequest, providerName?: string): Promise<ModelResponse> {
-    return this.getProvider(providerName).generate(request);
+    if (providerName) {
+      return this.getProvider(providerName).generate(request);
+    }
+
+    let lastError: any = null;
+    for (const key of this.providerOrder) {
+      const provider = this.providers.get(key);
+      if (!provider) continue;
+
+      try {
+        return await provider.generate(request);
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[ModelRouter] Provider ${key} failed for generate, trying next...`);
+      }
+    }
+
+    throw new Error(`All providers failed. Last error: ${lastError?.message || lastError}`);
   }
 
   /**
-   * Generate a typed structured JSON response using the appropriate tier.
+   * Generate a typed structured JSON response — tries providers in order.
    */
-  async generateStructured<T>(
-    request: ModelRequest,
-    providerName?: string
-  ): Promise<T> {
-    return this.getProvider(providerName).generateStructured<T>(request);
+  async generateStructured<T>(request: ModelRequest, providerName?: string): Promise<T> {
+    if (providerName) {
+      return this.getProvider(providerName).generateStructured<T>(request);
+    }
+
+    let lastError: any = null;
+    for (const key of this.providerOrder) {
+      const provider = this.providers.get(key);
+      if (!provider) continue;
+
+      try {
+        return await provider.generateStructured<T>(request);
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[ModelRouter] Provider ${key} failed for generateStructured, trying next...`);
+      }
+    }
+
+    throw new Error(`All providers failed for structured. Last error: ${lastError?.message || lastError}`);
   }
 
   /**
    * Convenience: quick single-turn completion at the "fast" tier.
    */
   async quick(systemPrompt: string, userPrompt: string): Promise<string> {
-    const response = await this.generate({
-      tier: "fast",
-      systemPrompt,
-      userPrompt,
-    });
+    const response = await this.generate({ tier: "fast", systemPrompt, userPrompt });
     return response.text;
   }
 

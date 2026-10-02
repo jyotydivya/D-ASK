@@ -717,6 +717,7 @@ register({
     required: ["path"],
   },
   permissions: [],
+  riskLevel: "low",
   requiresApproval: false,
 });
 
@@ -929,6 +930,168 @@ register({
   description: "Open Epic Games.",
   agentType: "pc",
   inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "pc.system_status",
+  description: "Get comprehensive system status (CPU, RAM, Disk, GPU, Network, Battery).",
+  agentType: "pc",
+  inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "pc.top_processes",
+  description: "Get top running processes by CPU or Memory usage.",
+  agentType: "pc",
+  inputSchema: {
+    type: "object",
+    properties: {
+      sortBy: { type: "string", enum: ["cpu", "memory"] },
+      limit: { type: "number" }
+    }
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "pc.network_info",
+  description: "Get network connectivity info (Local IPs, WiFi SSID).",
+  agentType: "pc",
+  inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "pc.undo",
+  description: "Undo the last destructive action.",
+  agentType: "pc",
+  inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "pc.undo_history",
+  description: "View the available undo history.",
+  agentType: "pc",
+  inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "monitor.add",
+  description: "Add a topic to the background news monitor.",
+  agentType: "pc",
+  inputSchema: {
+    type: "object",
+    properties: { topic: { type: "string" } },
+    required: ["topic"]
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "monitor.remove",
+  description: "Remove a topic from the background news monitor.",
+  agentType: "pc",
+  inputSchema: {
+    type: "object",
+    properties: { topic: { type: "string" } },
+    required: ["topic"]
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "monitor.list",
+  description: "List currently monitored topics.",
+  agentType: "pc",
+  inputSchema: { type: "object", properties: {} },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "memory.store_preference",
+  description: "Store a key-value user preference.",
+  agentType: "memory",
+  inputSchema: {
+    type: "object",
+    properties: {
+      key: { type: "string" },
+      value: { type: "string" }
+    },
+    required: ["key", "value"]
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "memory.get_preference",
+  description: "Get a key-value user preference.",
+  agentType: "memory",
+  inputSchema: {
+    type: "object",
+    properties: {
+      key: { type: "string" }
+    },
+    required: ["key"]
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "memory.store_memory",
+  description: "Store a semantic memory for the user.",
+  agentType: "memory",
+  inputSchema: {
+    type: "object",
+    properties: {
+      text: { type: "string" },
+      category: { type: "string", enum: ["identity", "preferences", "projects", "relationships", "wishes", "notes", "session"] }
+    },
+    required: ["text"]
+  },
+  permissions: [],
+  riskLevel: "low",
+  requiresApproval: false,
+});
+
+register({
+  name: "memory.search_memories",
+  description: "Search user memories by keyword (fallback for semantic).",
+  agentType: "memory",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string" },
+      limit: { type: "number" },
+      category: { type: "string", enum: ["identity", "preferences", "projects", "relationships", "wishes", "notes", "session"] }
+    },
+    required: ["query"]
+  },
   permissions: [],
   riskLevel: "low",
   requiresApproval: false,

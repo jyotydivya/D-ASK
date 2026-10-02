@@ -14,8 +14,11 @@ import { youtubePlayerService } from "../../lib/agent/tools/desktop/youtubePlaye
 import { webToolsService } from "../../lib/agent/tools/desktop/webTools";
 import { reminderService } from "../../lib/agent/tools/desktop/reminder";
 import { messagingService } from "../../lib/agent/tools/desktop/messaging";
-import { gameUpdaterService } from "../../lib/agent/tools/desktop/gameUpdater";
+import { systemMonitorService } from "../../lib/agent/tools/system/systemMonitor";
+import { backgroundMonitorService } from "../../lib/agent/tools/system/backgroundMonitor";
+import { popUndo, getUndoHistory } from "../../lib/agent/tools/system/undoStack";
 import type { AgentContext, AgentResult, AgentType } from "../types";
+import { gameUpdaterService } from "@/lib/agent/tools/desktop/gameUpdater";
 
 export class PCAgent extends BaseAgent {
   readonly agentType: AgentType = "pc";
@@ -31,32 +34,51 @@ export class PCAgent extends BaseAgent {
     const availableTools = this.getAvailableTools();
     const systemPrompt = `You are the D-ASK PC Agent running on a Windows machine.
 Your objective is to fulfill the user's request using the tools provided to you.
-You must return a JSON array of tool calls.
+You must return a JSON object with a "tools" array of tool calls.
 
 Available tools:
 ${JSON.stringify(availableTools, null, 2)}
 
-Return JSON array of tool calls:
-[{ "tool": "tool_name", "arguments": { ... } }]`;
+Return JSON format:
+{
+  "tools": [
+    { "tool": "tool_name", "arguments": { "param": "value" } }
+  ]
+}`;
 
     let toolCalls: any[] = [];
     try {
-      toolCalls = await modelRouter.generateStructured<any[]>({
+      const rawResult = await modelRouter.generateStructured<any>({
         tier: "standard",
         systemPrompt,
         userPrompt: `OBJECTIVE: "${objective}"\nNODE DESCRIPTION: "${nodeDescription}"`,
         outputSchema: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              tool: { type: "string" },
-              arguments: { type: "object" }
-            },
-            required: ["tool", "arguments"]
-          }
+          type: "object",
+          properties: {
+            tools: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  tool: { type: "string" },
+                  arguments: { type: "object" }
+                },
+                required: ["tool", "arguments"]
+              }
+            }
+          },
+          required: ["tools"]
         },
       });
+
+      if (Array.isArray(rawResult)) {
+        toolCalls = rawResult;
+      } else if (rawResult && typeof rawResult === "object") {
+        toolCalls = rawResult.tools || rawResult.toolCalls || rawResult.actions || [];
+        if (!Array.isArray(toolCalls) && typeof toolCalls === "object") {
+          toolCalls = Object.values(toolCalls);
+        }
+      }
     } catch (e) {
       return this.failure("Failed to generate plan: " + String(e));
     }
@@ -66,7 +88,7 @@ Return JSON array of tool calls:
     }
 
     this.emitProgress(taskId, nodeId, `Executing ${toolCalls.length} PC action(s)...`, 30);
-    
+
     const results = [];
     let progress = 30;
     const progressStep = 60 / toolCalls.length;
@@ -74,9 +96,9 @@ Return JSON array of tool calls:
     for (const call of toolCalls) {
       const toolName = call.tool;
       const args = call.arguments || {};
-      
+
       this.emitProgress(taskId, nodeId, `Running ${toolName}...`, progress);
-      
+
       try {
         const res = await this.callTool(context, toolName, args);
         results.push({ tool: toolName, success: res.success, result: res.result, error: res.error });
@@ -88,7 +110,7 @@ Return JSON array of tool calls:
     }
 
     this.emitProgress(taskId, nodeId, "PC tasks completed.", 90);
-    
+
     // Save to blackboard
     const summary = results.map(r => r.success ? `✓ ${r.tool} succeeded` : `✗ ${r.tool} failed${r.error ? `: ${r.error}` : ''}`).join(" | ");
     blackboard.setNodeOutput(taskId, nodeId, { results, summary });
@@ -112,7 +134,7 @@ Return JSON array of tool calls:
         return await pcControlService.getActiveWindow();
       case "pc.list_windows":
         return await pcControlService.listWindows();
-        
+
       // Vision tools
       case "pc.analyze_screen":
         return await visionControlService.analyzeScreen(String(args.query));
@@ -124,7 +146,7 @@ Return JSON array of tool calls:
         return await mouseKeyboardService.moveMouse(Number(args.x), Number(args.y));
       case "pc.mouse_click":
         return await mouseKeyboardService.click(args.button as any, Number(args.clicks ?? 1));
-        
+
       // Keyboard tools
       case "pc.type_text":
         return await mouseKeyboardService.typeText(String(args.text));
@@ -132,7 +154,7 @@ Return JSON array of tool calls:
         return await mouseKeyboardService.pressKey(String(args.key));
       case "pc.hotkey":
         return await mouseKeyboardService.hotkey(args.keys as string[]);
-        
+
       // File tools
       case "file.read":
         return await fileToolsService.readFile(String(args.path));
@@ -146,7 +168,7 @@ Return JSON array of tool calls:
         return await fileToolsService.moveFile(String(args.sourcePath), String(args.destPath));
       case "file.delete":
         return await fileToolsService.deleteFile(String(args.path));
-        
+
       // New OS tools
       case "pc.set_power_state":
         return await pcControlService.setPowerState(args.state as any);
@@ -160,7 +182,7 @@ Return JSON array of tool calls:
         return await systemSettingsService.toggleMute();
       case "pc.set_brightness":
         return await systemSettingsService.setBrightness(Number(args.level ?? 100));
-        
+
       // App integrations
       case "pc.youtube_play":
         return await youtubePlayerService.searchAndPlay(String(args.query));
@@ -178,7 +200,25 @@ Return JSON array of tool calls:
         return await gameUpdaterService.launchSteam();
       case "pc.launch_epic":
         return await gameUpdaterService.launchEpicGames();
-        
+
+      // Monitoring and System Status tools
+      case "pc.system_status":
+        return await systemMonitorService.getSystemStatus();
+      case "pc.top_processes":
+        return await systemMonitorService.getTopProcesses(args.sortBy as any, Number(args.limit ?? 10));
+      case "pc.network_info":
+        return await systemMonitorService.getNetworkInfo();
+      case "monitor.add":
+        return backgroundMonitorService.addTopic(String(args.topic));
+      case "monitor.remove":
+        return backgroundMonitorService.removeTopic(String(args.topic));
+      case "monitor.list":
+        return backgroundMonitorService.listTopics();
+      case "pc.undo":
+        return await popUndo();
+      case "pc.undo_history":
+        return getUndoHistory();
+
       default:
         throw new Error(`PCAgent cannot route tool: ${toolName}`);
     }

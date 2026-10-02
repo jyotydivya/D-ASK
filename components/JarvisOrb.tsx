@@ -68,7 +68,7 @@ const APP_ALIASES: Record<string, string> = {
   maps: "maps", "google maps": "maps",
 };
 
-function matchLocalCommand(normalized: string): LocalCommand {
+function matchLocalCommand(normalized: string, hasPhone: boolean = false): LocalCommand {
   // ── UI / Orb commands ──────────────────────────────────────────────────────
   if (normalized === "clear" || normalized === "clear history") return { command: "clear" };
   if (normalized.includes("zoom in") || normalized === "zoom +") return { command: "zoom_in" };
@@ -87,6 +87,12 @@ function matchLocalCommand(normalized: string): LocalCommand {
   }
 
   // ── Device commands (zero API calls needed) ────────────────────────────────
+  // Only intercept device commands if a physical phone is actually connected or explicitly targeted
+  const mentionsPhone = /\b(phone|android|mobile)\b/.test(normalized);
+  if (!hasPhone && !mentionsPhone) {
+    return null;
+  }
+
   // Lock
   if (/\b(lock|sleep)\b.*\b(phone|device|screen)?\b/.test(normalized) && !normalized.includes("unlock")) {
     return { command: "device", deviceCommand: "lock" };
@@ -147,6 +153,12 @@ export default function JarvisOrb() {
   const lastCommandRef = useRef<{ text: string; time: number } | null>(null);
   // TTS echo guard: true while D-ASK is speaking — suppresses mic input
   const isSpeakingRef = useRef<boolean>(false);
+  
+  // Groq STT Refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isRecordingRef = useRef(false);
 
   const [camera, setCamera] = useState<CameraState>("off");
   const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
@@ -454,8 +466,8 @@ export default function JarvisOrb() {
       soundFx.playProcessSound();
       const normalized = prompt.trim().toLowerCase();
 
-      // Fast-path: pure orb/UI commands handled locally
-      const localOrbCommand = matchLocalCommand(normalized);
+      // Fast-path: pure orb/UI commands handled locally (device commands only if phone connected)
+      const localOrbCommand = matchLocalCommand(normalized, hasPhysicalDevice);
       if (localOrbCommand) {
         switch (localOrbCommand.command) {
           case "theme":
@@ -685,45 +697,90 @@ export default function JarvisOrb() {
     addHistoryEntry("WAKE WORD DETECTED", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
   }, [addHistoryEntry]);
 
-  // Voice Recognition with Mic Audio Visualizer Hook & Network Error Suppression
+  // Voice Recognition via Groq Whisper + VAD
   const toggleVoiceInput = useCallback(async () => {
     soundFx.playClickSound();
-    if (voiceRecognitionRef.current) {
-      voiceRecognitionRef.current.stop();
-      voiceRecognitionRef.current = null;
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach((t) => t.stop());
-        micStreamRef.current = null;
+    if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
       }
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      micStreamRef.current = null;
       setVoiceState("idle");
       setAudioLevel(0);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       return;
     }
 
-    const voiceWindow = window as Window & {
-      SpeechRecognition?: VoiceRecognitionConstructor;
-      webkitSpeechRecognition?: VoiceRecognitionConstructor;
-    };
-    const Recognition = voiceWindow.SpeechRecognition ?? voiceWindow.webkitSpeechRecognition;
-    if (!Recognition) {
-      setVoiceState("unsupported");
-      addHistoryEntry("VOICE INPUT", "VOICE RECOGNITION IS NOT SUPPORTED IN THIS BROWSER");
-      return;
-    }
-
-    // 1. Explicitly request real microphone permission
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      // Setup Web Audio Analyser to convert real mic volume to audioLevel
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const audioCtx = new AudioCtx();
       audioContextRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
+      analyser.fftSize = 256;
       source.connect(analyser);
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (audioChunksRef.current.length === 0) return;
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        audioChunksRef.current = [];
+        
+        // Skip tiny blips
+        if (blob.size < 3000) return;
+
+        setCommand("Processing audio...");
+        try {
+          const formData = new FormData();
+          formData.append('file', blob);
+          const res = await fetch('/api/stt', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            const transcript = data.text?.trim();
+            if (transcript) {
+              setCommand(transcript);
+              const wakeMatch = /(?:^|\b)(?:d[\s-]*ask|the[\s-]*ask|deask|task|desk|hey[\s-]*d[\s-]*ask|jarvis|ultron)\b/i.exec(transcript);
+              if (!isSpeakingRef.current) {
+                if (wakeMatch && wakeMatch.index !== undefined) {
+                  soundFx.playWakeSound();
+                  setWakeActive(true);
+                  if (wakeTimeoutRef.current) clearTimeout(wakeTimeoutRef.current);
+                  wakeTimeoutRef.current = setTimeout(() => setWakeActive(false), 5000);
+                  const requestedCommand = transcript.slice(wakeMatch.index + wakeMatch[0].length).replace(/^[\s,.:;!?-]+/, "").trim();
+                  if (requestedCommand && requestedCommand.length >= 3) {
+                    void runCommand(requestedCommand);
+                  } else if (!requestedCommand) {
+                    addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
+                  }
+                } else {
+                  const wordCount = transcript.split(/\s+/).length;
+                  if (wordCount >= 2 || transcript.length >= 10) {
+                    void runCommand(transcript);
+                  }
+                }
+              }
+            } else {
+              setCommand("");
+            }
+          } else {
+             setCommand("ERROR: STT Failed");
+          }
+        } catch (e) {
+          console.error("STT Error", e);
+        }
+      };
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const checkVolume = () => {
@@ -735,98 +792,35 @@ export default function JarvisOrb() {
         const normalized = Math.min(1, avg / 128);
         setAudioLevel(normalized);
         sceneRef.current?.setAudioLevel(normalized);
+
+        if (normalized > 0.05) {
+          if (!isRecordingRef.current) {
+            isRecordingRef.current = true;
+            if (mediaRecorderRef.current?.state === "inactive") {
+              mediaRecorderRef.current.start();
+            }
+          }
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            isRecordingRef.current = false;
+            if (mediaRecorderRef.current?.state === "recording") {
+              mediaRecorderRef.current.stop();
+            }
+          }, 1500);
+        }
+
         requestAnimationFrame(checkVolume);
       };
       checkVolume();
-    } catch {
+      
+      setVoiceState("listening");
+      soundFx.playWakeSound();
+
+    } catch (err) {
+      console.error(err);
       setVoiceState("error");
       addHistoryEntry("VOICE INPUT", "MICROPHONE PERMISSION DENIED · ALLOW MIC ACCESS");
       return;
-    }
-
-    // 2. Initialize Web Speech Recognition Engine with interim streaming
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      const startIdx = event.resultIndex ?? 0;
-      for (let i = startIdx; i < event.results.length; i++) {
-        const item = event.results[i];
-        if (!item) continue;
-        const transcript = item[0]?.transcript?.trim();
-        if (!transcript) continue;
-
-        const isFinal = (item as unknown as { isFinal?: boolean }).isFinal;
-
-        // Show live transcript in HUD command input box so user sees voice input working
-        setCommand(transcript);
-
-        // Phonetic wake-word regex pattern
-        const wakeMatch = /(?:^|\b)(?:d[\s-]*ask|the[\s-]*ask|deask|task|desk|hey[\s-]*d[\s-]*ask|jarvis|ultron)\b/i.exec(transcript);
-
-        // Skip ALL voice input while D-ASK is speaking (prevents TTS echo loop)
-        if (isSpeakingRef.current) continue;
-
-        if (wakeMatch && wakeMatch.index !== undefined) {
-          soundFx.playWakeSound();
-          setWakeActive(true);
-          if (wakeTimeoutRef.current) clearTimeout(wakeTimeoutRef.current);
-          wakeTimeoutRef.current = setTimeout(() => setWakeActive(false), 5000);
-
-          const requestedCommand = transcript
-            .slice(wakeMatch.index + wakeMatch[0].length)
-            .replace(/^[\s,.:;!?-]+/, "")
-            .trim();
-
-          if (requestedCommand && isFinal) {
-            // Require minimum quality: at least 2 chars and not pure junk
-            if (requestedCommand.length >= 3) void runCommand(requestedCommand);
-          } else if (!requestedCommand && isFinal) {
-            addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
-          }
-        } else if (isFinal) {
-          // Only fire on non-wake-word finals if the transcript has substance
-          // (>= 3 words or >= 10 chars) to filter noise/single-word mishears
-          const wordCount = transcript.split(/\s+/).length;
-          if (wordCount >= 2 || transcript.length >= 10) {
-            void runCommand(transcript);
-          }
-        }
-      }
-    };
-
-    recognition.onerror = (event) => {
-      const errStr = event.error ? String(event.error).toUpperCase() : "ERROR";
-      if (errStr === "NO-SPEECH" || errStr === "NETWORK") {
-        return;
-      }
-      setVoiceState("error");
-    };
-
-    recognition.onend = () => {
-      if (voiceRecognitionRef.current !== recognition) {
-        setVoiceState((current) => (current === "error" ? "error" : "idle"));
-        return;
-      }
-      window.setTimeout(() => {
-        if (voiceRecognitionRef.current !== recognition) return;
-        try {
-          recognition.start();
-        } catch {
-          // Retry
-        }
-      }, 300);
-    };
-
-    voiceRecognitionRef.current = recognition;
-    setVoiceState("listening");
-    soundFx.playWakeSound();
-    try {
-      recognition.start();
-    } catch {
-      // Ignore initial start retry
     }
   }, [addHistoryEntry, runCommand]);
 

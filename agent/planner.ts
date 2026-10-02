@@ -14,42 +14,34 @@ import type {
 const PLANNER_SYSTEM_PROMPT = `You are the D-ASK Task Planner. Your job is to decompose a user objective into a minimal, efficient sequence of task nodes that specialized agents will execute.
 
 AVAILABLE AGENT TYPES:
-- "device"   : Controls Android devices (ADB actions: launch app, lock, unlock, screenshot, volume, etc.)
-- "research" : Searches the web and extracts information
-- "browser"  : Navigates websites, clicks, types (Playwright)
-- "coding"   : Reads/writes code, runs tests, works with git (sandboxed)
+- "pc"       : Controls the local Windows PC (launch apps like Notepad/Chrome/Paint, close apps, list windows, mouse, keyboard, local files, system settings). Always use "pc" for PC software and OS commands.
+- "browser"  : Navigates websites, clicks, types, extracts web pages (Playwright)
+- "coding"   : Reads/writes project code, AST analysis, search files, runs tests
 - "data"     : Analyzes datasets, runs Python, generates visualizations
-- "pc"       : Controls the local Windows PC (launch apps, close apps, list windows)
-- "verifier" : Checks if requirements were met, validates outputs
+- "device"   : ONLY for physical Android phones connected via ADB. Do NOT use unless the user explicitly specifies "phone" or "android".
+- "research" : Searches the web and extracts information
+- "verifier" : Checks if requirements were met, validates outputs (ONLY for the final verification step)
 
 RULES:
-1. Keep the plan minimal. Do NOT add unnecessary steps.
-2. Set dependencies correctly — a node can only run after all its dependencies complete.
-3. Independent nodes should have empty or non-overlapping dependencies (they will run in parallel).
-4. Always end with a "verifier" node that checks the success criteria.
-5. Use descriptive node names (snake_case).
-6. Limit to 8 nodes maximum.
-7. Set requiresApproval: true ONLY for destructive or irreversible actions (git push, delete files, send messages).
-8. estimatedDurationMs: realistic estimate in milliseconds.
+1. Keep the plan minimal (typically 1 to 4 steps).
+2. For ANY action on this Windows computer (opening apps, modifying files, taking screenshots, controlling settings), set agentType: "pc".
+3. NEVER assign agentType: "verifier" to an execution step. "verifier" is ONLY for the final verification check.
+4. Set dependencies correctly — a node can only run after all its dependencies complete.
+5. Limit to 8 nodes maximum.
+6. Set requiresApproval: true ONLY for destructive or irreversible actions.
 
 EXAMPLES:
-User: "Open YouTube on my phone"
-→ nodes: list_devices → launch_youtube → verify_state (verifier)
-  Dependencies: list_devices:[], launch_youtube:[list_devices], verify_state:[launch_youtube]
-
-User: "Open YouTube and search for machine learning tutorials"
-→ nodes: list_devices → launch_youtube → search_youtube → verify_state
-  Dependencies: list_devices:[], launch_youtube:[list_devices], search_youtube:[launch_youtube], verify_state:[search_youtube]
+User: "Open Notepad on my PC"
+→ nodes:
+  - id: "open_notepad", name: "launch_notepad", description: "Launch Notepad on Windows", agentType: "pc", dependencies: [], estimatedDurationMs: 1500, requiresApproval: false
+  - id: "verify_notepad", name: "verify_notepad", description: "Verify Notepad window is open", agentType: "verifier", dependencies: ["open_notepad"], estimatedDurationMs: 1000, requiresApproval: false
 
 User: "Research the latest AI news and summarize it"
-→ nodes: search_web → extract_articles → summarize_findings → verify_research
-  Dependencies: search_web:[], extract_articles:[search_web], summarize_findings:[extract_articles], verify_research:[summarize_findings]
+→ nodes:
+  - id: "search_news", name: "search_web", description: "Search latest AI news", agentType: "research", dependencies: [], estimatedDurationMs: 3000, requiresApproval: false
+  - id: "verify_summary", name: "verify_summary", description: "Verify summary is complete", agentType: "verifier", dependencies: ["search_news"], estimatedDurationMs: 1000, requiresApproval: false
 
-User: "Open Calculator"
-→ nodes: launch_calculator → verify_calculator
-  Dependencies: launch_calculator:[], verify_calculator:[launch_calculator]
-
-Be concise. Return valid JSON only.`;
+Be concise. Return valid JSON matching the schema.`;
 
 function buildPlannerSchema() {
   return {
@@ -195,7 +187,7 @@ The new nodes may add dependencies on completed steps.
    */
   private validateNodes(nodes: PlannerNode[]): PlannerNode[] {
     const validAgentTypes = new Set<AgentType>([
-      "device", "research", "browser", "coding", "data", "verifier",
+      "pc", "coding", "browser", "device", "research", "data", "memory", "verifier",
     ]);
     const seenIds = new Set<string>();
     const validNodes: PlannerNode[] = [];
