@@ -153,7 +153,7 @@ export default function JarvisOrb() {
   const lastCommandRef = useRef<{ text: string; time: number } | null>(null);
   // TTS echo guard: true while D-ASK is speaking — suppresses mic input
   const isSpeakingRef = useRef<boolean>(false);
-  
+
   // Groq STT Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -652,7 +652,8 @@ export default function JarvisOrb() {
       }
     },
     [addHistoryEntry, aiThinking, taskActive, changeTheme, controlDevice, isSpeechEnabled, speakResponse, startGestures, stopGestures, toggleMute, toggleSpeech, submitTask],
-  );
+  );
+
 
   // Command Execution (Orb HUD & Device Controls)
   const runCommand = useCallback(
@@ -737,7 +738,7 @@ export default function JarvisOrb() {
         if (audioChunksRef.current.length === 0) return;
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         audioChunksRef.current = [];
-        
+
         // Skip tiny blips
         if (blob.size < 3000) return;
 
@@ -775,7 +776,7 @@ export default function JarvisOrb() {
               setCommand("");
             }
           } else {
-             setCommand("ERROR: STT Failed");
+            setCommand("ERROR: STT Failed");
           }
         } catch (e) {
           console.error("STT Error", e);
@@ -812,7 +813,7 @@ export default function JarvisOrb() {
         requestAnimationFrame(checkVolume);
       };
       checkVolume();
-      
+
       setVoiceState("listening");
       soundFx.playWakeSound();
 

@@ -5,8 +5,8 @@
 // Truly irreversible actions → require user confirmation.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { toolRegistry } from "../../../tools/registry";
-import type { RiskLevel } from "../../../agent/types";
+import { toolRegistry } from "../../../../tools/registry";
+import type { RiskLevel } from "../../../../agent/types";
 
 // Actions that are considered truly irreversible (no undo possible)
 const IRREVERSIBLE_TOOLS = new Set([

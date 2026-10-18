@@ -1,0 +1,1770 @@
+{
+  "timestamp": "2026-10-18T00:53:26.415Z",
+  "totalTests": 176,
+  "passedTests": 174,
+  "failedTests": 2,
+  "blockedTests": 0,
+  "successRatePct": 98.86,
+  "records": [
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 44,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 9,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 4,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 6,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 7,
+      "outcome": "PASS",
+      "durationMs": 3,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 8,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 9,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-HTTP",
+      "testGroup": "Interface",
+      "feature": "HTTP Server Response",
+      "trialNumber": 10,
+      "outcome": "PASS",
+      "durationMs": 3,
+      "details": "HTTP 200  10840 bytes",
+      "evidence": "http://localhost:3000"
+    },
+    {
+      "testId": "F01-RENDER",
+      "testGroup": "Interface",
+      "feature": "Three.js Canvas Render",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 4841,
+      "details": "Canvas present  title=\"ULTRON Orb UI\"  consoleErrors=0",
+      "evidence": "results/screenshots/orb_ui_live.png"
+    },
+    {
+      "testId": "F01-RENDER",
+      "testGroup": "Interface",
+      "feature": "Three.js Canvas Render",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 4107,
+      "details": "Canvas present  title=\"ULTRON Orb UI\"  consoleErrors=0",
+      "evidence": "results/screenshots/orb_ui_live.png"
+    },
+    {
+      "testId": "F01-RENDER",
+      "testGroup": "Interface",
+      "feature": "Three.js Canvas Render",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 5633,
+      "details": "Canvas present  title=\"ULTRON Orb UI\"  consoleErrors=0",
+      "evidence": "results/screenshots/orb_ui_live.png"
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CYAN",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 935,
+      "details": "Theme cyan selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: AMBER",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 427,
+      "details": "Theme amber selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CRIMSON",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 606,
+      "details": "Theme crimson selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: EMERALD",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 796,
+      "details": "Theme emerald selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CYAN",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 677,
+      "details": "Theme cyan selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: AMBER",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 660,
+      "details": "Theme amber selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CRIMSON",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 662,
+      "details": "Theme crimson selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: EMERALD",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 13,
+      "details": "Theme emerald selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CYAN",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "Theme cyan selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: AMBER",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 11,
+      "details": "Theme amber selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: CRIMSON",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 752,
+      "details": "Theme crimson selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-THEME",
+      "testGroup": "3D Interaction",
+      "feature": "Theme Switch: EMERALD",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 784,
+      "details": "Theme emerald selected via button click",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-KEYBOARD",
+      "testGroup": "3D Interaction",
+      "feature": "Keyboard Hotkey 'G'",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 475,
+      "details": "Dispatched keydown 'G'",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-KEYBOARD",
+      "testGroup": "3D Interaction",
+      "feature": "Keyboard Hotkey 'R'",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 3,
+      "details": "Dispatched keydown 'R'",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-KEYBOARD",
+      "testGroup": "3D Interaction",
+      "feature": "Keyboard Hotkey '+'",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 4,
+      "details": "Dispatched keydown '+'",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-KEYBOARD",
+      "testGroup": "3D Interaction",
+      "feature": "Keyboard Hotkey '-'",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 438,
+      "details": "Dispatched keydown '-'",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-KEYBOARD",
+      "testGroup": "3D Interaction",
+      "feature": "Keyboard Hotkey 'G'",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 861,
+      "details": "Dispatched keydown 'G'",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-MOUSE-DRAG",
+      "testGroup": "3D Interaction",
+      "feature": "Orb Mouse Drag Rotation",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 9256,
+      "details": "Dispatched drag events (dx=60  dy=20)",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-MOUSE-DRAG",
+      "testGroup": "3D Interaction",
+      "feature": "Orb Mouse Drag Rotation",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 8949,
+      "details": "Dispatched drag events (dx=60  dy=20)",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-MOUSE-DRAG",
+      "testGroup": "3D Interaction",
+      "feature": "Orb Mouse Drag Rotation",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 9512,
+      "details": "Dispatched drag events (dx=60  dy=20)",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-MOUSE-DRAG",
+      "testGroup": "3D Interaction",
+      "feature": "Orb Mouse Drag Rotation",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 9640,
+      "details": "Dispatched drag events (dx=60  dy=20)",
+      "evidence": ""
+    },
+    {
+      "testId": "F02-MOUSE-DRAG",
+      "testGroup": "3D Interaction",
+      "feature": "Orb Mouse Drag Rotation",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 8614,
+      "details": "Dispatched drag events (dx=60  dy=20)",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe WASM CDN Reachability",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 296,
+      "details": "Status 200 OK",
+      "evidence": "http://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/vision_wasm_internal.js"
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe WASM CDN Reachability",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 199,
+      "details": "Status 200 OK",
+      "evidence": "http://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/vision_wasm_internal.js"
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe WASM CDN Reachability",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 193,
+      "details": "Status 200 OK",
+      "evidence": "http://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm/vision_wasm_internal.js"
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe Model Cloud Storage Reachability",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 329,
+      "details": "Status 200 OK",
+      "evidence": "http://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe Model Cloud Storage Reachability",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 356,
+      "details": "Status 200 OK",
+      "evidence": "http://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+    },
+    {
+      "testId": "CV01-CDN",
+      "testGroup": "Gesture",
+      "feature": "MediaPipe Model Cloud Storage Reachability",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 302,
+      "details": "Status 200 OK",
+      "evidence": "http://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.12  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.18  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.22  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.25  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.28  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 6,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.30  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 7,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.15  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 8,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.20  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 9,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.24  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 10,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.29  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 11,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.31  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 12,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.14  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 13,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.19  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 14,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.26  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 15,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.27  groundTruth=true  detected=true",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 16,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.48  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 17,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.52  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 18,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.60  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 19,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.72  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 20,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.55  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 21,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.65  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 22,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.46  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 23,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.50  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 24,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.58  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 25,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.75  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 26,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.82  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 27,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.47  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 28,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.62  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 29,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.68  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-PINCH",
+      "testGroup": "Gesture",
+      "feature": "Pinch Hysteresis Metric Evaluation",
+      "trialNumber": 30,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "dist=0.53  groundTruth=false  detected=false",
+      "evidence": ""
+    },
+    {
+      "testId": "CV01-CAM",
+      "testGroup": "Gesture",
+      "feature": "Physical Webcam Device Check",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 12,
+      "details": "720p HD Camera (USB\\VID_3277&PID_009D) detected and operational in Windows PnP system",
+      "evidence": "Windows PnP Camera"
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Change theme to crimson...\"",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1959,
+      "details": "actionType=orb  reply=\"Changing theme to crimson....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Change theme to crimson...\"",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 2356,
+      "details": "actionType=orb  reply=\"Changing theme to crimson....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Change theme to crimson...\"",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1735,
+      "details": "actionType=orb  reply=\"Changing theme to crimson....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Zoom in on the holographic orb...\"",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1555,
+      "details": "actionType=orb  reply=\"Zooming in on the holographic orb....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Zoom in on the holographic orb...\"",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1725,
+      "details": "actionType=orb  reply=\"Zooming in on the holographic orb....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Zoom in on the holographic orb...\"",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1120,
+      "details": "actionType=orb  reply=\"Zooming in on the holographic orb....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"What is your primary mission?...\"",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1154,
+      "details": "actionType=none  reply=\"My primary mission is to assist you with...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"What is your primary mission?...\"",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 2008,
+      "details": "actionType=none  reply=\"My primary mission is to assist you effi...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"What is your primary mission?...\"",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1741,
+      "details": "actionType=none  reply=\"My primary mission is to assist you seam...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Search Wikipedia for Quantum C...\"",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 2155,
+      "details": "actionType=task  reply=\"Initiating a search for Quantum Computin...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Search Wikipedia for Quantum C...\"",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1182,
+      "details": "actionType=task  reply=\"Initiating web search for Quantum Comput...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Search Wikipedia for Quantum C...\"",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1267,
+      "details": "actionType=task  reply=\"Initiating search for Quantum Computing ...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Launch Calculator on my PC...\"",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1172,
+      "details": "actionType=task  reply=\"Initiating Calculator launch protocol....\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Launch Calculator on my PC...\"",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1638,
+      "details": "actionType=task  reply=\"Initiating the protocol to launch Calcul...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI01-INTENT",
+      "testGroup": "Intent Parsing",
+      "feature": "Prompt: \"Launch Calculator on my PC...\"",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1396,
+      "details": "actionType=task  reply=\"Initiating protocol to launch Calculator...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-FAST-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Fast Tier Generation",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1628,
+      "details": "Model=openai/gpt-4o-mini  reply=\"VERIFIED\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-FAST-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Fast Tier Generation",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 2221,
+      "details": "Model=openai/gpt-4o-mini  reply=\"VERIFIED\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-FAST-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Fast Tier Generation",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 758,
+      "details": "Model=openai/gpt-4o-mini  reply=\"VERIFIED\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-FAST-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Fast Tier Generation",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 818,
+      "details": "Model=openai/gpt-4o-mini  reply=\"VERIFIED\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-FAST-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Fast Tier Generation",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 1119,
+      "details": "Model=openai/gpt-4o-mini  reply=\"VERIFIED\"",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-REASON-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Reasoning Tier Structured JSON",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 1185,
+      "details": "status=ACTIVE  code=200",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-REASON-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Reasoning Tier Structured JSON",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1273,
+      "details": "status=ACTIVE  code=200",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-REASON-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Reasoning Tier Structured JSON",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 783,
+      "details": "status=ACTIVE  code=200",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-REASON-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Reasoning Tier Structured JSON",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 816,
+      "details": "status=ACTIVE  code=200",
+      "evidence": ""
+    },
+    {
+      "testId": "AI02-REASON-TIER",
+      "testGroup": "LLM Router",
+      "feature": "Reasoning Tier Structured JSON",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 1369,
+      "details": "status=ACTIVE  code=200",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 13,
+      "details": "Key=test_setting_1  Match=True (Write=12.0ms  Read=1.4ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "Key=test_setting_2  Match=True (Write=4.9ms  Read=0.4ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "Key=test_setting_3  Match=True (Write=5.0ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "Key=test_setting_4  Match=True (Write=5.0ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "Key=test_setting_5  Match=True (Write=4.5ms  Read=0.6ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 6,
+      "outcome": "PASS",
+      "durationMs": 6,
+      "details": "Key=test_setting_6  Match=True (Write=5.8ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 7,
+      "outcome": "PASS",
+      "durationMs": 6,
+      "details": "Key=test_setting_7  Match=True (Write=5.3ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 8,
+      "outcome": "PASS",
+      "durationMs": 6,
+      "details": "Key=test_setting_8  Match=True (Write=5.8ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 9,
+      "outcome": "PASS",
+      "durationMs": 6,
+      "details": "Key=test_setting_9  Match=True (Write=5.3ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-PREF",
+      "testGroup": "Persistence",
+      "feature": "Key-Value Preference Storage",
+      "trialNumber": 10,
+      "outcome": "PASS",
+      "durationMs": 6,
+      "details": "Key=test_setting_10  Match=True (Write=5.2ms  Read=0.3ms)",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-EMBED",
+      "testGroup": "Persistence",
+      "feature": "Vector Embedding Generation",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 861,
+      "details": "Dims=1536  Sample=\"D-ASK assistant integrates desktop ...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-EMBED",
+      "testGroup": "Persistence",
+      "feature": "Vector Embedding Generation",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 820,
+      "details": "Dims=1536  Sample=\"The user prefers dark themes with c...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-EMBED",
+      "testGroup": "Persistence",
+      "feature": "Vector Embedding Generation",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 842,
+      "details": "Dims=1536  Sample=\"Task orchestrator creates a directe...\"",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-SEARCH",
+      "testGroup": "Persistence",
+      "feature": "Semantic Memory Vector Retrieval",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 970,
+      "details": "Query=\"What visual theme does the use...\"  topSim=0.6324  matches=2",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-SEARCH",
+      "testGroup": "Persistence",
+      "feature": "Semantic Memory Vector Retrieval",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1019,
+      "details": "Query=\"How does the assistant coordin...\"  topSim=0.6440  matches=2",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-SEARCH",
+      "testGroup": "Persistence",
+      "feature": "Semantic Memory Vector Retrieval",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 923,
+      "details": "Query=\"What input modalities does D-A...\"  topSim=0.6173  matches=2",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-SEARCH",
+      "testGroup": "Persistence",
+      "feature": "Semantic Memory Vector Retrieval",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 926,
+      "details": "Query=\"Tell me about user interface p...\"  topSim=0.4349  matches=2",
+      "evidence": ""
+    },
+    {
+      "testId": "MEM01-SEARCH",
+      "testGroup": "Persistence",
+      "feature": "Semantic Memory Vector Retrieval",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 841,
+      "details": "Query=\"Does D-ASK manage desktop task...\"  topSim=0.6738  matches=2",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-AST",
+      "testGroup": "Coding Tools",
+      "feature": "TypeScript AST Outline Extraction",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 73,
+      "details": "Extracted 13 symbols from orchestrator.ts",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-AST",
+      "testGroup": "Coding Tools",
+      "feature": "TypeScript AST Outline Extraction",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 26,
+      "details": "Extracted 13 symbols from orchestrator.ts",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-AST",
+      "testGroup": "Coding Tools",
+      "feature": "TypeScript AST Outline Extraction",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 16,
+      "details": "Extracted 13 symbols from orchestrator.ts",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-GREP",
+      "testGroup": "Coding Tools",
+      "feature": "Workspace Grep Pattern Search",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 34167,
+      "details": "Found 2 matches in project tree",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-GREP",
+      "testGroup": "Coding Tools",
+      "feature": "Workspace Grep Pattern Search",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 23027,
+      "details": "Found 2 matches in project tree",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-GREP",
+      "testGroup": "Coding Tools",
+      "feature": "Workspace Grep Pattern Search",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 20463,
+      "details": "Found 2 matches in project tree",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-REPLACE",
+      "testGroup": "Coding Tools",
+      "feature": "Multi-Replace Safe Code Edit",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 130,
+      "details": "Atomic file patch and string replacement verified",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-REPLACE",
+      "testGroup": "Coding Tools",
+      "feature": "Multi-Replace Safe Code Edit",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 8,
+      "details": "Atomic file patch and string replacement verified",
+      "evidence": ""
+    },
+    {
+      "testId": "COD01-REPLACE",
+      "testGroup": "Coding Tools",
+      "feature": "Multi-Replace Safe Code Edit",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 8,
+      "details": "Atomic file patch and string replacement verified",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-MOUSE-POS",
+      "testGroup": "Desktop OS",
+      "feature": "Mouse Coordinate Telemetry Query",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 4140,
+      "details": "Coordinates: x=0  y=0",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-MOUSE-POS",
+      "testGroup": "Desktop OS",
+      "feature": "Mouse Coordinate Telemetry Query",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1337,
+      "details": "Coordinates: x=0  y=0",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-MOUSE-POS",
+      "testGroup": "Desktop OS",
+      "feature": "Mouse Coordinate Telemetry Query",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1167,
+      "details": "Coordinates: x=0  y=0",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-MOUSE-POS",
+      "testGroup": "Desktop OS",
+      "feature": "Mouse Coordinate Telemetry Query",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 1104,
+      "details": "Coordinates: x=0  y=0",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-MOUSE-POS",
+      "testGroup": "Desktop OS",
+      "feature": "Mouse Coordinate Telemetry Query",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 1517,
+      "details": "Coordinates: x=0  y=0",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-ACTIVE-WIN",
+      "testGroup": "Desktop OS",
+      "feature": "Active Focused Window Detection",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 2682,
+      "details": "Active Window: \"Desktop / Explorer\"",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-ACTIVE-WIN",
+      "testGroup": "Desktop OS",
+      "feature": "Active Focused Window Detection",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 793,
+      "details": "Active Window: \"Desktop / Explorer\"",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-ACTIVE-WIN",
+      "testGroup": "Desktop OS",
+      "feature": "Active Focused Window Detection",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 777,
+      "details": "Active Window: \"Desktop / Explorer\"",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-ACTIVE-WIN",
+      "testGroup": "Desktop OS",
+      "feature": "Active Focused Window Detection",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 721,
+      "details": "Active Window: \"Desktop / Explorer\"",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-ACTIVE-WIN",
+      "testGroup": "Desktop OS",
+      "feature": "Active Focused Window Detection",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 712,
+      "details": "Active Window: \"Desktop / Explorer\"",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-SCREENSHOT",
+      "testGroup": "Desktop OS",
+      "feature": "Desktop Screen Frame Buffer Capture",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 2005,
+      "details": "Captured 28 KB base64 JPEG screenshot",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-SCREENSHOT",
+      "testGroup": "Desktop OS",
+      "feature": "Desktop Screen Frame Buffer Capture",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 1428,
+      "details": "Captured 28 KB base64 JPEG screenshot",
+      "evidence": ""
+    },
+    {
+      "testId": "PC01-SCREENSHOT",
+      "testGroup": "Desktop OS",
+      "feature": "Desktop Screen Frame Buffer Capture",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 1515,
+      "details": "Captured 28 KB base64 JPEG screenshot",
+      "evidence": ""
+    },
+    {
+      "testId": "BR01-AUTOMATION",
+      "testGroup": "Browser Automation",
+      "feature": "Headless Browser Session Automation",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 9262,
+      "details": "Navigation  text extraction (615 chars)  screenshot capture (125 KB) and teardown verified",
+      "evidence": ""
+    },
+    {
+      "testId": "BR01-AUTOMATION",
+      "testGroup": "Browser Automation",
+      "feature": "Headless Browser Session Automation",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 6368,
+      "details": "Navigation  text extraction (615 chars)  screenshot capture (124 KB) and teardown verified",
+      "evidence": ""
+    },
+    {
+      "testId": "BR01-AUTOMATION",
+      "testGroup": "Browser Automation",
+      "feature": "Headless Browser Session Automation",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 6516,
+      "details": "Navigation  text extraction (615 chars)  screenshot capture (130 KB) and teardown verified",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-LOW-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Low-Risk Tool Policy: device.list",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=true  risk=low",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-LOW-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Low-Risk Tool Policy: web.search",
+      "trialNumber": 2,
+      "outcome": "FAIL",
+      "durationMs": 0,
+      "details": "allowed=false  risk=low",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-LOW-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Low-Risk Tool Policy: pc.get_active_window",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=true  risk=low",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-LOW-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Low-Risk Tool Policy: pc.system_status",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=true  risk=low",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-LOW-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Low-Risk Tool Policy: memory.get_preference",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=true  risk=low",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-HIGH-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Gated Dangerous Tool Policy: file.write",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=false  needsConfirmation=true  risk=high",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-HIGH-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Gated Dangerous Tool Policy: pc.mouse_click",
+      "trialNumber": 2,
+      "outcome": "FAIL",
+      "durationMs": 0,
+      "details": "allowed=true  needsConfirmation=false  risk=medium",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-HIGH-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Gated Dangerous Tool Policy: git.push",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=false  needsConfirmation=true  risk=critical",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-HIGH-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Gated Dangerous Tool Policy: pc.set_power_state",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=false  needsConfirmation=true  risk=high",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-HIGH-RISK",
+      "testGroup": "Policy & Security",
+      "feature": "Gated Dangerous Tool Policy: filesystem.delete",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "allowed=false  needsConfirmation=true  risk=high",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-INJECTION",
+      "testGroup": "Policy & Security",
+      "feature": "Command Injection Detection & Quarantine",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Inspected payload \"echo hello; rm -rf /\" safely via policy sanitizer",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-INJECTION",
+      "testGroup": "Policy & Security",
+      "feature": "Command Injection Detection & Quarantine",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Inspected payload \"npm test && whoami\" safely via policy sanitizer",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-INJECTION",
+      "testGroup": "Policy & Security",
+      "feature": "Command Injection Detection & Quarantine",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Inspected payload \"dir | calc\" safely via policy sanitizer",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-INJECTION",
+      "testGroup": "Policy & Security",
+      "feature": "Command Injection Detection & Quarantine",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Inspected payload \"type file.txt `notepad`\" safely via policy sanitizer",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-INJECTION",
+      "testGroup": "Policy & Security",
+      "feature": "Command Injection Detection & Quarantine",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Inspected payload \"cat /etc/passwd $PATH\" safely via policy sanitizer",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SSRF",
+      "testGroup": "Policy & Security",
+      "feature": "Private IP SSRF Blocker (http://127.0.0.1/admin)",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Blocked SSRF targeting private IP",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SSRF",
+      "testGroup": "Policy & Security",
+      "feature": "Private IP SSRF Blocker (http://localhost:8080/secrets)",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Blocked SSRF targeting private IP",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SSRF",
+      "testGroup": "Policy & Security",
+      "feature": "Private IP SSRF Blocker (http://10.0.0.1/metadata)",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Blocked SSRF targeting private IP",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SSRF",
+      "testGroup": "Policy & Security",
+      "feature": "Private IP SSRF Blocker (http://192.168.1.1/router)",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Blocked SSRF targeting private IP",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SSRF",
+      "testGroup": "Policy & Security",
+      "feature": "Private IP SSRF Blocker (http://172.16.0.1/internal)",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Blocked SSRF targeting private IP",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SCHEMA",
+      "testGroup": "Policy & Security",
+      "feature": "Missing Parameter Validation: memory.store_preference",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Tool \"memory.store_preference\" requires argument \"key\" but it was not provided.",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SCHEMA",
+      "testGroup": "Policy & Security",
+      "feature": "Missing Parameter Validation: device.connect",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Tool \"device.connect\" requires argument \"ip\" but it was not provided.",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SCHEMA",
+      "testGroup": "Policy & Security",
+      "feature": "Missing Parameter Validation: browser.navigate",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Tool \"browser.navigate\" requires argument \"url\" but it was not provided.",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SCHEMA",
+      "testGroup": "Policy & Security",
+      "feature": "Missing Parameter Validation: pc.mouse_move",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Tool \"pc.mouse_move\" requires argument \"y\" but it was not provided.",
+      "evidence": ""
+    },
+    {
+      "testId": "SEC01-SCHEMA",
+      "testGroup": "Policy & Security",
+      "feature": "Missing Parameter Validation: file.read",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 0,
+      "details": "Tool \"file.read\" requires argument \"path\" but it was not provided.",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-IDLE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Idle)",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13771MB / 16067MB (85.7%)  Free=2296MB",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-IDLE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Idle)",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13767MB / 16067MB (85.7%)  Free=2300MB",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-IDLE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Idle)",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13759MB / 16067MB (85.6%)  Free=2308MB",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-IDLE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Idle)",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13785MB / 16067MB (85.8%)  Free=2282MB",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-IDLE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Idle)",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13778MB / 16067MB (85.8%)  Free=2289MB",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-ACTIVE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Active Server)",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13782MB / 16067MB (85.8%)  Next.js Server Active on :3000",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-ACTIVE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Active Server)",
+      "trialNumber": 2,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13777MB / 16067MB (85.7%)  Next.js Server Active on :3000",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-ACTIVE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Active Server)",
+      "trialNumber": 3,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13793MB / 16067MB (85.8%)  Next.js Server Active on :3000",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-ACTIVE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Active Server)",
+      "trialNumber": 4,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13791MB / 16067MB (85.8%)  Next.js Server Active on :3000",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-ACTIVE",
+      "testGroup": "Resource Usage",
+      "feature": "System Resource Measurement (Active Server)",
+      "trialNumber": 5,
+      "outcome": "PASS",
+      "durationMs": 10,
+      "details": "RAM Used=13794MB / 16067MB (85.9%)  Next.js Server Active on :3000",
+      "evidence": ""
+    },
+    {
+      "testId": "SYS01-DB-SIZE",
+      "testGroup": "Resource Usage",
+      "feature": "SQLite Database Footprint",
+      "trialNumber": 1,
+      "outcome": "PASS",
+      "durationMs": 5,
+      "details": "Size on disk: 496.0 KB (.d-ask-memory.db)",
+      "evidence": "D:\\D-ASK\\D-ASK\\.d-ask-memory.db"
+    }
+  ]
+}
