@@ -7,10 +7,13 @@ import { taskService } from "../../../services/taskService";
 import { eventService } from "../../../services/eventService";
 import { orchestrator } from "../../../agent/orchestrator";
 import type { CreateTaskRequest, CreateTaskResponse } from "../../../agent/types";
+import { requireAuth } from "../../../lib/security/apiAuth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   try {
     const body = (await request.json()) as CreateTaskRequest;
 
@@ -60,6 +63,8 @@ export async function POST(request: NextRequest) {
 // ── GET /api/tasks — List all tasks for a session ────────────────────────────
 
 export async function GET(request: NextRequest) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const sessionId = request.nextUrl.searchParams.get("sessionId");
   const tasks = taskService.listTasks(sessionId ?? undefined);
   return NextResponse.json({ tasks, total: tasks.length });

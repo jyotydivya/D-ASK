@@ -5,11 +5,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { taskService } from "../../../../services/taskService";
 import { eventService } from "../../../../services/eventService";
+import { requireAuth } from "../../../../lib/security/apiAuth";
 
 export const runtime = "nodejs";
 
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const { id } = await params;
   const snapshot = taskService.getTaskSnapshot(id);
 
@@ -27,7 +30,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 // ── DELETE /api/tasks/[id] — Cancel a task ────────────────────────────────────
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const { id } = await params;
   const task = taskService.getTask(id);
 

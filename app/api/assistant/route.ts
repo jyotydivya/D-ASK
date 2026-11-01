@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { modelRouter } from "../../../agent/modelRouter";
+import { requireAuth } from "../../../lib/security/apiAuth";
 
 const MAX_MESSAGE_LENGTH = 1_000;
 
 export async function POST(request: Request) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   let message: unknown;
   try {
     ({ message } = await request.json());
