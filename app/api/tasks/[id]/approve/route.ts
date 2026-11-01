@@ -6,11 +6,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { taskService } from "../../../../../services/taskService";
 import { eventService } from "../../../../../services/eventService";
 import type { ApproveTaskRequest, ApproveTaskResponse } from "../../../../../agent/types";
+import { requireAuth } from "../../../../../lib/security/apiAuth";
 
 export const runtime = "nodejs";
 
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = requireAuth(request, "approve");
+  if (denied) return denied;
   try {
     const { id: taskId } = await params;
     const body = (await request.json()) as ApproveTaskRequest;

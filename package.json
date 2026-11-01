@@ -4,10 +4,11 @@
   "private": true,
   "main": "main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build --webpack",
-    "start": "next start",
-    "desktop": "electron ."
+    "start": "next start -H 127.0.0.1",
+    "desktop": "electron .",
+    "test:security": "npx tsx tests/security/api-auth.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '../../../lib/security/apiAuth';
 
 export async function POST(req: NextRequest) {
+  const denied = requireAuth(req, 'task');
+  if (denied) return denied;
   try {
     const formData = await req.formData();
     const file = formData.get('file') as Blob | null;
