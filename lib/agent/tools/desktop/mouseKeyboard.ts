@@ -4,6 +4,13 @@ import path from "path";
 
 const execFileAsync = promisify(execFile);
 
+// Phase 4B-1R.6: commands that produce real OS input events are blocked at this
+// layer (defense-in-depth behind the pcAgent routing guard). Read-only commands
+// (take_screenshot, size, position) are explicitly allowed through.
+const BLOCKED_SIDECAR_COMMANDS = new Set([
+  "mouse_move", "mouse_click", "mouse_scroll", "type_text", "press_key", "hotkey",
+]);
+
 /**
  * Interface to the Python PyAutoGUI sidecar.
  */
@@ -15,6 +22,12 @@ export class MouseKeyboardController {
   }
 
   private async runCommand(command: string, args: Record<string, unknown>): Promise<any> {
+    if (BLOCKED_SIDECAR_COMMANDS.has(command)) {
+      throw new Error(
+        `[Phase 4B-1R.6 containment] PyAutoGUI command "${command}" is blocked. ` +
+        "OS input injection is not authorized until Phase 4B-2 is separately approved."
+      );
+    }
     try {
       const { stdout } = await execFileAsync("python", [
         this.pythonScriptPath,
