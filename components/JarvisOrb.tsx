@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * Original ULTRON Holographic Orb & UI
+ * Copyright (c) 2026 Sagar Tamang
+ * Source: https://github.com/SAGAR-TAMANG/ultron-by-sagar-builds
+ * Licensed under the MIT License
+ *
+ * Integrated into D-ASK Native Windows Host (Rust + WebView2)
+ */
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi, type TelemetryData } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
@@ -139,6 +149,31 @@ function matchLocalCommand(normalized: string, hasPhone: boolean = false): Local
 }
 
 
+
+export type DaemonTelemetry = {
+  cpu: number;
+  ramAvailMb: number;
+  ramLoadPct: number;
+  gpuName: string;
+  state: string;
+};
+
+export function postToNativeHost(msg: unknown) {
+  try {
+    const json = typeof msg === "string" ? msg : JSON.stringify(msg);
+    if (typeof window !== "undefined") {
+      const w = window as any;
+      if (w.ipc && typeof w.ipc.postMessage === "function") {
+        w.ipc.postMessage(json);
+      } else if (w.chrome && w.chrome.webview && typeof w.chrome.webview.postMessage === "function") {
+        w.chrome.webview.postMessage(json);
+      }
+    }
+  } catch (e) {
+    console.warn("postToNativeHost error:", e);
+  }
+}
+
 export default function JarvisOrb() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -168,6 +203,78 @@ export default function JarvisOrb() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [aiThinking, setAiThinking] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
+
+  // ── Operational Safety & Emergency Stop State ─────────────────────────────
+  const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
+  const [pendingApproval, setPendingApproval] = useState<any | null>(null);
+  const [approvalCountdown, setApprovalCountdown] = useState<number>(30);
+
+  const handleEmergencyStop = useCallback(() => {
+    setIsEmergencyStopped(true);
+    setPendingApproval(null);
+    soundFx.playAlertSound();
+    postToNativeHost({
+      type: "EmergencyStop",
+      payload: { reason: "User clicked Emergency Stop button in HUD" },
+    });
+  }, []);
+
+  const handleResumeExecution = useCallback(() => {
+    soundFx.playLockSound();
+    postToNativeHost({
+      type: "ResumeExecution",
+      payload: { reason: "User clicked Resume button in HUD" },
+    });
+  }, []);
+
+  const handleApproveAction = useCallback(() => {
+    if (!pendingApproval) return;
+    soundFx.playLockSound();
+    postToNativeHost({
+      type: "ActionApprovalDecision",
+      payload: {
+        approval_id: pendingApproval.approvalId,
+        action_id: pendingApproval.actionId,
+        action_type: pendingApproval.actionType,
+        parameters_sha256: pendingApproval.parametersSha256,
+        approved: true,
+      },
+    });
+    setPendingApproval(null);
+  }, [pendingApproval]);
+
+  const handleDenyApproval = useCallback((reason: string = "User declined in HUD") => {
+    if (!pendingApproval) return;
+    soundFx.playAlertSound();
+    postToNativeHost({
+      type: "ActionApprovalDecision",
+      payload: {
+        approval_id: pendingApproval.approvalId,
+        action_id: pendingApproval.actionId,
+        action_type: pendingApproval.actionType,
+        parameters_sha256: pendingApproval.parametersSha256,
+        approved: false,
+        reason,
+      },
+    });
+    setPendingApproval(null);
+  }, [pendingApproval]);
+
+  useEffect(() => {
+    if (!pendingApproval) return;
+    setApprovalCountdown(30);
+    const interval = setInterval(() => {
+      setApprovalCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleDenyApproval("Approval timed out");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pendingApproval, handleDenyApproval]);
 
   // ── Agentic Task System ──────────────────────────────────────────────────
   // Callbacks update history ONCE when the task terminates
@@ -223,6 +330,78 @@ export default function JarvisOrb() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
   const [audioLevel, setAudioLevel] = useState(0);
+  
+  const [daemonTelemetry, setDaemonTelemetry] = useState<DaemonTelemetry | null>(null);
+  const [activeOrbState, setActiveOrbState] = useState<string>("idle");
+
+
+  useEffect(() => {
+    const handleHostMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (!data || !data.type) return;
+
+        if (data.type === "EmergencyStopTriggered" || data.type === "EmergencyStopResponse") {
+          setIsEmergencyStopped(true);
+          setPendingApproval(null);
+          soundFx.playAlertSound();
+        } else if (data.type === "ExecutionResumed" || data.type === "ResumeExecutionResponse") {
+          setIsEmergencyStopped(false);
+          soundFx.playLockSound();
+        } else if (data.type === "ActionApprovalRequest" && data.payload) {
+          setPendingApproval(data.payload);
+          soundFx.playAlertSound();
+        } else if (data.type === "TelemetryUpdate" && data.payload) {
+          const t = data.payload;
+          setDaemonTelemetry({
+            cpu: Math.round(t.cpu?.totalUsagePercent ?? 0),
+            ramAvailMb: Math.round((t.systemRam?.availableBytes ?? 0) / (1024 * 1024)),
+            ramLoadPct: Math.round(t.systemRam?.loadPercentage ?? 0),
+            gpuName: t.gpu?.adapterName ?? "Integrated",
+            state: t.resourceStatus ?? "Normal",
+          });
+        } else if (data.type === "StateUpdate" && data.payload) {
+          const s = data.payload;
+          const targetStatus = s.activeStatus || s.orbMode || "idle";
+          if (sceneRef.current) {
+            sceneRef.current.setState(targetStatus);
+            setActiveOrbState(sceneRef.current.getState());
+          }
+          if (s.activeStatus) {
+            setDaemonTelemetry((prev) => prev ? { ...prev, state: s.activeStatus } : null);
+          }
+        } else if (data.type === "ResourceAlert" && data.payload) {
+          if (data.payload.severity === "Critical") {
+            sceneRef.current?.setState("error");
+            setActiveOrbState("error");
+          } else if (data.payload.severity === "Warning") {
+            sceneRef.current?.setState("waiting_for_approval");
+            setActiveOrbState("waiting_for_approval");
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      postToNativeHost({ type: "CameraIntent", payload: { enabled: false } });
+      trackerRef.current?.stop();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("message", handleHostMessage);
+    (window as any).__DASK_IPC_DISPATCH__ = (msg: unknown) => {
+      window.postMessage(msg, "*");
+    };
+
+    postToNativeHost({ type: "FrontendReady" });
+
+    return () => {
+      window.removeEventListener("message", handleHostMessage);
+      delete (window as any).__DASK_IPC_DISPATCH__;
+    };
+  }, []);
+
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     rotXDeg: 0,
     rotYDeg: 0,
@@ -370,6 +549,7 @@ export default function JarvisOrb() {
   }, []);
 
   const stopGestures = useCallback(() => {
+    postToNativeHost({ type: "CameraIntent", payload: { enabled: false } });
     trackerRef.current?.stop();
     trackerRef.current = null;
     setCamera("off");
@@ -385,6 +565,9 @@ export default function JarvisOrb() {
     setCamera("starting");
     setError(null);
     soundFx.playProcessSound();
+
+    // Signal native host: explicit user action to request camera access
+    postToNativeHost({ type: "CameraIntent", payload: { enabled: true } });
 
     const tracker = new HandTracker(video, overlay, {
       onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
@@ -407,6 +590,15 @@ export default function JarvisOrb() {
           : "TRACKING INIT FAILED",
       );
       soundFx.playAlertSound();
+    }
+  }, []);
+
+
+  const handleSelectOrbState = useCallback((stateName: string) => {
+    if (sceneRef.current) {
+      sceneRef.current.setState(stateName);
+      setActiveOrbState(sceneRef.current.getState());
+      postToNativeHost({ type: "SetState", payload: { state: stateName } });
     }
   }, []);
 
@@ -901,15 +1093,160 @@ export default function JarvisOrb() {
 
       {/* Top Left Title & Telemetry Header */}
       <header className="hud hud-header">
-        <div className="hud-title">D-ASK</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div className="hud-title">D-ASK</div>
+          <button
+            onClick={isEmergencyStopped ? handleResumeExecution : handleEmergencyStop}
+            style={{
+              background: isEmergencyStopped ? "rgba(0, 229, 255, 0.2)" : "rgba(255, 34, 68, 0.3)",
+              border: isEmergencyStopped ? "1px solid #00e5ff" : "1px solid #ff2244",
+              color: isEmergencyStopped ? "#00e5ff" : "#ff4466",
+              padding: "4px 12px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "1px",
+              cursor: "pointer",
+              boxShadow: isEmergencyStopped ? "0 0 10px rgba(0, 229, 255, 0.3)" : "0 0 14px rgba(255, 34, 68, 0.5)",
+              transition: "all 0.2s ease",
+            }}
+            title={isEmergencyStopped ? "Resume system operations" : "Emergency Stop (Ctrl+Shift+F12)"}
+          >
+            {isEmergencyStopped ? "▶ RESUME" : "🛑 STOP [Ctrl+Shift+F12]"}
+          </button>
+        </div>
         <div className="hud-telemetry" aria-label="Orb Telemetry Readout">
           <div><span>PITCH:</span> {telemetry.rotXDeg}°</div>
           <div><span>YAW:</span> {telemetry.rotYDeg}°</div>
           <div><span>ZOOM:</span> {telemetry.zoomDist}x</div>
           <div><span>FPS:</span> {telemetry.fps}</div>
-          <div><span>PARTICLES:</span> {telemetry.particleCount}</div>
+          {daemonTelemetry && (
+            <>
+              <div><span>DAEMON CPU:</span> {daemonTelemetry.cpu}%</div>
+              <div><span>SYS RAM:</span> {daemonTelemetry.ramAvailMb} MB ({daemonTelemetry.ramLoadPct}%)</div>
+              <div><span>GPU:</span> {daemonTelemetry.gpuName}</div>
+              <div><span>DAEMON STATE:</span> {daemonTelemetry.state}</div>
+            </>
+          )}
         </div>
       </header>
+
+      {/* Emergency Stop Active Banner */}
+      {isEmergencyStopped && (
+        <div
+          style={{
+            position: "fixed",
+            top: "80px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(255, 34, 68, 0.2)",
+            border: "1px solid #ff2244",
+            boxShadow: "0 0 20px rgba(255, 34, 68, 0.5)",
+            backdropFilter: "blur(12px)",
+            padding: "8px 24px",
+            borderRadius: "6px",
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+            zIndex: 9999,
+            color: "#fff",
+            fontFamily: "monospace",
+          }}
+        >
+          <span style={{ color: "#ff4466", fontWeight: "bold", letterSpacing: "1px" }}>
+            ⚠ EMERGENCY STOP ACTIVE — ACTIONS FROZEN
+          </span>
+          <button
+            onClick={handleResumeExecution}
+            style={{
+              background: "#ff2244",
+              color: "#fff",
+              border: "none",
+              padding: "4px 14px",
+              borderRadius: "4px",
+              fontWeight: 700,
+              fontSize: "11px",
+              cursor: "pointer",
+            }}
+          >
+            RESUME
+          </button>
+        </div>
+      )}
+
+      {/* Action Approval Modal */}
+      {pendingApproval && (
+        <div
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "420px",
+            background: "rgba(10, 15, 25, 0.95)",
+            border: "1px solid #ffaa30",
+            boxShadow: "0 0 30px rgba(255, 170, 48, 0.35)",
+            backdropFilter: "blur(16px)",
+            borderRadius: "8px",
+            padding: "20px",
+            zIndex: 10000,
+            color: "#e2e8f0",
+            fontFamily: "monospace",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,170,48,0.3)", paddingBottom: "10px", marginBottom: "12px" }}>
+            <span style={{ color: "#ffaa30", fontWeight: "bold", fontSize: "14px", letterSpacing: "1px" }}>
+              ACTION APPROVAL REQUIRED
+            </span>
+            <span style={{ background: "rgba(255,170,48,0.2)", color: "#ffaa30", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
+              {approvalCountdown}s
+            </span>
+          </div>
+          <div style={{ fontSize: "12px", lineHeight: "1.6", marginBottom: "16px" }}>
+            <div><strong style={{ color: "#94a3b8" }}>Type:</strong> {pendingApproval.actionType}</div>
+            <div><strong style={{ color: "#94a3b8" }}>Target:</strong> {pendingApproval.targetProcessName || "Desktop"} {pendingApproval.targetHwnd ? `(HWND: 0x${pendingApproval.targetHwnd.toString(16)})` : ""}</div>
+            <div><strong style={{ color: "#94a3b8" }}>Risk Level:</strong> <span style={{ color: pendingApproval.riskLevel === "Critical" ? "#ff2244" : "#ffaa30", fontWeight: 700 }}>{pendingApproval.riskLevel}</span></div>
+            {pendingApproval.reason && (
+              <div><strong style={{ color: "#94a3b8" }}>Reason:</strong> {pendingApproval.reason}</div>
+            )}
+            <div style={{ marginTop: "8px", fontSize: "10px", color: "#64748b", wordBreak: "break-all" }}>
+              SHA256: {pendingApproval.parametersSha256}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => handleDenyApproval("Declined by user")}
+              style={{
+                background: "rgba(255, 34, 68, 0.2)",
+                border: "1px solid #ff2244",
+                color: "#ff4466",
+                padding: "6px 16px",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: "12px",
+              }}
+            >
+              DENY
+            </button>
+            <button
+              onClick={handleApproveAction}
+              style={{
+                background: "rgba(0, 255, 136, 0.25)",
+                border: "1px solid #00ff88",
+                color: "#00ff88",
+                padding: "6px 20px",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: 700,
+                fontSize: "12px",
+              }}
+            >
+              APPROVE
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Connected Devices HUD Panel */}
       <DevicePanel

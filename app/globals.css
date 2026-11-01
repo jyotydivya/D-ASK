@@ -52,10 +52,13 @@
 html,
 body {
   height: 100%;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 body {
-  background: #000;
+  background: transparent !important;
+  background-color: transparent !important;
   overflow: hidden;
   font-family: "Courier New", monospace;
   transition: color 0.3s ease;
@@ -112,7 +115,7 @@ body {
   background: radial-gradient(
     ellipse at center,
     transparent 40%,
-    rgba(0, 0, 0, 0.75) 100%
+    rgba(0, 0, 0, 0.12) 100%
   );
 }
 

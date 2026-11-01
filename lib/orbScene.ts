@@ -23,6 +23,8 @@ export interface OrbSceneApi {
   zoomOut(): void;
   resetView(): void;
   setTheme(theme: ThemeColor): void;
+  setState(stateName: string): void;
+  getState(): string;
   setAudioLevel(level: number): void;
   getTelemetry(): TelemetryData;
   dispose(): void;
@@ -40,6 +42,232 @@ interface ThemePalette {
   C_HOT: number;
   tintVec: THREE.Vector3;
 }
+
+export type OrbVisualState =
+  | "idle"
+  | "listening"
+  | "thinking"
+  | "planning"
+  | "executing"
+  | "observing"
+  | "verifying"
+  | "waiting_for_approval"
+  | "recovering"
+  | "completed"
+  | "error";
+
+export interface StateVisualConfig {
+  palette: ThemePalette;
+  coreSpeedMult: number;
+  shellSpeedMult: number;
+  pulseFreq: number;
+  pulseAmplitude: number;
+  bloomStrength: number;
+  chromaticIntensity: number;
+  scanRingSpeed: number;
+  label: string;
+}
+
+export const STATE_CONFIGS: Record<OrbVisualState, StateVisualConfig> = {
+  idle: {
+    palette: {
+      C_BRIGHT: 0xffaa30,
+      C_MID: 0xdd7700,
+      C_DIM: 0x884400,
+      C_FAINT: 0x553300,
+      C_HOT: 0xffcc66,
+      tintVec: new THREE.Vector3(1.15, 0.85, 0.55),
+    },
+    coreSpeedMult: 1.0,
+    shellSpeedMult: 1.0,
+    pulseFreq: 1.2,
+    pulseAmplitude: 0.25,
+    bloomStrength: 1.4,
+    chromaticIntensity: 0.003,
+    scanRingSpeed: 1.0,
+    label: "IDLE // READY",
+  },
+  listening: {
+    palette: {
+      C_BRIGHT: 0x00e5ff,
+      C_MID: 0x0099cc,
+      C_DIM: 0x005588,
+      C_FAINT: 0x003355,
+      C_HOT: 0x66f0ff,
+      tintVec: new THREE.Vector3(0.55, 0.95, 1.30),
+    },
+    coreSpeedMult: 1.3,
+    shellSpeedMult: 0.8,
+    pulseFreq: 2.0,
+    pulseAmplitude: 0.45,
+    bloomStrength: 1.7,
+    chromaticIntensity: 0.0035,
+    scanRingSpeed: 2.5,
+    label: "LISTENING // CAPTURING",
+  },
+  thinking: {
+    palette: {
+      C_BRIGHT: 0x9d4edd,
+      C_MID: 0x7b2cbf,
+      C_DIM: 0x5a189a,
+      C_FAINT: 0x3c096c,
+      C_HOT: 0xc77dff,
+      tintVec: new THREE.Vector3(0.85, 0.45, 1.35),
+    },
+    coreSpeedMult: 3.2,
+    shellSpeedMult: 0.5,
+    pulseFreq: 3.0,
+    pulseAmplitude: 0.6,
+    bloomStrength: 2.0,
+    chromaticIntensity: 0.005,
+    scanRingSpeed: 0.4,
+    label: "THINKING // INFERENCE",
+  },
+  planning: {
+    palette: {
+      C_BRIGHT: 0x0096c7,
+      C_MID: 0x0077b6,
+      C_DIM: 0x023e8a,
+      C_FAINT: 0x03045e,
+      C_HOT: 0x48cae4,
+      tintVec: new THREE.Vector3(0.50, 0.80, 1.30),
+    },
+    coreSpeedMult: 0.8,
+    shellSpeedMult: 1.8,
+    pulseFreq: 0.9,
+    pulseAmplitude: 0.3,
+    bloomStrength: 1.5,
+    chromaticIntensity: 0.0025,
+    scanRingSpeed: 1.2,
+    label: "PLANNING // DECOMPOSITION",
+  },
+  executing: {
+    palette: {
+      C_BRIGHT: 0x00ff88,
+      C_MID: 0x00cc55,
+      C_DIM: 0x007733,
+      C_FAINT: 0x004422,
+      C_HOT: 0x66ffaa,
+      tintVec: new THREE.Vector3(0.55, 1.30, 0.75),
+    },
+    coreSpeedMult: 2.2,
+    shellSpeedMult: 2.2,
+    pulseFreq: 2.4,
+    pulseAmplitude: 0.7,
+    bloomStrength: 2.2,
+    chromaticIntensity: 0.004,
+    scanRingSpeed: 2.0,
+    label: "EXECUTING // ACTION",
+  },
+  observing: {
+    palette: {
+      C_BRIGHT: 0x06d6a0,
+      C_MID: 0x118ab2,
+      C_DIM: 0x073b4c,
+      C_FAINT: 0x021820,
+      C_HOT: 0x72efdd,
+      tintVec: new THREE.Vector3(0.60, 1.20, 1.10),
+    },
+    coreSpeedMult: 1.0,
+    shellSpeedMult: 0.7,
+    pulseFreq: 1.1,
+    pulseAmplitude: 0.35,
+    bloomStrength: 1.6,
+    chromaticIntensity: 0.003,
+    scanRingSpeed: 1.8,
+    label: "OBSERVING // PERCEPTION",
+  },
+  verifying: {
+    palette: {
+      C_BRIGHT: 0xffd166,
+      C_MID: 0xf39c12,
+      C_DIM: 0xb7791f,
+      C_FAINT: 0x744210,
+      C_HOT: 0xffe082,
+      tintVec: new THREE.Vector3(1.25, 1.05, 0.60),
+    },
+    coreSpeedMult: 1.4,
+    shellSpeedMult: 1.1,
+    pulseFreq: 1.5,
+    pulseAmplitude: 0.4,
+    bloomStrength: 1.7,
+    chromaticIntensity: 0.003,
+    scanRingSpeed: 1.5,
+    label: "VERIFYING // VALIDATION",
+  },
+  waiting_for_approval: {
+    palette: {
+      C_BRIGHT: 0xf4a261,
+      C_MID: 0xe76f51,
+      C_DIM: 0x9c4129,
+      C_FAINT: 0x5c2213,
+      C_HOT: 0xf8c291,
+      tintVec: new THREE.Vector3(1.30, 0.80, 0.50),
+    },
+    coreSpeedMult: 0.4,
+    shellSpeedMult: 0.4,
+    pulseFreq: 0.6,
+    pulseAmplitude: 0.5,
+    bloomStrength: 1.8,
+    chromaticIntensity: 0.0045,
+    scanRingSpeed: 0.6,
+    label: "WAITING FOR APPROVAL",
+  },
+  recovering: {
+    palette: {
+      C_BRIGHT: 0xe07a5f,
+      C_MID: 0xd94e34,
+      C_DIM: 0x8c2815,
+      C_FAINT: 0x541407,
+      C_HOT: 0xf28e79,
+      tintVec: new THREE.Vector3(1.20, 0.70, 0.70),
+    },
+    coreSpeedMult: -1.5,
+    shellSpeedMult: 0.7,
+    pulseFreq: 1.4,
+    pulseAmplitude: 0.4,
+    bloomStrength: 1.5,
+    chromaticIntensity: 0.004,
+    scanRingSpeed: 1.0,
+    label: "RECOVERING // RESILIENCE",
+  },
+  completed: {
+    palette: {
+      C_BRIGHT: 0x48cae4,
+      C_MID: 0x00b4d8,
+      C_DIM: 0x0077b6,
+      C_FAINT: 0x03045e,
+      C_HOT: 0x90e0ef,
+      tintVec: new THREE.Vector3(0.70, 1.20, 1.25),
+    },
+    coreSpeedMult: 1.2,
+    shellSpeedMult: 1.2,
+    pulseFreq: 0.8,
+    pulseAmplitude: 0.25,
+    bloomStrength: 1.9,
+    chromaticIntensity: 0.002,
+    scanRingSpeed: 1.0,
+    label: "COMPLETED // SUCCESS",
+  },
+  error: {
+    palette: {
+      C_BRIGHT: 0xff2244,
+      C_MID: 0xcc1122,
+      C_DIM: 0x880011,
+      C_FAINT: 0x550011,
+      C_HOT: 0xff6677,
+      tintVec: new THREE.Vector3(1.40, 0.35, 0.45),
+    },
+    coreSpeedMult: 0.6,
+    shellSpeedMult: 0.6,
+    pulseFreq: 0.7,
+    pulseAmplitude: 0.75,
+    bloomStrength: 2.3,
+    chromaticIntensity: 0.007,
+    scanRingSpeed: 0.5,
+    label: "ERROR // HALT",
+  },
+};
 
 const THEME_PALETTES: Record<ThemeColor, ThemePalette> = {
   amber: {
@@ -80,6 +308,14 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   const width = container.clientWidth;
   const height = container.clientHeight;
 
+  let currentVisualState: OrbVisualState = "idle";
+  let targetStateConfig: StateVisualConfig = STATE_CONFIGS.idle;
+  let activeCoreSpeed = targetStateConfig.coreSpeedMult;
+  let activeShellSpeed = targetStateConfig.shellSpeedMult;
+  let activePulseFreq = targetStateConfig.pulseFreq;
+  let activePulseAmp = targetStateConfig.pulseAmplitude;
+  let activeBloom = targetStateConfig.bloomStrength;
+  let activeScanSpeed = targetStateConfig.scanRingSpeed;
   let currentTheme: ThemeColor = "amber";
   let currentPalette = THEME_PALETTES.amber;
   let targetAudioLevel = 0;
@@ -95,7 +331,8 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 500);
   camera.position.copy(HOME_POSITION);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: "high-performance" });
+  renderer.setClearColor(0x000000, 0);
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -104,7 +341,10 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
 
   // ——— POST PROCESSING ———
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  renderPass.clearColor = new THREE.Color(0x000000);
+  renderPass.clearAlpha = 0;
+  composer.addPass(renderPass);
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(width, height),
@@ -143,8 +383,12 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
         vec4 cr = texture2D(tDiffuse, vUv + dir * offset);
         vec4 cg = texture2D(tDiffuse, vUv);
         vec4 cb = texture2D(tDiffuse, vUv - dir * offset * 0.5);
-        gl_FragColor = vec4(cr.r, cg.g * 1.05, cb.b * 0.6, 1.0) * flicker;
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * uTint, 0.35);
+        vec3 color = vec3(cr.r, cg.g * 1.05, cb.b * 0.6) * flicker;
+        color = mix(color, color * uTint, 0.35);
+        float maxTexAlpha = max(cg.a, max(cr.a, cb.a));
+        float lumAlpha = clamp(max(color.r, max(color.g, color.b)) * 1.6, 0.0, 1.0);
+        float alpha = max(maxTexAlpha, lumAlpha);
+        gl_FragColor = vec4(color, alpha);
       }
     `,
   };
@@ -754,6 +998,37 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     controls.update();
   }
 
+
+  function setState(stateName: string) {
+    const raw = (stateName || "idle").toLowerCase().replace(/[\s_-]+/g, "");
+    let resolvedState: OrbVisualState = "idle";
+
+    if (raw.includes("listen")) resolvedState = "listening";
+    else if (raw.includes("think") || raw.includes("generat") || raw.includes("process")) resolvedState = "thinking";
+    else if (raw.includes("plan")) resolvedState = "planning";
+    else if (raw.includes("execut")) resolvedState = "executing";
+    else if (raw.includes("observ")) resolvedState = "observing";
+    else if (raw.includes("verify")) resolvedState = "verifying";
+    else if (raw.includes("approval") || raw.includes("waiting")) resolvedState = "waiting_for_approval";
+    else if (raw.includes("recover") || raw.includes("reconnect")) resolvedState = "recovering";
+    else if (raw.includes("complet") || raw.includes("success")) resolvedState = "completed";
+    else if (raw.includes("error") || raw.includes("crit") || raw.includes("fail") || raw.includes("warn") || raw.includes("alert")) resolvedState = "error";
+    else resolvedState = "idle";
+
+    currentVisualState = resolvedState;
+    targetStateConfig = STATE_CONFIGS[resolvedState];
+    currentPalette = targetStateConfig.palette;
+
+    materialsToTheme.forEach(({ mat, key }) => {
+      mat.color.setHex(currentPalette[key] as number);
+    });
+    chromaticPass.uniforms.uTint.value.copy(currentPalette.tintVec);
+  }
+
+  function getState(): string {
+    return currentVisualState;
+  }
+
   function setTheme(theme: ThemeColor) {
     currentTheme = theme;
     currentPalette = THEME_PALETTES[theme];
@@ -808,9 +1083,18 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
 
     // Smooth audio level
     currentAudioLevel += (targetAudioLevel - currentAudioLevel) * 0.15;
+    // Smooth state parameter interpolation
+    activeCoreSpeed += (targetStateConfig.coreSpeedMult - activeCoreSpeed) * 0.05;
+    activeShellSpeed += (targetStateConfig.shellSpeedMult - activeShellSpeed) * 0.05;
+    activePulseFreq += (targetStateConfig.pulseFreq - activePulseFreq) * 0.05;
+    activePulseAmp += (targetStateConfig.pulseAmplitude - activePulseAmp) * 0.05;
+    activeBloom += (targetStateConfig.bloomStrength - activeBloom) * 0.05;
+    activeScanSpeed += (targetStateConfig.scanRingSpeed - activeScanSpeed) * 0.05;
+    chromaticPass.uniforms.uIntensity.value += (targetStateConfig.chromaticIntensity - chromaticPass.uniforms.uIntensity.value) * 0.05;
+
 
     // Shell rotations reactive to audio level
-    const speedMult = 1 + currentAudioLevel * 2.5;
+    const speedMult = (1 + currentAudioLevel * 2.5) * activeShellSpeed;
     outerShell.rotation.y += 0.0015 * speedMult;
     outerShell.rotation.x = Math.sin(t * 0.08) * 0.05;
 
@@ -820,19 +1104,19 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     shell2.rotation.y -= 0.001 * speedMult;
     shell2.rotation.z = Math.sin(t * 0.12) * 0.03;
 
-    innerCore.rotation.y -= 0.005 * speedMult;
+    innerCore.rotation.y -= 0.005 * (1 + currentAudioLevel * 2.5) * activeCoreSpeed;
     innerCore.rotation.z += 0.002;
     innerCore.rotation.x = Math.cos(t * 0.1) * 0.08;
 
-    icoWire.rotation.x += 0.008 * speedMult;
-    icoWire.rotation.y += 0.012 * speedMult;
+    icoWire.rotation.x += 0.008 * (1 + currentAudioLevel * 2.5) * activeCoreSpeed;
+    icoWire.rotation.y += 0.012 * (1 + currentAudioLevel * 2.5) * activeCoreSpeed;
 
     // Core pulse — surge with audio level
-    const wave1 = Math.sin(t * 1.2);
+    const wave1 = Math.sin(t * activePulseFreq);
     const wave3 = Math.pow(Math.max(0, Math.sin(t * 0.4)), 5);
     const wave4 = Math.pow(Math.max(0, Math.sin(t * 0.7 + 2)), 8);
     const fadeOut = Math.pow(Math.max(0, Math.sin(t * 0.25)), 3);
-    const surge = wave3 * 1.5 + wave4 * 2.0 + currentAudioLevel * 2.0;
+    const surge = (wave3 * 1.5 + wave4 * 2.0 + currentAudioLevel * 2.0) * activePulseAmp;
 
     const coreScale = 1 + surge + Math.sin(t * 5) * 0.05;
     coreSphere.scale.setScalar(coreScale);
@@ -880,13 +1164,13 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     }
 
     // Scan rings sweeping
-    const scanY1 = Math.sin(t * 0.4) * R1;
+    const scanY1 = Math.sin(t * 0.4 * activeScanSpeed) * R1;
     scanRing1.position.y = scanY1;
     const scanS1 = Math.sqrt(Math.max(0, R1 * R1 - scanY1 * scanY1)) / R1;
     scanRing1.scale.set(scanS1, scanS1, 1);
     (scanRing1.material as THREE.MeshBasicMaterial).opacity = (0.2 + currentAudioLevel * 0.4) * scanS1;
 
-    const scanY2 = Math.sin(t * 0.6 + 2) * R3;
+    const scanY2 = Math.sin(t * 0.6 * activeScanSpeed + 2) * R3;
     scanRing2.position.y = scanY2;
     const scanS2 = Math.sqrt(Math.max(0, R3 * R3 - scanY2 * scanY2)) / R3;
     scanRing2.scale.set(scanS2, scanS2, 1);
@@ -907,7 +1191,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     }
 
     // Bloom pulse flaring with audio
-    bloom.strength = 1.6 + Math.sin(t * 0.8) * 0.3 + currentAudioLevel * 1.2;
+    bloom.strength = activeBloom + Math.sin(t * 0.8) * 0.2 + currentAudioLevel * 1.0;
 
     chromaticPass.uniforms.uTime.value = t;
 
@@ -955,6 +1239,8 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     zoomOut: () => zoomBy(1.55),
     resetView,
     setTheme,
+    setState,
+    getState,
     setAudioLevel,
     getTelemetry,
     dispose,

@@ -25,3 +25,42 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ── .NET build artifacts ──────────────────────────────────────────────────────
+**/bin/
+**/obj/
+
+# ── Rust build artifacts ─────────────────────────────────────────────────────
+src/hud-native/target/
+
+# ── NuGet package cache (local redirect in nuget.config) ─────────────────────
+.nuget/
+
+# ── xwin cross-compiler SDK and download cache ───────────────────────────────
+.xwin-sdk/
+.xwin-cache/
+
+# ── .NET user-level SDK (local install under project root) ───────────────────
+.dotnet_home/
+
+# ── Local ML model weights ───────────────────────────────────────────────────
+models/*.gguf
+
+# ── Scratch sub-project build outputs (keep source, ignore compiled output) ──
+scratch/Benchmark/bin/
+scratch/Benchmark/obj/
+scratch/TestComUia/bin/
+scratch/TestComUia/obj/
+scratch/UiaTest/bin/
+scratch/UiaTest/obj/
+
+# ── Scratch ephemera: logs, screenshots, one-shot patch scripts ──────────────
+scratch/*.log
+scratch/*.png
+scratch/fix_*.js
+scratch/update_*.js
+scratch/Benchmark/*.dll
+scratch/Benchmark/*.runtimeconfig.json
+
+# ── Env file with secrets (also caught by .env* above, made explicit) ─────────
+.env.local
