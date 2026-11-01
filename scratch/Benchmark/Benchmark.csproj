@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="DAsk.Daemon">
+      <HintPath>..\..\src\DAsk.Daemon\bin\Debug\net8.0\DAsk.Daemon.dll</HintPath>
+    </Reference>
+    <Reference Include="DAsk.Protocol">
+      <HintPath>..\..\src\DAsk.Protocol\bin\Debug\net8.0\DAsk.Protocol.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>..\..\src\DAsk.Daemon\bin\Debug\net8.0\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Data.Sqlite">
+      <HintPath>..\..\src\DAsk.Daemon\bin\Debug\net8.0\Microsoft.Data.Sqlite.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
