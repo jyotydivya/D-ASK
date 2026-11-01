@@ -20,6 +20,26 @@ import { popUndo, getUndoHistory } from "../../lib/agent/tools/system/undoStack"
 import type { AgentContext, AgentResult, AgentType } from "../types";
 import { gameUpdaterService } from "@/lib/agent/tools/desktop/gameUpdater";
 
+// Phase 4B-1R.6: All tools that produce real OS side effects are blocked until
+// Phase 4B-2 is separately authorized and audited. Only read-only observation
+// tools remain active. This set is enforced at routeTool() before any service
+// call can reach a child process, SendKeys, shell, or filesystem write.
+const BLOCKED_ACTUATION_TOOLS = new Set([
+  // PyAutoGUI / cursor / keyboard
+  "pc.mouse_move", "pc.mouse_click", "pc.type_text", "pc.press_key", "pc.hotkey",
+  // wscript.shell.SendKeys (keyboard injection via PowerShell COM)
+  "pc.manage_window", "pc.volume_up", "pc.volume_down", "pc.toggle_mute",
+  // Shell / process execution
+  "pc.launch_application", "pc.close_application", "pc.set_power_state",
+  "pc.youtube_play", "pc.web_search", "pc.check_weather",
+  "pc.send_whatsapp", "pc.send_telegram", "pc.launch_steam", "pc.launch_epic",
+  "pc.set_reminder",
+  // WMI write
+  "pc.set_brightness",
+  // Filesystem mutation
+  "file.write", "file.copy", "file.move", "file.delete",
+]);
+
 export class PCAgent extends BaseAgent {
   readonly agentType: AgentType = "pc";
   readonly name = "PC Agent";
@@ -124,6 +144,12 @@ Return JSON format:
     args: Record<string, unknown>,
     _context: AgentContext
   ): Promise<unknown> {
+    if (BLOCKED_ACTUATION_TOOLS.has(toolName)) {
+      throw new Error(
+        `[Phase 4B-1R.6 containment] Tool "${toolName}" is blocked. ` +
+        "OS actuation is not authorized until Phase 4B-2 is separately approved."
+      );
+    }
     switch (toolName) {
       // System / Window tools
       case "pc.launch_application":

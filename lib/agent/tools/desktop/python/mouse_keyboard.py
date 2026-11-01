@@ -1,44 +1,52 @@
 import sys
 import json
-import pyautogui
+
+# Phase 4B-1R.6: actuation commands blocked at Python entry point (defense-in-depth).
+# Prevents direct invocation of this script from bypassing the TypeScript guards.
+# pyautogui is imported lazily below so this guard fires even when pyautogui is absent.
+_BLOCKED_COMMANDS = {"mouse_move", "mouse_click", "mouse_scroll", "type_text", "press_key", "hotkey"}
 
 def handle_command(command, args):
+    if command in _BLOCKED_COMMANDS:
+        return {"success": False, "error": f"[Phase 4B-1R.6 containment] Command '{command}' blocked. OS actuation is not authorized until Phase 4B-2 is separately approved."}
+    # pyautogui is only imported for non-blocked commands
+    import pyautogui
     try:
         if command == "mouse_move":
             x, y = args.get("x"), args.get("y")
             pyautogui.moveTo(x, y, duration=0.2)
             return {"success": True, "message": f"Moved mouse to ({x}, {y})"}
-            
+
         elif command == "mouse_click":
             button = args.get("button", "left")
             clicks = args.get("clicks", 1)
             pyautogui.click(button=button, clicks=clicks)
             return {"success": True, "message": f"Clicked {button} {clicks} times"}
-            
+
         elif command == "mouse_scroll":
             amount = args.get("amount", -10)
             pyautogui.scroll(amount)
             return {"success": True, "message": f"Scrolled {amount}"}
-            
+
         elif command == "type_text":
             text = args.get("text", "")
             pyautogui.write(text, interval=0.05)
             return {"success": True, "message": f"Typed text"}
-            
+
         elif command == "press_key":
             key = args.get("key", "")
             pyautogui.press(key)
             return {"success": True, "message": f"Pressed {key}"}
-            
+
         elif command == "hotkey":
             keys = args.get("keys", [])
             pyautogui.hotkey(*keys)
             return {"success": True, "message": f"Pressed hotkey {keys}"}
-            
+
         elif command == "position":
             x, y = pyautogui.position()
             return {"success": True, "position": {"x": x, "y": y}}
-            
+
         elif command == "size":
             w, h = pyautogui.size()
             return {"success": True, "size": {"width": w, "height": h}}
@@ -97,9 +105,6 @@ def handle_command(command, args):
         return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
-    # Suppress fail-safe if in corners just in case, or leave it.
-    pyautogui.FAILSAFE = False
-    
     try:
         if len(sys.argv) < 3:
             print(json.dumps({"success": False, "error": "Missing command and arguments"}))
