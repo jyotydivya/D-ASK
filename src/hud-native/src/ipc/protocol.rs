@@ -164,11 +164,27 @@ pub struct StateUpdate {
     pub sequence_number: i64,
 }
 
+/// Phase 7B.1a liveness proof. Before ping `n` the HUD posts probe `n` to its UI event loop and its panic-hotkey
+/// message loop; ping `n+1` carries the last probe each loop acknowledged. The daemon renews the HUD's lease only
+/// when both cover the previous ping, so a hung loop stops renewing it even while this IPC task keeps running.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HeartbeatPing {
     pub sequence: i64,
     pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub event_loop_ack: i64,
+    #[serde(default)]
+    pub hotkey_ack: i64,
+    #[serde(default)]
+    pub hotkey_registered: bool,
+}
+
+impl HeartbeatPing {
+    /// A ping without liveness proof (it can never renew the lease). Used by transport tests.
+    pub fn bare(sequence: i64, timestamp: DateTime<Utc>) -> Self {
+        Self { sequence, timestamp, event_loop_ack: 0, hotkey_ack: 0, hotkey_registered: false }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +193,40 @@ pub struct HeartbeatPong {
     pub sequence: i64,
     pub ping_timestamp: DateTime<Utc>,
     pub pong_timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub lease_renewed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Daemon to owning HUD: an approval changed state, or a decision was refused (`decision_accepted == Some(false)`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalStateNotification {
+    pub approval_id: String,
+    pub action_id: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_accepted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl ApprovalStateNotification {
+    pub fn is_terminal(&self) -> bool {
+        self.state != "Pending"
+    }
+}
+
+/// The daemon's explicit answer to a message it does not handle (nothing is dropped silently).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageRejectedNotification {
+    pub rejected_type: String,
+    pub code: String,
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
 }
 
 // ==========================================
@@ -313,6 +363,12 @@ pub struct ActionApprovalRequest {
     pub created_at_utc: DateTime<Utc>,
     pub expires_at_utc: DateTime<Utc>,
     pub reason: String,
+    /// Phase 7B.1a: daemon-computed digest of `canonical_action`; must be echoed in the decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_digest: Option<String>,
+    /// Phase 7B.1a: the exact action being authorized (canonical JSON). The page renders the approval from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,6 +386,8 @@ pub struct ActionApprovalResponse {
     pub stop_generation: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejection_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_digest: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -434,3 +492,60 @@ pub struct PanicHotkeyStatusNotification {
 
 
 
+
+#[cfg(test)]
+mod phase7b1a_tests {
+    use super::*;
+
+    #[test]
+    fn heartbeat_ping_carries_the_liveness_proof_in_the_daemon_field_names() {
+        let p = HeartbeatPing { sequence: 7, timestamp: Utc::now(), event_loop_ack: 6, hotkey_ack: 6, hotkey_registered: true };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["sequence"], 7);
+        assert_eq!(v["eventLoopAck"], 6);
+        assert_eq!(v["hotkeyAck"], 6);
+        assert_eq!(v["hotkeyRegistered"], true);
+        let bare = HeartbeatPing::bare(1, Utc::now());
+        assert!(!bare.hotkey_registered, "a bare ping carries no proof and can never renew the lease");
+    }
+
+    #[test]
+    fn approval_request_keeps_the_canonical_action_and_digest_for_the_page() {
+        let json = serde_json::json!({
+            "approvalId": "a1", "actionId": "x1", "actionType": "SimulatedType", "parametersSha256": "p",
+            "actionParameters": { "text": "hi" }, "targetProcessName": "f.exe", "targetWindowTitle": "F",
+            "targetHwnd": 1, "targetProcessId": 2, "sessionId": "s", "stopGeneration": 1, "riskLevel": "Elevated",
+            "createdAtUtc": "2026-11-08T12:00:00Z", "expiresAtUtc": "2026-11-08T12:00:30Z", "reason": "r",
+            "actionDigest": "d", "canonicalAction": "{\"x\":1}", "someFutureField": true
+        });
+        let r: ActionApprovalRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(r.action_digest.as_deref(), Some("d"));
+        // The HUD re-serialises the struct for the page: the new fields must survive that.
+        let again = serde_json::to_value(&r).unwrap();
+        assert_eq!(again["canonicalAction"], "{\"x\":1}");
+        assert_eq!(again["actionDigest"], "d");
+    }
+
+    #[test]
+    fn approval_state_and_rejection_notifications_parse() {
+        let n: ApprovalStateNotification = serde_json::from_value(serde_json::json!({
+            "approvalId": "a1", "actionId": "x1", "state": "Expired", "decisionAccepted": false, "timestamp": "2026-11-08T12:00:00Z"
+        })).unwrap();
+        assert!(n.is_terminal());
+        assert_eq!(n.decision_accepted, Some(false));
+        let r: MessageRejectedNotification = serde_json::from_value(serde_json::json!({
+            "rejectedType": "TaskApproval", "code": "obsolete_authorization_message", "message": "m", "timestamp": "2026-11-08T12:00:00Z"
+        })).unwrap();
+        assert_eq!(r.code, "obsolete_authorization_message");
+    }
+
+    #[test]
+    fn decision_echoes_the_digest() {
+        let d = ActionApprovalResponse {
+            approval_id: "a".into(), action_id: "b".into(), action_type: "t".into(), parameters_sha256: "p".into(),
+            approved: true, decision_source: "UserExplicitConfirmation".into(), decided_at_utc: Utc::now(),
+            session_id: None, stop_generation: 0, rejection_reason: None, action_digest: Some("d".into()),
+        };
+        assert_eq!(serde_json::to_value(&d).unwrap()["actionDigest"], "d");
+    }
+}

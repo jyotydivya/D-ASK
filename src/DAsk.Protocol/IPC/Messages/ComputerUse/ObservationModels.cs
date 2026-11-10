@@ -239,5 +239,29 @@ public record CaptureObservationResponse
     [JsonPropertyName("rejectionCode")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RejectionCode { get; init; }
+
+    // ── Phase 7B.1b: freshness and per-source status (the screenshot and UIA are read one after the other) ──
+
+    [JsonPropertyName("capturedAtUtc")]
+    public DateTimeOffset CapturedAtUtc { get; init; }
+
+    /// <summary>ok or failed. "ok" means the capture API succeeded; it does not validate the pixels.</summary>
+    [JsonPropertyName("captureStatus")]
+    public string CaptureStatus { get; init; } = "ok";
+
+    [JsonPropertyName("uiaStatus")]
+    public string UiaStatus { get; init; } = "Skipped";
+
+    [JsonPropertyName("uiaInspectedAtUtc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? UiaInspectedAtUtc { get; init; }
+
+    /// <summary>After this the observation is stale and must not be used.</summary>
+    [JsonPropertyName("expiresAtUtc")]
+    public DateTimeOffset ExpiresAtUtc { get; init; }
+
+    /// <summary>Always false: the screenshot and the UI Automation read are not one atomic snapshot.</summary>
+    [JsonPropertyName("isAtomic")]
+    public bool IsAtomic { get; init; }
 }
 

@@ -225,26 +225,33 @@ class SoundEngine {
   }
 }
 
+/**
+ * Offline text-to-speech: ONLY voices the browser engine reports as local (Windows SAPI / OneCore voices such as
+ * David, Mark, Zira). Online voices ("Natural", "Online", Google) send text to a cloud service and are never used;
+ * with no local voice D-ASK stays silent rather than going online.
+ */
+export function pickLocalVoice(voices: readonly Pick<SpeechSynthesisVoice, "name" | "lang" | "localService">[]): Pick<SpeechSynthesisVoice, "name" | "lang" | "localService"> | null {
+  const local = voices.filter((v) => v.localService === true && !/\b(online|natural|google)\b/i.test(v.name));
+  const en = local.filter((v) => v.lang.toLowerCase().startsWith("en"));
+  return en.find((v) => /\b(david|mark)\b/i.test(v.name)) ?? en[0] ?? local[0] ?? null;
+}
+
+/** The native HUD's bridge (WebView2): speech goes to Windows SAPI there (offline by construction). */
+function nativeBridge(): { postMessage(m: string): void } | null {
+  if (typeof window === "undefined") return null;
+  const ipc = (window as unknown as { ipc?: { postMessage?: (m: string) => void } }).ipc;
+  return ipc && typeof ipc.postMessage === "function" ? (ipc as { postMessage(m: string): void }) : null;
+}
+
 class SpeechEngine {
   private enabled = true;
+  private nativeTimer: number | null = null;
   private voice: SpeechSynthesisVoice | null = null;
 
   constructor() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       const loadVoices = () => {
-        const voices = window.speechSynthesis.getVoices();
-        this.voice =
-          voices.find(
-            (v) =>
-              v.lang.startsWith("en") &&
-              (v.name.includes("Google") ||
-                v.name.includes("Natural") ||
-                v.name.includes("David") ||
-                v.name.includes("Jarvis") ||
-                v.name.includes("Daniel")),
-          ) ||
-          voices.find((v) => v.lang.startsWith("en")) ||
-          null;
+        this.voice = pickLocalVoice(window.speechSynthesis.getVoices()) as SpeechSynthesisVoice | null;
       };
 
       loadVoices();
@@ -254,11 +261,18 @@ class SpeechEngine {
     }
   }
 
+  /** Interruption: stops speaking immediately (Emergency Stop, the user starts talking, a new answer). */
+  public stop() {
+    const native = nativeBridge();
+    if (native) { native.postMessage(JSON.stringify({ type: "StopSpeaking" })); if (this.nativeTimer !== null) { clearInterval(this.nativeTimer); this.nativeTimer = null; } }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
+  public hasLocalVoice(): boolean { return nativeBridge() !== null || this.voice !== null; }
+
   public setEnabled(enabled: boolean) {
     this.enabled = enabled;
-    if (!enabled && typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    if (!enabled) this.stop();
   }
 
   public isEnabled(): boolean {
@@ -271,30 +285,50 @@ class SpeechEngine {
   }
 
   public speak(text: string, onBoundary?: (audioLevel: number) => void, onEnd?: () => void) {
-    if (!this.enabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
+    if (!this.enabled || typeof window === "undefined") {
       if (onEnd) onEnd();
       return;
     }
-
-    window.speechSynthesis.cancel();
-
     const cleanText = text
       .replace(/[#*`_~]/g, "")
       .replace(/\s+/g, " ")
       .trim();
-
     if (!cleanText) {
       if (onEnd) onEnd();
       return;
     }
 
+    // Native HUD: Windows SAPI in the HUD process (local voices only). It reports no progress, so the orb animation
+    // runs for an estimate of the speaking time; stop() ends both at once.
+    const native = nativeBridge();
+    if (native) {
+      this.stop();
+      native.postMessage(JSON.stringify({ type: "Speak", payload: { text: cleanText } }));
+      const ms = Math.min(60_000, 600 + cleanText.split(" ").length * 380);
+      const started = Date.now();
+      this.nativeTimer = window.setInterval(() => {
+        if (Date.now() - started >= ms) { if (this.nativeTimer !== null) clearInterval(this.nativeTimer); this.nativeTimer = null; if (onBoundary) onBoundary(0); if (onEnd) onEnd(); return; }
+        if (onBoundary) onBoundary(0.3 + Math.random() * 0.7);
+      }, 80);
+      return;
+    }
+
+    if (!("speechSynthesis" in window)) {
+      if (onEnd) onEnd();
+      return;
+    }
+    window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 1.05;
     utterance.pitch = 0.95;
 
-    if (this.voice) {
-      utterance.voice = this.voice;
+    // Never an online voice: without a local one, nothing is spoken (the default voice could be an online one).
+    if (!this.voice) {
+      if (onEnd) onEnd();
+      return;
     }
+    utterance.voice = this.voice;
 
     let simulateInterval: number | null = null;
     utterance.onstart = () => {

@@ -50,8 +50,23 @@ public class ActionPolicyEngine
     private readonly ConcurrentDictionary<string, DateTimeOffset> _consumedApprovals = new();
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(30);
 
+    /// <summary>The longest an approval may stay pending, whatever the caller asks for (Phase 7B.1a).</summary>
+    public static readonly TimeSpan MaxApprovalTtl = TimeSpan.FromSeconds(30);
+
+    // Terminal states of recently finished approvals, so a late or duplicate decision gets a precise answer.
+    private readonly ConcurrentDictionary<string, (string State, DateTimeOffset At)> _recentTerminal = new();
+    private const int MaxRecentTerminal = 512;
+
+    private Func<string, bool>? _isSessionLive;
+
     public int PendingApprovalCount => _pendingApprovals.Count;
     public int GrantedApprovalCount => _grantedApprovals.Count;
+
+    /// <summary>A normalised, daemon-built request was registered and must be shown to its owner session only.</summary>
+    public event EventHandler<ActionApprovalRequest>? ApprovalRequested;
+
+    /// <summary>(target session, notification): an approval changed state, or a decision was refused.</summary>
+    public event EventHandler<(string SessionId, ApprovalStateNotification Notification)>? ApprovalStateChanged;
 
     public ActionPolicyEngine(ILogger<ActionPolicyEngine> logger, IEvidenceRecorder? evidenceRecorder = null)
     {
@@ -59,25 +74,162 @@ public class ActionPolicyEngine
         _evidenceRecorder = evidenceRecorder;
     }
 
+    /// <summary>
+    /// Installs the HUD liveness check (Phase 7B.1a). When set, an approval is neither registered for nor decided by a
+    /// session that is not live. The pipe server installs it in production; unit tests may leave it unset.
+    /// </summary>
+    public void SetSessionLivenessGate(Func<string, bool> isSessionLive) => _isSessionLive = isSessionLive;
+
+    /// <summary>The daemon-normalised request of a pending approval (read-only snapshot), or false.</summary>
+    public bool TryGetPendingRequest(string approvalId, out ActionApprovalRequest request)
+    {
+        if (_pendingApprovals.TryGetValue(approvalId, out var cached)) { request = cached.Request; return true; }
+        request = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// SHA-256 of the parameters in DASK-CJ-1 canonical form (an object of string values, ordinal key order), with the
+    /// <see cref="CanonicalJson.ParametersDomain"/> tag. Injective: different parameter sets never share a hash.
+    /// Throws <see cref="CanonicalEncodingException"/> for values that cannot be encoded exactly (e.g. unpaired surrogates).
+    /// </summary>
     public static string ComputeCanonicalHash(Dictionary<string, string>? parameters)
     {
-        if (parameters == null || parameters.Count == 0)
-        {
-            using var shaEmpty = SHA256.Create();
-            return Convert.ToHexString(shaEmpty.ComputeHash(Encoding.UTF8.GetBytes(string.Empty))).ToLowerInvariant();
-        }
-
-        var sortedKeys = parameters.Keys.OrderBy(k => k, StringComparer.Ordinal);
-        var sb = new StringBuilder();
-        foreach (var key in sortedKeys)
-        {
-            sb.Append(key).Append('=').Append(parameters[key]).Append('\n');
-        }
-
-        using var sha = SHA256.Create();
-        byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        var map = parameters?.ToDictionary(kv => kv.Key, kv => (string?)kv.Value, StringComparer.Ordinal);
+        return CanonicalJson.Digest(CanonicalJson.ParametersDomain, CanonicalJson.EncodeStringMap(map));
     }
+
+    private static bool TryComputeCanonicalHash(Dictionary<string, string>? parameters, out string hash)
+    {
+        try { hash = ComputeCanonicalHash(parameters); return true; }
+        catch (CanonicalEncodingException) { hash = string.Empty; return false; }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex ActionTypePattern = new(@"^[A-Za-z][A-Za-z0-9_.]{0,63}$");
+    private static readonly System.Text.RegularExpressions.Regex ParameterNamePattern = new(@"^[A-Za-z][A-Za-z0-9_.\-]{0,63}$");
+    private static readonly System.Text.RegularExpressions.Regex SecretNamePattern =
+        new(@"pass(word|wd|phrase)?|secret|token|api[_.\-]?key|credential|\bpin\b|otp|private[_.\-]?key", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    public const int MaxDisplayParameters = 32;
+    public const int MaxParameterValueChars = 2000;
+
+    /// <summary>
+    /// Whether the operation can be shown to the user exactly as it will be authorized. Anything that could not be
+    /// displayed faithfully (control characters, oversized values, unencodable text) or that names a secret is refused:
+    /// an approval the user cannot read is never offered.
+    /// </summary>
+    public static string? ValidateRepresentable(ActionApprovalRequest r)
+    {
+        if (!ActionTypePattern.IsMatch(r.ActionType ?? string.Empty)) return "the action type is not a recognised name";
+        var p = r.ActionParameters ?? new Dictionary<string, string>();
+        if (p.Count > MaxDisplayParameters) return $"more than {MaxDisplayParameters} parameters";
+        foreach (var (key, value) in p)
+        {
+            if (!ParameterNamePattern.IsMatch(key)) return "a parameter name cannot be displayed";
+            if (SecretNamePattern.IsMatch(key)) return $"parameter '{key}' looks like a secret and is never shown or approved";
+            if (value is null) return $"parameter '{key}' has no value";
+            if (value.Length > MaxParameterValueChars) return $"parameter '{key}' is longer than {MaxParameterValueChars} characters";
+            if (!DisplayableText(value, allowLineBreaks: true)) return $"parameter '{key}' contains characters that cannot be displayed";
+        }
+        if (!DisplayableText(r.TargetProcessName ?? string.Empty, false) || (r.TargetProcessName?.Length ?? 0) > 260) return "the target process name cannot be displayed";
+        if (!DisplayableText(r.TargetWindowTitle ?? string.Empty, false) || (r.TargetWindowTitle?.Length ?? 0) > 512) return "the target window title cannot be displayed";
+        if (!DisplayableText(r.Reason ?? string.Empty, false) || (r.Reason?.Length ?? 0) > 512) return "the reason cannot be displayed";
+        return null;
+    }
+
+    private static bool DisplayableText(string s, bool allowLineBreaks)
+    {
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (char.IsHighSurrogate(c)) { if (i + 1 >= s.Length || !char.IsLowSurrogate(s[i + 1])) return false; i++; continue; }
+            if (char.IsLowSurrogate(c)) return false;
+            if (allowLineBreaks && (c == '\n' || c == '\t')) continue;
+            if (char.IsControl(c)) return false;
+            // Bidirectional overrides and isolates can make text read differently from what it is.
+            if (c is >= '‪' and <= '‮' or >= '⁦' and <= '⁩') return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The exact action being authorized, in DASK-CJ-1 canonical JSON, and its digest. Built by the daemon only, from
+    /// the normalised request; the HUD renders the approval from this text and must echo the digest.
+    /// </summary>
+    public static (string Canonical, string Digest) BuildCanonicalAction(ActionApprovalRequest r)
+    {
+        var parameters = new System.Text.Json.Nodes.JsonObject();
+        foreach (var (k, v) in (r.ActionParameters ?? new Dictionary<string, string>()).OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            parameters[k] = v;
+
+        var node = new System.Text.Json.Nodes.JsonObject
+        {
+            ["schema"] = "dask.approval.action.v1",
+            ["approvalId"] = r.ApprovalId,
+            ["actionId"] = r.ActionId,
+            ["actionType"] = r.ActionType,
+            ["parameters"] = parameters,
+            ["parametersSha256"] = r.ParametersSha256,
+            ["target"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["processName"] = r.TargetProcessName,
+                ["windowTitle"] = r.TargetWindowTitle,
+                ["hwnd"] = r.TargetHwnd,
+                ["processId"] = r.TargetProcessId,
+                ["processCreationTime"] = r.TargetProcessCreationTime?.ToUniversalTime().ToString("O"),
+            },
+            ["sessionId"] = r.SessionId,
+            ["stopGeneration"] = checked((long)r.StopGeneration),
+            ["riskLevel"] = r.RiskLevel,
+            ["reason"] = r.Reason,
+            ["createdAtUtc"] = r.CreatedAtUtc.ToUniversalTime().ToString("O"),
+            ["expiresAtUtc"] = r.ExpiresAtUtc.ToUniversalTime().ToString("O"),
+        };
+        string canonical = CanonicalJson.EncodeToString(System.Text.Json.JsonSerializer.SerializeToElement(node));
+        return (canonical, CanonicalJson.Digest(CanonicalJson.ActionDomain, canonical));
+    }
+
+    private void Notify(string sessionId, string approvalId, string actionId, string state, string? reason, bool? decisionAccepted = null)
+    {
+        if (ApprovalStates.IsTerminal(state) && decisionAccepted is null)
+        {
+            _recentTerminal[approvalId] = (state, DateTimeOffset.UtcNow);
+            if (_recentTerminal.Count > MaxRecentTerminal)
+                foreach (var old in _recentTerminal.OrderBy(kv => kv.Value.At).Take(_recentTerminal.Count - MaxRecentTerminal))
+                    _recentTerminal.TryRemove(old.Key, out _);
+        }
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        try
+        {
+            ApprovalStateChanged?.Invoke(this, (sessionId, new ApprovalStateNotification
+            {
+                ApprovalId = approvalId,
+                ActionId = actionId,
+                State = state,
+                Reason = reason is null ? null : AuditJson.Bound(reason, 300),
+                DecisionAccepted = decisionAccepted,
+            }));
+        }
+        catch (Exception ex) { _logger.LogError(ex, "[PolicyEngine] An approval-state subscriber failed."); }
+    }
+
+    /// <summary>Completes a pending approval exactly once and tells its owner the terminal state.</summary>
+    private bool Finalize(CachedApproval cached, ActionApprovalResponse response, string state, string? reason)
+    {
+        bool set = cached.CompletionSource.TrySetResult(response);
+        if (set) Notify(cached.Request.SessionId, cached.Request.ApprovalId, cached.Request.ActionId, state, reason);
+        return set;
+    }
+
+    /// <summary>The state an approval went to when the daemon refused a decision source, for the owner's display.</summary>
+    private static string StateFor(string decisionSource) => decisionSource switch
+    {
+        "TimeoutDenied" => ApprovalStates.Expired,
+        "EmergencyStopDenied" => ApprovalStates.InvalidatedByEmergencyStop,
+        "StaleGenerationDenied" => ApprovalStates.InvalidatedByEmergencyStop,
+        "SessionDisconnectedDenied" => ApprovalStates.Disconnected,
+        "UserCancelled" => ApprovalStates.Cancelled,
+        _ => ApprovalStates.Rejected,
+    };
 
     public (bool isAllowed, ActionRiskLevel riskLevel, string? reason) EvaluatePolicy(
         string actionType,
@@ -111,6 +263,54 @@ public class ActionPolicyEngine
             return (false, ActionRiskLevel.Elevated, "Simulated desktop input requires explicit user confirmation.");
         }
 
+        // Phase 7B.2: window operations on a daemon-verified window. Never auto-allowed: each needs the user's explicit
+        // approval of the exact action. (Phase 7B.2 has no executor; an approval is validated and consumed, not acted on.)
+        if (normalizedType.Equals(DesktopActionTypes.FocusWindow, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.SetWindowState, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Window operations require explicit user approval of the exact action.");
+        }
+
+        // P1 / P2: element-bound mouse and keyboard input. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.ClickElement, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.TypeText, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.PressKeys, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Desktop input requires explicit user approval of the exact action.");
+        }
+
+        // Browser stage 2: one click or one field fill in D-ASK's private browser. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.BrowserClick, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.BrowserFill, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Browser actions require explicit user approval of the exact action.");
+        }
+
+        // File organisation: moving named files of one folder into its subfolders (and undoing that). Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.FilesOrganize, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.FilesUndoOrganize, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Moving files requires explicit user approval of the exact list of moves.");
+        }
+
+        // Workflows: scheduling future runs of a saved workflow. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.WorkflowSchedule, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Scheduling a workflow requires explicit user approval of its steps and timing.");
+        }
+
+        // Plugins: installing (approving) a plugin's code. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.PluginInstall, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Installing a plugin requires explicit user approval of its tools and files.");
+        }
+
+        // Notes: creating ONE new text file (never overwriting) in the configured notes folder. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.FilesCreateNote, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Creating a note requires explicit user approval of its exact title and text.");
+        }
+
         // Known Critical / System Destruction Actions
         if (normalizedType.Contains("Shell", StringComparison.OrdinalIgnoreCase) ||
             normalizedType.Contains("PowerShell", StringComparison.OrdinalIgnoreCase) ||
@@ -129,6 +329,72 @@ public class ActionPolicyEngine
         ActionApprovalRequest request,
         CancellationToken cancellationToken = default)
     {
+        // H3-9: every approval has an owning session, and only that session may decide it. An approval
+        // without an owner would be decidable (and later consumable) by anyone, so it is never registered.
+        // The owner must come from the trusted, server-side session of whoever creates the request (the
+        // server-generated IpcClientSession id), never from a client-supplied value.
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: no owning session.", request.ApprovalId);
+            return new ActionApprovalResponse
+            {
+                ApprovalId = request.ApprovalId,
+                ActionId = request.ActionId,
+                ActionType = request.ActionType,
+                ParametersSha256 = request.ParametersSha256,
+                Approved = false,
+                DecisionSource = "IntegrityMismatch",
+                RejectionReason = "Approval request has no owning session; it cannot be registered."
+            };
+        }
+
+        // Phase 7B.1a: an approval is offered only to a live HUD, only for an operation that can be shown exactly as it
+        // will be authorized, and only with values the daemon computed itself.
+        if (_isSessionLive != null && !_isSessionLive(request.SessionId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: the owning HUD session has no valid liveness lease.", request.ApprovalId);
+            return Refused(request, "SessionDisconnectedDenied", "The owning HUD is not live (no valid heartbeat lease); the approval cannot be offered.");
+        }
+
+        string? unrepresentable = ValidateRepresentable(request);
+        if (unrepresentable != null)
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: {Reason}.", request.ApprovalId, unrepresentable);
+            return Refused(request, "IntegrityMismatch", $"The operation cannot be represented clearly ({unrepresentable}); approval refused.");
+        }
+
+        if (!TryComputeCanonicalHash(request.ActionParameters, out string paramsHash))
+            return Refused(request, "IntegrityMismatch", "The parameters cannot be encoded canonically; approval refused.");
+        if (!string.IsNullOrEmpty(request.ParametersSha256) &&
+            !string.Equals(request.ParametersSha256, paramsHash, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: supplied parameter hash is not the canonical hash.", request.ApprovalId);
+            return Refused(request, "IntegrityMismatch", "Supplied parameter SHA-256 does not match the daemon's canonical hash of the parameters.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (request.ExpiresAtUtc <= now)
+            return Refused(request, "TimeoutDenied", "The approval request had already expired when it was registered.");
+        var expiresAt = request.ExpiresAtUtc - now > MaxApprovalTtl ? now + MaxApprovalTtl : request.ExpiresAtUtc;
+
+        // The normalised request is the only one that exists from here on: daemon creation time, clamped expiry, the
+        // daemon's own parameter hash, and the canonical action with its digest. Caller-supplied digests are discarded.
+        var normalised = request with
+        {
+            CreatedAtUtc = now,
+            ExpiresAtUtc = expiresAt,
+            ParametersSha256 = paramsHash,
+            ActionDigest = null,
+            CanonicalAction = null,
+        };
+        string canonicalAction, actionDigest;
+        try { (canonicalAction, actionDigest) = BuildCanonicalAction(normalised); }
+        catch (Exception ex) when (ex is CanonicalEncodingException or OverflowException)
+        {
+            return Refused(request, "IntegrityMismatch", $"The action cannot be encoded canonically ({ex.Message}); approval refused.");
+        }
+        request = normalised with { ActionDigest = actionDigest, CanonicalAction = canonicalAction };
+
         var cached = new CachedApproval
         {
             Request = request
@@ -162,12 +428,21 @@ public class ActionPolicyEngine
                     Source = "PolicyEngine",
                     ActionId = request.ActionId,
                     ApprovalId = request.ApprovalId,
+                    SessionId = request.SessionId,
                     RiskLevel = request.RiskLevel,
                     ParametersSha256 = request.ParametersSha256,
                     StopGeneration = request.StopGeneration,
                     Decision = "Pending",
-                    Reason = request.Reason,
-                    DetailsJson = $"{{\"actionType\":\"{request.ActionType}\",\"targetProcess\":\"{request.TargetProcessName}\",\"targetHwnd\":{request.TargetHwnd}}}"
+                    Reason = AuditJson.Bound(request.Reason),
+                    // Serializer-built (F5): process names and titles cannot change the JSON structure. No parameter values.
+                    DetailsJson = AuditJson.Details(new
+                    {
+                        actionType = AuditJson.Bound(request.ActionType),
+                        targetProcess = AuditJson.Bound(request.TargetProcessName),
+                        targetHwnd = request.TargetHwnd,
+                        actionDigest = request.ActionDigest,
+                        expiresAtUtc = request.ExpiresAtUtc,
+                    })
                 }, cancellationToken);
             }
             catch (Exception ex)
@@ -176,27 +451,32 @@ public class ActionPolicyEngine
             }
         }
 
+        // Owner-only delivery of the exact operation (the pipe server routes it to request.SessionId).
+        try { ApprovalRequested?.Invoke(this, request); }
+        catch (Exception ex) { _logger.LogError(ex, "[PolicyEngine] An approval-request subscriber failed."); }
+
         // Schedule TTL expiration timer
         var ttl = request.ExpiresAtUtc - DateTimeOffset.UtcNow;
-        if (ttl <= TimeSpan.Zero) ttl = DefaultTtl;
+        if (ttl <= TimeSpan.Zero) ttl = TimeSpan.FromMilliseconds(1);
 
         cached.ExpirationCts.CancelAfter(ttl);
+        var registered = request;
         using var reg = cached.ExpirationCts.Token.Register(() =>
         {
-            if (_pendingApprovals.TryRemove(request.ApprovalId, out var expired))
+            if (_pendingApprovals.TryRemove(new KeyValuePair<string, CachedApproval>(registered.ApprovalId, cached)))
             {
-                _logger.LogWarning("[PolicyEngine] Approval {ApprovalId} EXPIRED (TTL elapsed).", request.ApprovalId);
+                _logger.LogWarning("[PolicyEngine] Approval {ApprovalId} EXPIRED (TTL elapsed).", registered.ApprovalId);
                 var expiredResp = new ActionApprovalResponse
                 {
-                    ApprovalId = request.ApprovalId,
-                    ActionId = request.ActionId,
-                    ActionType = request.ActionType,
-                    ParametersSha256 = request.ParametersSha256,
+                    ApprovalId = registered.ApprovalId,
+                    ActionId = registered.ActionId,
+                    ActionType = registered.ActionType,
+                    ParametersSha256 = registered.ParametersSha256,
                     Approved = false,
                     DecisionSource = "TimeoutDenied",
                     RejectionReason = "Approval request expired before user confirmation."
                 };
-                expired.CompletionSource.TrySetResult(expiredResp);
+                Finalize(cached, expiredResp, ApprovalStates.Expired, "The approval expired before a decision.");
 
                 if (_evidenceRecorder != null)
                 {
@@ -204,11 +484,12 @@ public class ActionPolicyEngine
                     {
                         EventType = "ApprovalExpired",
                         Source = "PolicyEngine",
-                        ActionId = request.ActionId,
-                        ApprovalId = request.ApprovalId,
-                        RiskLevel = request.RiskLevel,
-                        ParametersSha256 = request.ParametersSha256,
-                        StopGeneration = request.StopGeneration,
+                        ActionId = registered.ActionId,
+                        ApprovalId = registered.ApprovalId,
+                        SessionId = registered.SessionId,
+                        RiskLevel = registered.RiskLevel,
+                        ParametersSha256 = registered.ParametersSha256,
+                        StopGeneration = registered.StopGeneration,
                         Decision = "Denied",
                         Reason = "Approval timed out before user confirmation"
                     });
@@ -218,37 +499,114 @@ public class ActionPolicyEngine
 
         using var cancelReg = cancellationToken.Register(() =>
         {
-            if (_pendingApprovals.TryRemove(request.ApprovalId, out var cancelled))
+            if (_pendingApprovals.TryRemove(new KeyValuePair<string, CachedApproval>(registered.ApprovalId, cached)))
             {
                 var cancelResp = new ActionApprovalResponse
                 {
-                    ApprovalId = request.ApprovalId,
-                    ActionId = request.ActionId,
-                    ActionType = request.ActionType,
-                    ParametersSha256 = request.ParametersSha256,
+                    ApprovalId = registered.ApprovalId,
+                    ActionId = registered.ActionId,
+                    ActionType = registered.ActionType,
+                    ParametersSha256 = registered.ParametersSha256,
                     Approved = false,
                     DecisionSource = "EmergencyStopDenied",
                     RejectionReason = "Operation cancelled before approval completed."
                 };
-                cancelled.CompletionSource.TrySetResult(cancelResp);
+                Finalize(cached, cancelResp, ApprovalStates.Cancelled, "The operation was cancelled before a decision.");
             }
         });
 
         return await cached.CompletionSource.Task;
     }
 
+    private ActionApprovalResponse Refused(ActionApprovalRequest request, string source, string reason)
+    {
+        Notify(request.SessionId, request.ApprovalId, request.ActionId,
+            source switch
+            {
+                "TimeoutDenied" => ApprovalStates.Expired,
+                "SessionDisconnectedDenied" => ApprovalStates.Disconnected,
+                _ => ApprovalStates.Rejected,
+            }, reason);
+        return new ActionApprovalResponse
+        {
+            ApprovalId = request.ApprovalId,
+            ActionId = request.ActionId,
+            ActionType = request.ActionType,
+            ParametersSha256 = request.ParametersSha256,
+            Approved = false,
+            DecisionSource = source,
+            RejectionReason = reason
+        };
+    }
+
+    /// <summary>
+    /// The authoritative decision point for approvals (H3-9). A decision is accepted only from the session that
+    /// owns the pending request.
+    /// </summary>
+    /// <param name="callerSessionId">
+    /// The authenticated, server-generated id of the IPC session that submitted the decision. REQUIRED, with no
+    /// default: it must come from the transport (IpcClientSession), never from <c>response.SessionId</c>, which
+    /// is attacker-controlled. Null, empty or whitespace is refused.
+    /// </param>
+    /// <returns>true only if this call finalized the owner's pending approval.</returns>
     public bool SubmitApprovalDecision(
         ActionApprovalResponse response,
+        string callerSessionId,
         Func<bool>? isEmergencyStoppedFunc = null,
         Func<ulong>? getCurrentGenerationFunc = null)
     {
-        if (!_pendingApprovals.TryRemove(response.ApprovalId, out var cached))
+        if (string.IsNullOrWhiteSpace(callerSessionId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing approval decision for {ApprovalId}: missing caller session identity.", response.ApprovalId);
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(response.ApprovalId) ||
+            !_pendingApprovals.TryGetValue(response.ApprovalId, out var cached))
         {
             _logger.LogWarning("[PolicyEngine] Received decision for unknown or already finalized approval {ApprovalId}", response.ApprovalId);
+            // Phase 7B.1a: a late or duplicate decision is answered, never silently ignored. It authorizes nothing.
+            string known = !string.IsNullOrEmpty(response.ApprovalId) && _recentTerminal.TryGetValue(response.ApprovalId, out var t)
+                ? t.State : ApprovalStates.Rejected;
+            Notify(callerSessionId, response.ApprovalId ?? string.Empty, response.ActionId ?? string.Empty, known,
+                "This decision was not accepted: the approval is no longer pending.", decisionAccepted: false);
+            return false;
+        }
+
+        // Ownership is checked BEFORE the entry is touched. A refused attempt leaves the owner's pending
+        // approval intact, so another session cannot cancel (deny) a request it does not own either.
+        string owner = cached.Request.SessionId;
+        if (string.IsNullOrWhiteSpace(owner) || !string.Equals(owner, callerSessionId, StringComparison.Ordinal))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Ownership violation: approval {ApprovalId} is owned by session '{Owner}', decision attempted by '{Caller}'. Refused; request left pending.",
+                response.ApprovalId, owner, callerSessionId);
+            AuditOwnershipViolation(cached, response, callerSessionId);
+            return false;
+        }
+
+        // Remove exactly the entry whose owner was just verified. ConcurrentDictionary.TryRemove(KeyValuePair)
+        // removes only if the stored value still equals the pair's value; CachedApproval has no Equals override,
+        // so that is reference identity. If the entry was finalized or replaced since the check, nothing is removed.
+        if (!_pendingApprovals.TryRemove(new KeyValuePair<string, CachedApproval>(response.ApprovalId, cached)))
+        {
+            _logger.LogWarning("[PolicyEngine] Approval {ApprovalId} was finalized concurrently; decision ignored.", response.ApprovalId);
             return false;
         }
 
         cached.ExpirationCts.Dispose();
+
+        // 0. Phase 7B.1a: a HUD whose liveness lease lapsed cannot decide. Fail closed: the approval is withdrawn.
+        if (_isSessionLive != null && !_isSessionLive(callerSessionId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Rejecting decision for {ApprovalId}: the deciding HUD session is not live.", response.ApprovalId);
+            var notLive = response with
+            {
+                Approved = false,
+                DecisionSource = "SessionDisconnectedDenied",
+                RejectionReason = "The HUD's liveness lease is not valid; the approval was withdrawn."
+            };
+            return Finalize(cached, notLive, ApprovalStates.Disconnected, notLive.RejectionReason);
+        }
 
         // 1. Verify not expired
         if (DateTimeOffset.UtcNow > cached.Request.ExpiresAtUtc)
@@ -260,7 +618,7 @@ public class ActionPolicyEngine
                 DecisionSource = "TimeoutDenied",
                 RejectionReason = "Approval expired before decision submission."
             };
-            return cached.CompletionSource.TrySetResult(expired);
+            return Finalize(cached, expired, ApprovalStates.Expired, expired.RejectionReason);
         }
 
         // 2. Verify emergency stop
@@ -273,7 +631,7 @@ public class ActionPolicyEngine
                 DecisionSource = "EmergencyStopDenied",
                 RejectionReason = "Cannot grant approval while Emergency Stop is active."
             };
-            return cached.CompletionSource.TrySetResult(stopped);
+            return Finalize(cached, stopped, ApprovalStates.InvalidatedByEmergencyStop, stopped.RejectionReason);
         }
 
         // 3. Verify stop generation
@@ -290,25 +648,36 @@ public class ActionPolicyEngine
                     DecisionSource = "StaleGenerationDenied",
                     RejectionReason = $"Approval generation ({cached.Request.StopGeneration}) does not match current epoch ({currentGen})."
                 };
-                return cached.CompletionSource.TrySetResult(stale);
+                return Finalize(cached, stale, ApprovalStates.InvalidatedByEmergencyStop, stale.RejectionReason);
             }
         }
 
-        // 4. Parameter hash integrity check
-        string recomputedPendingHash = ComputeCanonicalHash(cached.Request.ActionParameters);
-        if (!string.Equals(recomputedPendingHash, cached.Request.ParametersSha256, StringComparison.OrdinalIgnoreCase) ||
-            (response.Approved && !string.Equals(response.ParametersSha256, cached.Request.ParametersSha256, StringComparison.OrdinalIgnoreCase)))
+        // 4. Parameter hash and action digest integrity. The daemon recomputes both from what it holds; the HUD's echoes
+        //    must equal them, so an approval can only ever authorize the exact canonical action that was displayed.
+        bool hashOk = TryComputeCanonicalHash(cached.Request.ActionParameters, out string recomputedPendingHash) &&
+                      string.Equals(recomputedPendingHash, cached.Request.ParametersSha256, StringComparison.OrdinalIgnoreCase);
+        bool digestOk = false;
+        try
         {
-            _logger.LogError("[PolicyEngine SECURITY] Parameter SHA256 mismatch on approval {ApprovalId}! Expected '{Exp}', Got '{Got}'. Rejection enforced.",
-                response.ApprovalId, cached.Request.ParametersSha256, response.ParametersSha256);
+            var (_, recomputedDigest) = BuildCanonicalAction(cached.Request with { ActionDigest = null, CanonicalAction = null });
+            digestOk = string.Equals(recomputedDigest, cached.Request.ActionDigest, StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is CanonicalEncodingException or OverflowException) { digestOk = false; }
+
+        if (!hashOk || !digestOk ||
+            (response.Approved && !string.Equals(response.ParametersSha256, cached.Request.ParametersSha256, StringComparison.OrdinalIgnoreCase)) ||
+            (response.Approved && !string.Equals(response.ActionDigest, cached.Request.ActionDigest, StringComparison.Ordinal)))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Integrity mismatch on approval {ApprovalId} (parameter hash or action digest). Rejection enforced.",
+                response.ApprovalId);
 
             var tampered = response with
             {
                 Approved = false,
                 DecisionSource = "IntegrityMismatch",
-                RejectionReason = "Parameter SHA-256 hash does not match original request."
+                RejectionReason = "Parameter SHA-256 hash or action digest does not match original request."
             };
-            return cached.CompletionSource.TrySetResult(tampered);
+            return Finalize(cached, tampered, ApprovalStates.Rejected, tampered.RejectionReason);
         }
 
         // 5. If approved by user, atomically register in the authoritative granted registry
@@ -370,12 +739,52 @@ public class ActionPolicyEngine
                     ParametersSha256 = cached.Request.ParametersSha256,
                     StopGeneration = cached.Request.StopGeneration,
                     Decision = "Denied",
-                    Reason = response.RejectionReason ?? "User rejected action"
+                    Reason = AuditJson.Bound(response.RejectionReason ?? "User rejected action")
                 });
             }
         }
 
-        return cached.CompletionSource.TrySetResult(response);
+        return Finalize(cached, response,
+            response.Approved ? ApprovalStates.Approved : ApprovalStates.Denied,
+            response.Approved ? "Approved by the user; authorized by the daemon for this single action." : "Denied by the user.");
+    }
+
+    /// <summary>
+    /// Records a refused cross-session decision. Best effort and strictly observational: it runs after the
+    /// refusal is already decided and can neither throw into, nor alter, that outcome. Only identifiers are
+    /// recorded (no action parameters).
+    /// </summary>
+    private void AuditOwnershipViolation(CachedApproval cached, ActionApprovalResponse response, string callerSessionId)
+    {
+        if (_evidenceRecorder == null) return;
+        try
+        {
+            var record = new SafetyAuditRecord
+            {
+                EventType = "ApprovalOwnershipViolation",
+                Source = "PolicyEngine",
+                ActionId = cached.Request.ActionId,
+                ApprovalId = cached.Request.ApprovalId,
+                SessionId = callerSessionId,
+                RiskLevel = cached.Request.RiskLevel,
+                StopGeneration = cached.Request.StopGeneration,
+                Decision = "Refused",
+                Reason = "Approval decision submitted by a session that does not own the request",
+                DetailsJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    ownerSessionId = cached.Request.SessionId,
+                    callerSessionId,
+                    attemptedApproved = response.Approved
+                })
+            };
+            _evidenceRecorder.RecordSafetyAuditAsync(record).ContinueWith(
+                t => _logger.LogWarning(t.Exception, "[SafetyAudit] Failed to log ApprovalOwnershipViolation."),
+                TaskContinuationOptions.OnlyOnFaulted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SafetyAudit] Failed to log ApprovalOwnershipViolation.");
+        }
     }
 
     public (bool isValid, string? error) ValidateConsumedApproval(
@@ -425,9 +834,14 @@ public class ActionPolicyEngine
             return (false, $"Security validation failed: Approval token generation ({granted.StopGeneration}) does not match current execution epoch ({currentGeneration}).");
         }
 
-        // 6. Verify SessionId
-        if (!string.IsNullOrEmpty(granted.SessionId) && !string.IsNullOrEmpty(sessionId) &&
-            !string.Equals(granted.SessionId, sessionId, StringComparison.Ordinal))
+        // 6. Verify SessionId (H3-9: fail closed; a missing owner or caller identity never skips the check)
+        if (string.IsNullOrWhiteSpace(granted.SessionId) || string.IsNullOrWhiteSpace(sessionId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Token {ApprovalId} cannot be consumed: missing owner or caller session identity.", approvalId);
+            return (false, "Security validation failed: approval owner or caller session identity is missing.");
+        }
+
+        if (!string.Equals(granted.SessionId, sessionId, StringComparison.Ordinal))
         {
             _logger.LogError("[PolicyEngine SECURITY] Cross-session violation: Token {ApprovalId} owned by session '{OwnerSession}', attempted by '{CallerSession}'!",
                 approvalId, granted.SessionId, sessionId);
@@ -458,7 +872,8 @@ public class ActionPolicyEngine
         }
 
         // 10. Recompute and compare canonical SHA-256 hash
-        string computedHash = ComputeCanonicalHash(parameters);
+        if (!TryComputeCanonicalHash(parameters, out string computedHash))
+            return (false, "Security validation failed: presented parameters cannot be encoded canonically.");
         if (!string.Equals(granted.ParametersSha256, computedHash, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogError("[PolicyEngine SECURITY] Parameter tampering detected on token {ApprovalId}! Granted='{Exp}', Computed='{Got}'!",
@@ -537,7 +952,7 @@ public class ActionPolicyEngine
                     DecisionSource = "EmergencyStopDenied",
                     RejectionReason = $"Invalidated: {reason}"
                 };
-                cached.CompletionSource.TrySetResult(cancelledResp);
+                Finalize(cached, cancelledResp, ApprovalStates.InvalidatedByEmergencyStop, cancelledResp.RejectionReason);
             }
         }
 
@@ -577,7 +992,7 @@ public class ActionPolicyEngine
                         DecisionSource = "SessionDisconnectedDenied",
                         RejectionReason = $"Session disconnected: {reason}"
                     };
-                    cached.CompletionSource.TrySetResult(cancelledResp);
+                    Finalize(cached, cancelledResp, ApprovalStates.Disconnected, cancelledResp.RejectionReason);
                 }
             }
         }
@@ -625,7 +1040,7 @@ public class ActionPolicyEngine
                         DecisionSource = "StaleGenerationDenied",
                         RejectionReason = $"Invalidated: {reason}"
                     };
-                    cached.CompletionSource.TrySetResult(cancelledResp);
+                    Finalize(cached, cancelledResp, ApprovalStates.InvalidatedByEmergencyStop, cancelledResp.RejectionReason);
                 }
             }
         }
@@ -643,4 +1058,22 @@ public class ActionPolicyEngine
 
         return count;
     }
+}
+
+/// <summary>Phase 7B.2: the canonical action types of the window operations (design: protocol §6.4–6.5).</summary>
+public static class DesktopActionTypes
+{
+    public const string FocusWindow = "Desktop.FocusWindow";
+    public const string SetWindowState = "Desktop.SetWindowState";
+    // P1 / P2 guarded input: element-bound, each needs the user's explicit approval of the exact action.
+    public const string ClickElement = "Desktop.ClickElement";
+    public const string TypeText = "Desktop.TypeText";
+    public const string PressKeys = "Desktop.PressKeys";
+    public const string BrowserClick = "Browser.Click";
+    public const string BrowserFill = "Browser.Fill";
+    public const string FilesOrganize = "Files.Organize";
+    public const string FilesUndoOrganize = "Files.UndoOrganize";
+    public const string WorkflowSchedule = "Workflow.Schedule";
+    public const string PluginInstall = "Plugin.Install";
+    public const string FilesCreateNote = "Files.CreateNote";
 }

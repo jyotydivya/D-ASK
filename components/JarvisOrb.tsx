@@ -14,9 +14,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi, type TelemetryData } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { soundFx, speechFx, type ThemeColor } from "@/lib/soundEngine";
+import { PcmRecorder } from "@/lib/pcmRecorder";
 import DevicePanel from "@/components/DevicePanel";
+import ApprovalSurface from "@/components/ApprovalSurface";
 import { AgentStatusPanel } from "@/components/AgentStatusPanel";
 import { useTask } from "@/hooks/useTask";
+import { isNativeHud } from "@/hooks/nativeAgent";
+import { requestMode, useHudInteraction } from "@/hooks/hudInteraction";
 import type { DeviceInfo } from "@/app/api/devices/route";
 
 type CameraState = "off" | "starting" | "on" | "error";
@@ -190,7 +194,7 @@ export default function JarvisOrb() {
   const isSpeakingRef = useRef<boolean>(false);
 
   // Groq STT Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderRef = useRef<PcmRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isRecordingRef = useRef(false);
@@ -206,12 +210,13 @@ export default function JarvisOrb() {
 
   // ── Operational Safety & Emergency Stop State ─────────────────────────────
   const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
-  const [pendingApproval, setPendingApproval] = useState<any | null>(null);
-  const [approvalCountdown, setApprovalCountdown] = useState<number>(30);
+  // Native HUD only; null until the host has reported it.
+  const [daemonConnected, setDaemonConnected] = useState<boolean | null>(null);
+  // Desktop overlay mode (ambient / interactive / hidden), or "browser" outside the native HUD.
+  const hud = useHudInteraction();
 
   const handleEmergencyStop = useCallback(() => {
     setIsEmergencyStopped(true);
-    setPendingApproval(null);
     soundFx.playAlertSound();
     postToNativeHost({
       type: "EmergencyStop",
@@ -227,54 +232,6 @@ export default function JarvisOrb() {
     });
   }, []);
 
-  const handleApproveAction = useCallback(() => {
-    if (!pendingApproval) return;
-    soundFx.playLockSound();
-    postToNativeHost({
-      type: "ActionApprovalDecision",
-      payload: {
-        approval_id: pendingApproval.approvalId,
-        action_id: pendingApproval.actionId,
-        action_type: pendingApproval.actionType,
-        parameters_sha256: pendingApproval.parametersSha256,
-        approved: true,
-      },
-    });
-    setPendingApproval(null);
-  }, [pendingApproval]);
-
-  const handleDenyApproval = useCallback((reason: string = "User declined in HUD") => {
-    if (!pendingApproval) return;
-    soundFx.playAlertSound();
-    postToNativeHost({
-      type: "ActionApprovalDecision",
-      payload: {
-        approval_id: pendingApproval.approvalId,
-        action_id: pendingApproval.actionId,
-        action_type: pendingApproval.actionType,
-        parameters_sha256: pendingApproval.parametersSha256,
-        approved: false,
-        reason,
-      },
-    });
-    setPendingApproval(null);
-  }, [pendingApproval]);
-
-  useEffect(() => {
-    if (!pendingApproval) return;
-    setApprovalCountdown(30);
-    const interval = setInterval(() => {
-      setApprovalCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleDenyApproval("Approval timed out");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [pendingApproval, handleDenyApproval]);
 
   // ── Agentic Task System ──────────────────────────────────────────────────
   // Callbacks update history ONCE when the task terminates
@@ -313,6 +270,7 @@ export default function JarvisOrb() {
     nodes: taskNodes,
     progressPct,
     taskId: activeTaskId,
+    result: taskResult,
     submitTask,
     cancelTask,
   } = useTask({
@@ -343,14 +301,19 @@ export default function JarvisOrb() {
 
         if (data.type === "EmergencyStopTriggered" || data.type === "EmergencyStopResponse") {
           setIsEmergencyStopped(true);
-          setPendingApproval(null);
+          speechFx.stop();
           soundFx.playAlertSound();
         } else if (data.type === "ExecutionResumed" || data.type === "ResumeExecutionResponse") {
-          setIsEmergencyStopped(false);
-          soundFx.playLockSound();
-        } else if (data.type === "ActionApprovalRequest" && data.payload) {
-          setPendingApproval(data.payload);
-          soundFx.playAlertSound();
+          // A refused resume leaves execution stopped, so the HUD must keep saying so.
+          if (data.payload?.success === false) {
+            soundFx.playAlertSound();
+          } else {
+            setIsEmergencyStopped(false);
+            soundFx.playLockSound();
+          }
+        } else if (data.type === "AgentConnection" && data.payload) {
+          setDaemonConnected(data.payload.connected === true);
+          if (data.payload.emergencyStopped === true) setIsEmergencyStopped(true);
         } else if (data.type === "TelemetryUpdate" && data.payload) {
           const t = data.payload;
           setDaemonTelemetry({
@@ -517,7 +480,13 @@ export default function JarvisOrb() {
 
     try {
       const parsed = JSON.parse(savedHistory) as CommandEntry[];
-      if (Array.isArray(parsed)) setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES));
+      if (Array.isArray(parsed)) {
+        // A saved placeholder belongs to a request from an earlier run: nothing will ever fill it in now.
+        setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES).map((entry) =>
+          typeof entry?.response === "string" && entry.response.startsWith("⏳")
+            ? { ...entry, response: "⚠ RESULT UNKNOWN: D-ASK CLOSED BEFORE THIS FINISHED." }
+            : entry));
+      }
     } catch {
       window.localStorage.removeItem(COMMAND_HISTORY_KEY);
     }
@@ -654,7 +623,10 @@ export default function JarvisOrb() {
   const askAssistant = useCallback(
     async (prompt: string) => {
       // Guard: don't submit a new task while one is already in progress
-      if (aiThinking || taskActive) return;
+      if (aiThinking || taskActive) {
+        if (isNativeHud()) addHistoryEntry(prompt.toUpperCase(), "⚠ A TASK IS ALREADY RUNNING. THIS REQUEST WAS NOT SENT.");
+        return;
+      }
       soundFx.playProcessSound();
       const normalized = prompt.trim().toLowerCase();
 
@@ -734,6 +706,20 @@ export default function JarvisOrb() {
             return;
           }
         }
+      }
+
+      // Desktop HUD: anything that isn't a local command is a task for the local agent, through the
+      // daemon. The result callbacks replace this placeholder with what the daemon reports.
+      if (isNativeHud()) {
+        setAiThinking(true);
+        setHistory((current) => [{
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          command: prompt.toUpperCase(),
+          response: "⏳ LOCAL AGENT WORKING...",
+          time: new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()),
+        }, ...current].slice(0, MAX_HISTORY_ENTRIES));
+        void submitTask(prompt);
+        return;
       }
 
       // Lightweight path: /api/assistant (ONE Gemini call — only for unknown/conversational input)
@@ -890,7 +876,7 @@ export default function JarvisOrb() {
     addHistoryEntry("WAKE WORD DETECTED", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
   }, [addHistoryEntry]);
 
-  // Voice Recognition via Groq Whisper + VAD
+  // Offline voice input: 16 kHz WAV -> the native HUD's local recognizer (/api/stt, Windows SAPI). No cloud STT.
   const toggleVoiceInput = useCallback(async () => {
     soundFx.playClickSound();
     if (mediaRecorderRef.current) {
@@ -898,6 +884,7 @@ export default function JarvisOrb() {
         mediaRecorderRef.current.stop();
       }
       mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current.dispose();
       mediaRecorderRef.current = null;
       micStreamRef.current = null;
       setVoiceState("idle");
@@ -906,6 +893,8 @@ export default function JarvisOrb() {
       return;
     }
 
+    // The user is about to speak: D-ASK stops talking (interruption).
+    speechFx.stop();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
@@ -918,7 +907,7 @@ export default function JarvisOrb() {
       analyser.fftSize = 256;
       source.connect(analyser);
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mediaRecorder = new PcmRecorder(stream, audioCtx, source);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -928,7 +917,7 @@ export default function JarvisOrb() {
 
       mediaRecorder.onstop = async () => {
         if (audioChunksRef.current.length === 0) return;
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         audioChunksRef.current = [];
 
         // Skip tiny blips
@@ -936,9 +925,8 @@ export default function JarvisOrb() {
 
         setCommand("Processing audio...");
         try {
-          const formData = new FormData();
-          formData.append('file', blob);
-          const res = await fetch('/api/stt', { method: 'POST', body: formData });
+          // Raw 16-bit PCM WAV to the native HUD's local recognizer; the recording is deleted after transcription.
+          const res = await fetch('/api/stt', { method: 'POST', body: blob, headers: { 'Content-Type': 'audio/wav' } });
           if (res.ok) {
             const data = await res.json();
             const transcript = data.text?.trim();
@@ -1071,6 +1059,8 @@ export default function JarvisOrb() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
+      {/* Where the orb takes drag and scroll while interactive; it draws nothing and takes no pointer events itself. */}
+      <div className="orb-core-region" data-hud-region aria-hidden="true" />
 
       {/* Holographic Overlay Layers */}
       <div className="overlay-vignette" />
@@ -1098,6 +1088,8 @@ export default function JarvisOrb() {
           <button
             onClick={isEmergencyStopped ? handleResumeExecution : handleEmergencyStop}
             style={{
+              // .hud-header sets pointer-events: none, so without this clicks pass straight through the button.
+              pointerEvents: "auto",
               background: isEmergencyStopped ? "rgba(0, 229, 255, 0.2)" : "rgba(255, 34, 68, 0.3)",
               border: isEmergencyStopped ? "1px solid #00e5ff" : "1px solid #ff2244",
               color: isEmergencyStopped ? "#00e5ff" : "#ff4466",
@@ -1115,6 +1107,31 @@ export default function JarvisOrb() {
             {isEmergencyStopped ? "▶ RESUME" : "🛑 STOP [Ctrl+Shift+F12]"}
           </button>
         </div>
+        {hud.mode !== "browser" && (
+          <div className="hud-mode-bar" data-mode={hud.mode} aria-live="polite">
+            {hud.mode === "interactive" ? (
+              <>
+                <span className="hud-mode-label">INTERACTIVE · ESC TO RELEASE</span>
+                {hud.toggleAvailable && (
+                  <button type="button" className="hud-mode-btn" onClick={() => requestMode("ambient")} title={`Let clicks through to the desktop (${hud.toggleHotkey})`}>
+                    AMBIENT
+                  </button>
+                )}
+                {(hud.hideAvailable || hud.toggleAvailable) && (
+                  <button type="button" className="hud-mode-btn" onClick={() => requestMode("hidden")} title={`Hide D-ASK (${hud.hideHotkey}); it keeps running`}>
+                    HIDE
+                  </button>
+                )}
+              </>
+            ) : (
+              <span className="hud-mode-label">
+                {hud.toggleAvailable
+                  ? `AMBIENT · ${hud.toggleHotkey.toUpperCase()} TO INTERACT`
+                  : `AMBIENT · ${hud.toggleHotkey.toUpperCase()} IS IN USE BY ANOTHER PROGRAM — RESTART D-ASK TO INTERACT`}
+              </span>
+            )}
+          </div>
+        )}
         <div className="hud-telemetry" aria-label="Orb Telemetry Readout">
           <div><span>PITCH:</span> {telemetry.rotXDeg}°</div>
           <div><span>YAW:</span> {telemetry.rotYDeg}°</div>
@@ -1134,6 +1151,7 @@ export default function JarvisOrb() {
       {/* Emergency Stop Active Banner */}
       {isEmergencyStopped && (
         <div
+          data-hud-interactive
           style={{
             position: "fixed",
             top: "80px",
@@ -1174,79 +1192,8 @@ export default function JarvisOrb() {
         </div>
       )}
 
-      {/* Action Approval Modal */}
-      {pendingApproval && (
-        <div
-          style={{
-            position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            width: "420px",
-            background: "rgba(10, 15, 25, 0.95)",
-            border: "1px solid #ffaa30",
-            boxShadow: "0 0 30px rgba(255, 170, 48, 0.35)",
-            backdropFilter: "blur(16px)",
-            borderRadius: "8px",
-            padding: "20px",
-            zIndex: 10000,
-            color: "#e2e8f0",
-            fontFamily: "monospace",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,170,48,0.3)", paddingBottom: "10px", marginBottom: "12px" }}>
-            <span style={{ color: "#ffaa30", fontWeight: "bold", fontSize: "14px", letterSpacing: "1px" }}>
-              ACTION APPROVAL REQUIRED
-            </span>
-            <span style={{ background: "rgba(255,170,48,0.2)", color: "#ffaa30", padding: "2px 8px", borderRadius: "4px", fontSize: "11px" }}>
-              {approvalCountdown}s
-            </span>
-          </div>
-          <div style={{ fontSize: "12px", lineHeight: "1.6", marginBottom: "16px" }}>
-            <div><strong style={{ color: "#94a3b8" }}>Type:</strong> {pendingApproval.actionType}</div>
-            <div><strong style={{ color: "#94a3b8" }}>Target:</strong> {pendingApproval.targetProcessName || "Desktop"} {pendingApproval.targetHwnd ? `(HWND: 0x${pendingApproval.targetHwnd.toString(16)})` : ""}</div>
-            <div><strong style={{ color: "#94a3b8" }}>Risk Level:</strong> <span style={{ color: pendingApproval.riskLevel === "Critical" ? "#ff2244" : "#ffaa30", fontWeight: 700 }}>{pendingApproval.riskLevel}</span></div>
-            {pendingApproval.reason && (
-              <div><strong style={{ color: "#94a3b8" }}>Reason:</strong> {pendingApproval.reason}</div>
-            )}
-            <div style={{ marginTop: "8px", fontSize: "10px", color: "#64748b", wordBreak: "break-all" }}>
-              SHA256: {pendingApproval.parametersSha256}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-            <button
-              onClick={() => handleDenyApproval("Declined by user")}
-              style={{
-                background: "rgba(255, 34, 68, 0.2)",
-                border: "1px solid #ff2244",
-                color: "#ff4466",
-                padding: "6px 16px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontWeight: 600,
-                fontSize: "12px",
-              }}
-            >
-              DENY
-            </button>
-            <button
-              onClick={handleApproveAction}
-              style={{
-                background: "rgba(0, 255, 136, 0.25)",
-                border: "1px solid #00ff88",
-                color: "#00ff88",
-                padding: "6px 20px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontWeight: 700,
-                fontSize: "12px",
-              }}
-            >
-              APPROVE
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Phase 7B.1a: approval panel showing the exact daemon-authorized action; clickable in Ambient mode */}
+      <ApprovalSurface />
 
       {/* Connected Devices HUD Panel */}
       <DevicePanel
@@ -1263,7 +1210,7 @@ export default function JarvisOrb() {
       />
 
       {/* Top Right Main Console */}
-      <section className="hud command-console" aria-label="Ultron command console">
+      <section className="hud command-console" aria-label="Ultron command console" data-hud-interactive>
         <div className="console-header">
           <span>D-ASK // CORE CONSOLE</span>
           <div className="console-statuses">
@@ -1372,7 +1319,7 @@ export default function JarvisOrb() {
       </div>
 
       {/* Bottom Right Controls & Webcam HUD */}
-      <div className="hud hud-controls">
+      <div className="hud hud-controls" data-hud-interactive>
         {/* Theme Switcher Palette Selector */}
         <div className="theme-selector" aria-label="Color Themes">
           {THEMES.map((th) => (
@@ -1456,6 +1403,7 @@ export default function JarvisOrb() {
         progressPct={progressPct}
         taskId={activeTaskId}
         onCancel={cancelTask}
+        result={taskResult}
       />
     </>
   );

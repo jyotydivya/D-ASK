@@ -1,22 +1,42 @@
+use crate::ipc::agent_bridge::{self, AgentFrontendMessage};
 use crate::ipc::framing::{read_frame, write_frame};
+use crate::ipc::peer;
 use crate::ipc::protocol::{
     ActionApprovalRequest, ActionLifecycleNotification, EmergencyStopResponse,
     HandshakeRequest, HandshakeResponse, HeartbeatPing, IpcEnvelope, ResourceAlert,
     ResumeExecutionResponse, StateRestoreRequest, StateRestoreResponse, StateUpdate,
     TelemetryUpdate, CURRENT_PROTOCOL_VERSION, PIPE_NAME,
 };
+use crate::ipc::protocol::{ApprovalStateNotification, HeartbeatPong, MessageRejectedNotification};
 use crate::state::emergency_stop::NativeEmergencyStopLatch;
 use crate::state::hud_state::{ConnectionStatus, SharedHudState};
+use crate::state::liveness::{LivenessProbe, WM_LIVENESS_PROBE};
 use chrono::Utc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+/// P1/P2: the PID of the pipe server this HUD verified in the current session (0 = none). Set only after the handshake
+/// PID matched the OS-verified pipe server; used solely to grant THAT process permission to bring an approved input
+/// target to the front (AllowSetForegroundWindow) when the user approves an input action.
+pub static VERIFIED_DAEMON_PID: AtomicU32 = AtomicU32::new(0);
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::windows::named_pipe::ClientOptions;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
+use windows::Win32::Storage::FileSystem::SECURITY_ANONYMOUS;
 
 pub const PRIORITY_QUEUE_CAPACITY: usize = 16;
 pub const ORDINARY_QUEUE_CAPACITY: usize = 64;
 pub const ORDINARY_WRITE_TIMEOUT: Duration = Duration::from_millis(500);
+const INCOMING_QUEUE_CAPACITY: usize = 256;
+
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 pub struct IpcClient {
     state: SharedHudState,
@@ -29,6 +49,23 @@ pub struct IpcClient {
     priority_tx: mpsc::Sender<IpcEnvelope>,
     priority_rx: mpsc::Receiver<IpcEnvelope>,
     active_session_token: Option<String>,
+    server_policy: peer::ServerPolicy,
+    /// Phase 7B.1a: loop acknowledgements carried in every heartbeat.
+    liveness: Arc<LivenessProbe>,
+    /// Strictly increasing across sessions, so a stale acknowledgement can never look like a future one.
+    ping_seq: i64,
+    /// Set when the daemon reports the lease was not renewed: re-confirm the hotkey before the next ping.
+    reannounce_hotkey: Arc<AtomicBool>,
+}
+
+/// Result of one connection attempt.
+enum ConnectOutcome {
+    /// The pipe could not be opened (daemon not up yet).
+    NotReady(String),
+    /// Something answered the pipe but is not the daemon we are willing to talk to. Nothing was sent.
+    Rejected(String),
+    /// A verified daemon was connected; this is how the session ended.
+    Session(Result<(), Box<dyn std::error::Error + Send + Sync>>),
 }
 
 impl IpcClient {
@@ -53,14 +90,55 @@ impl IpcClient {
                 priority_tx: ptx.clone(),
                 priority_rx: prx,
                 active_session_token: None,
+                // Production policy only: exact daemon paths derived from this executable's location.
+                server_policy: peer::ServerPolicy::production(),
+                liveness: Arc::new(LivenessProbe::new()),
+                ping_seq: 0,
+                reannounce_hotkey: Arc::new(AtomicBool::new(false)),
             },
             tx,
             ptx,
         )
     }
 
+    /// Shares the liveness probe with the UI event loop and the panic-hotkey thread (Phase 7B.1a).
+    pub fn with_liveness(mut self, probe: Arc<LivenessProbe>) -> Self {
+        self.liveness = probe;
+        self
+    }
+
+    /// The next heartbeat: its sequence, and the loop acknowledgements that prove the HUD is responsive.
+    fn next_ping(&mut self, hotkey_registered: bool) -> HeartbeatPing {
+        self.ping_seq += 1;
+        let (event_loop_ack, hotkey_ack) = self.liveness.acks();
+        HeartbeatPing { sequence: self.ping_seq, timestamp: Utc::now(), event_loop_ack, hotkey_ack, hotkey_registered }
+    }
+
+    /// Posts probe `seq` to both loops; the next ping carries what they acknowledged.
+    fn post_probes(&self, seq: i64) {
+        if let Some(proxy) = &self.event_proxy {
+            let _ = proxy.send_event(crate::HudAppEvent::LivenessProbe(seq));
+        }
+        let tid = self.liveness.hotkey_thread();
+        if tid != 0 {
+            unsafe {
+                use windows::Win32::Foundation::{LPARAM, WPARAM};
+                use windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
+                let _ = PostThreadMessageW(tid, WM_LIVENESS_PROBE, WPARAM(seq as usize), LPARAM(0));
+            }
+        }
+    }
+
+    /// Test-only: the policy cannot be replaced in production builds.
+    #[cfg(test)]
+    fn with_server_policy(mut self, policy: peer::ServerPolicy) -> Self {
+        self.server_policy = policy;
+        self
+    }
+
     pub async fn run_client_loop(mut self) {
         let mut backoff_ms = 100u64;
+        let mut rejections = 0u32;
 
         loop {
             {
@@ -74,17 +152,12 @@ impl IpcClient {
 
             info!("Attempting connection to D-ASK Daemon at '{}'...", PIPE_NAME);
 
-            match ClientOptions::new().open(PIPE_NAME) {
-                Ok(pipe_stream) => {
-                    info!("Connected to D-ASK Daemon named pipe! Performing handshake...");
+            match self.connect_once(PIPE_NAME).await {
+                ConnectOutcome::Session(result) => {
                     backoff_ms = 100; // Reset backoff
+                    rejections = 0;
 
-                    {
-                        let mut s = self.state.lock().unwrap();
-                        s.connection = ConnectionStatus::Handshaking;
-                    }
-
-                    if let Err(e) = self.handle_connected_session(pipe_stream).await {
+                    if let Err(e) = result {
                         warn!("Pipe session terminated: {}. Reconnecting...", e);
                     }
 
@@ -96,9 +169,26 @@ impl IpcClient {
                         s.connection = ConnectionStatus::Disconnected;
                         s.session_id = None;
                     }
+                    self.notify_connection(false, self.latch.is_latched());
                 }
-                Err(e) => {
+                ConnectOutcome::NotReady(e) => {
                     debug!("Daemon pipe not ready ({}). Retrying in {}ms...", e, backoff_ms);
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms * 2).min(2000);
+                }
+                ConnectOutcome::Rejected(reason) => {
+                    rejections += 1;
+                    // Loud on the first refusal and then roughly every 30s; never a handshake or stop traffic.
+                    if rejections == 1 || rejections % 15 == 0 {
+                        error!(
+                            "REFUSING to talk to the process serving '{}': {}. Nothing was sent to it. \
+                             Emergency-stop delivery to the real daemon is unavailable until the daemon is the \
+                             only owner of the pipe. (refusal #{})",
+                            PIPE_NAME, reason, rejections
+                        );
+                    } else {
+                        debug!("Pipe server refused again: {}", reason);
+                    }
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(2000);
                 }
@@ -106,10 +196,56 @@ impl IpcClient {
         }
     }
 
+    /// Opens the pipe, verifies who answered, and only then runs the session (handshake etc.).
+    /// Client identity of the server is validated on EVERY new connection.
+    async fn connect_once(&mut self, pipe_name: &str) -> ConnectOutcome {
+        // Taken before the open: the server existed when the open succeeded, so it was created earlier.
+        let started = peer::now_filetime();
+
+        // Explicit SQOS: the server may learn nothing about us and can never impersonate us.
+        let pipe_stream = match ClientOptions::new()
+            .security_qos_flags(SECURITY_ANONYMOUS.0)
+            .open(pipe_name)
+        {
+            Ok(p) => p,
+            Err(e) => return ConnectOutcome::NotReady(e.to_string()),
+        };
+
+        let verified = match peer::verify_server(&pipe_stream, started, &self.server_policy) {
+            Ok(v) => v,
+            Err(reason) => {
+                drop(pipe_stream);
+                return ConnectOutcome::Rejected(reason);
+            }
+        };
+        info!("Verified pipe server PID {} ({}).", verified.pid, verified.image_path);
+
+        {
+            let mut s = self.state.lock().unwrap();
+            s.connection = ConnectionStatus::Handshaking;
+        }
+
+        info!("Connected to D-ASK Daemon named pipe! Performing handshake...");
+        let result = self.session_inner(pipe_stream, Some(verified.pid)).await;
+        drop(verified); // the process handle is held for the whole session
+        ConnectOutcome::Session(result)
+    }
+
+    /// Test-only entry that skips server verification. It does not exist in production builds.
+    #[cfg(test)]
     async fn handle_connected_session(
         &mut self,
         pipe_stream: tokio::net::windows::named_pipe::NamedPipeClient,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.session_inner(pipe_stream, None).await
+    }
+
+    async fn session_inner(
+        &mut self,
+        pipe_stream: tokio::net::windows::named_pipe::NamedPipeClient,
+        verified_daemon_pid: Option<u32>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        VERIFIED_DAEMON_PID.store(0, Ordering::SeqCst);
         let (mut reader, mut writer) = tokio::io::split(pipe_stream);
 
         // 1. Send Handshake communicating native stop latch state
@@ -146,9 +282,21 @@ impl IpcClient {
             return Err(format!("Handshake rejected: {:?}", handshake_resp.message).into());
         }
 
+        // The self-reported PID is untrusted; it must equal the PID of the verified pipe server.
+        if let Some(pid) = verified_daemon_pid {
+            if handshake_resp.daemon_process_id != pid {
+                return Err(format!(
+                    "Handshake daemon PID {} does not match the verified pipe server PID {}",
+                    handshake_resp.daemon_process_id, pid
+                )
+                .into());
+            }
+            VERIFIED_DAEMON_PID.store(pid, Ordering::SeqCst);
+        }
+
         info!(
-            "Handshake accepted by Daemon (PID: {}, Session: {}, DaemonStopped: {})",
-            handshake_resp.daemon_process_id, handshake_resp.session_token, handshake_resp.is_emergency_stopped
+            "Handshake accepted by Daemon (PID: {}, DaemonStopped: {})",
+            handshake_resp.daemon_process_id, handshake_resp.is_emergency_stopped
         );
 
         // Store active session token
@@ -169,6 +317,7 @@ impl IpcClient {
                 s.orb_mode = "Critical".to_string();
             }
         }
+        self.notify_connection(true, final_stopped);
 
         // 2b. If native host had an unacknowledged pending stop, ensure explicit delivery
         if let Some(pending) = self.latch.get_pending_stop() {
@@ -213,7 +362,31 @@ impl IpcClient {
 
         // 4. Session loop with Heartbeat and incoming messages
         let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(5));
-        let mut ping_seq = 0i64;
+        // After a stall (e.g. the process was suspended) send one ping, not a burst: each ping needs a fresh proof.
+        heartbeat_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Agent requests queued before this point were meant for a session that no longer exists.
+        let session_started = Utc::now();
+
+        // Frames are read on their own task for two reasons. The daemon replies inline on its read loop, so if
+        // this loop stopped reading during a write, two messages in a row would block both sides until the write
+        // timeout ended the session. And a frame half-read in a select branch would be lost if another branch won.
+        let (incoming_tx, mut incoming_rx) = mpsc::channel::<Result<IpcEnvelope, String>>(INCOMING_QUEUE_CAPACITY);
+        let reader_task = AbortOnDrop(tokio::spawn(async move {
+            loop {
+                match read_frame(&mut reader).await {
+                    Ok(Some(env)) => {
+                        if incoming_tx.send(Ok(env)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(None) => return,
+                    Err(e) => {
+                        let _ = incoming_tx.send(Err(e.to_string())).await;
+                        return;
+                    }
+                }
+            }
+        }));
 
         loop {
             tokio::select! {
@@ -228,14 +401,32 @@ impl IpcClient {
                 }
 
                 _ = heartbeat_interval.tick() => {
-                    ping_seq += 1;
-                    let ping = HeartbeatPing {
-                        sequence: ping_seq,
-                        timestamp: Utc::now(),
+                    let (hotkey_registered, hotkey_reason) = {
+                        let s = self.state.lock().unwrap();
+                        (s.panic_hotkey_registered, s.panic_hotkey_error.clone())
                     };
+                    // Phase 7B.1a: after a lapsed lease the daemon needs a fresh hotkey confirmation before a ping counts.
+                    if self.reannounce_hotkey.swap(false, Ordering::SeqCst) {
+                        let notif = crate::ipc::protocol::PanicHotkeyStatusNotification {
+                            is_available: hotkey_registered,
+                            reason: hotkey_reason.unwrap_or_else(|| "Panic hotkey re-confirmed after a lapsed liveness lease".to_string()),
+                            error_code: if hotkey_registered { 0 } else { -1 },
+                            timestamp: Utc::now(),
+                        };
+                        let env = IpcEnvelope::new("PanicHotkeyStatusNotification", &notif, None)?;
+                        if !matches!(tokio::time::timeout(ORDINARY_WRITE_TIMEOUT, write_frame(&mut writer, &env)).await, Ok(Ok(_))) {
+                            error!("Failed to re-confirm the panic hotkey. Terminating session.");
+                            break;
+                        }
+                    }
+                    let ping = self.next_ping(hotkey_registered);
+                    let ping_seq = ping.sequence;
                     let env = IpcEnvelope::new("HeartbeatPing", &ping, None)?;
                     match tokio::time::timeout(ORDINARY_WRITE_TIMEOUT, write_frame(&mut writer, &env)).await {
-                        Ok(Ok(_)) => {},
+                        Ok(Ok(_)) => {
+                            // The next ping proves both loops handled this probe within one interval.
+                            self.post_probes(ping_seq);
+                        },
                         Ok(Err(e)) => {
                             error!("Failed to write heartbeat ping: {}. Terminating session.", e);
                             break;
@@ -248,6 +439,13 @@ impl IpcClient {
                 }
 
                 Some(outgoing) = self.outgoing_rx.recv() => {
+                    if outgoing.timestamp < session_started {
+                        if let Some(rejection) = agent_bridge::stale_rejection(&outgoing) {
+                            warn!("Dropped a stale {} instead of sending it on a new session.", outgoing.msg_type);
+                            self.forward_to_frontend(rejection);
+                            continue;
+                        }
+                    }
                     match tokio::time::timeout(ORDINARY_WRITE_TIMEOUT, write_frame(&mut writer, &outgoing)).await {
                         Ok(Ok(_)) => {},
                         Ok(Err(e)) => {
@@ -261,17 +459,17 @@ impl IpcClient {
                     }
                 }
 
-                frame_res = read_frame(&mut reader) => {
-                    match frame_res {
-                        Ok(Some(env)) => {
+                incoming = incoming_rx.recv() => {
+                    match incoming {
+                        Some(Ok(env)) => {
                             self.dispatch_envelope(env).await;
                         }
-                        Ok(None) => {
-                            info!("Daemon closed connection stream.");
+                        Some(Err(e)) => {
+                            error!("Error reading incoming frame: {}", e);
                             break;
                         }
-                        Err(e) => {
-                            error!("Error reading incoming frame: {}", e);
+                        None => {
+                            info!("Daemon closed connection stream.");
                             break;
                         }
                     }
@@ -279,13 +477,59 @@ impl IpcClient {
             }
         }
 
+        drop(reader_task);
         Ok(())
+    }
+
+    fn forward_to_frontend(&self, message: AgentFrontendMessage) {
+        if let Some(proxy) = &self.event_proxy {
+            let _ = proxy.send_event(crate::HudAppEvent::IpcAgent(Box::new(message)));
+        }
+    }
+
+    fn notify_connection(&self, connected: bool, emergency_stopped: bool) {
+        if let Some(proxy) = &self.event_proxy {
+            let _ = proxy.send_event(crate::HudAppEvent::IpcConnection { connected, emergency_stopped });
+        }
     }
 
     async fn dispatch_envelope(&self, envelope: IpcEnvelope) {
         debug!("HUD received IPC message: {}", envelope.msg_type);
 
+        if agent_bridge::is_forwarded_type(&envelope.msg_type) {
+            self.forward_to_frontend(AgentFrontendMessage {
+                msg_type: envelope.msg_type,
+                reply_to_id: envelope.reply_to_id,
+                payload: envelope.payload,
+            });
+            return;
+        }
+
         match envelope.msg_type.as_str() {
+            "HeartbeatPong" => {
+                if let Ok(pong) = serde_json::from_value::<HeartbeatPong>(envelope.payload) {
+                    if !pong.lease_renewed {
+                        debug!("Heartbeat {} did not renew the liveness lease: {:?}", pong.sequence, pong.reason);
+                        self.reannounce_hotkey.store(true, Ordering::SeqCst);
+                    }
+                }
+            }
+            "ApprovalStateNotification" => {
+                if let Ok(n) = serde_json::from_value::<ApprovalStateNotification>(envelope.payload) {
+                    info!("Approval {} is now {} (decision accepted: {:?})", n.approval_id, n.state, n.decision_accepted);
+                    if let Some(proxy) = &self.event_proxy {
+                        let _ = proxy.send_event(crate::HudAppEvent::IpcApprovalState(Box::new(n)));
+                    }
+                }
+            }
+            "MessageRejectedNotification" => {
+                if let Ok(n) = serde_json::from_value::<MessageRejectedNotification>(envelope.payload) {
+                    warn!("Daemon rejected {} ({}): {}", n.rejected_type, n.code, n.message);
+                    if let Some(proxy) = &self.event_proxy {
+                        let _ = proxy.send_event(crate::HudAppEvent::IpcMessageRejected(Box::new(n)));
+                    }
+                }
+            }
             "TelemetryUpdate" => {
                 if let Ok(telemetry) = serde_json::from_value::<TelemetryUpdate>(envelope.payload) {
                     let mut s = self.state.lock().unwrap();
@@ -385,12 +629,12 @@ mod tests {
 
         // 1. Fill ordinary bounded channel to capacity (64)
         for i in 0..ORDINARY_QUEUE_CAPACITY {
-            let env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing { sequence: i as i64, timestamp: Utc::now() }, None).unwrap();
+            let env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing::bare(i as i64, Utc::now()), None).unwrap();
             assert!(ordinary_tx.try_send(env).is_ok());
         }
 
         // 2. Verify ordinary channel is full: subsequent try_send MUST fail
-        let overflow_env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing { sequence: 999, timestamp: Utc::now() }, None).unwrap();
+        let overflow_env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing::bare(999, Utc::now()), None).unwrap();
         assert!(ordinary_tx.try_send(overflow_env).is_err(), "Ordinary channel must be full");
 
         // 3. Send EmergencyStopRequest via priority channel: MUST SUCCEED without blocking or dropping
@@ -586,7 +830,7 @@ mod tests {
         // Concurrently saturate pipe write buffer with outgoing messages
         let ordinary_spammer = tokio::spawn(async move {
             for seq in 0..100 {
-                let env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing { sequence: seq, timestamp: Utc::now() }, None).unwrap();
+                let env = IpcEnvelope::new("HeartbeatPing", &HeartbeatPing::bare(seq, Utc::now()), None).unwrap();
                 let _ = ordinary_tx.try_send(env);
             }
         });
@@ -710,5 +954,249 @@ mod tests {
         ).await;
         assert!(client_res2.is_ok(), "Session 2 established cleanly");
         server2_task.await.unwrap();
+    }
+
+// ───────── Phase 6: the session loop must keep reading while it writes ─────────
+
+    /// A smoke check that a session survives a daemon reply overlapping a client write. This is NOT proof of
+    /// the deadlock fix: Windows absorbs these writes for a tokio server, so it also passes on the old loop.
+    /// The real daemon's blocking write can't be reproduced here. The evidence is scripts/hud/first-stop-race.ps1,
+    /// run live against the real daemon on both versions, and the source check below guards the fix.
+    #[tokio::test]
+    async fn phase6_session_survives_a_daemon_reply_overlapping_a_write() {
+        use tokio::net::windows::named_pipe::ServerOptions;
+
+        let name = format!(r"\\.\pipe\dask-p6-{}", uuid::Uuid::new_v4().simple());
+        // No buffering, matching the real daemon's pipe.
+        let server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .in_buffer_size(0)
+            .out_buffer_size(0)
+            .create(&name)
+            .expect("create server");
+
+        let state = Arc::new(std::sync::Mutex::new(crate::state::hud_state::HudState::default()));
+        let latch = Arc::new(NativeEmergencyStopLatch::new());
+        let (mut client, ordinary_tx, priority_tx) = IpcClient::new(state, latch, None);
+        let stream = ClientOptions::new().open(&name).expect("connect client");
+        let (delivered_tx, delivered_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let server_task = tokio::spawn(async move {
+            let s = server;
+            s.connect().await.expect("server accept");
+            let (mut reader, mut writer) = tokio::io::split(s);
+
+            let hs = read_frame(&mut reader).await.unwrap().unwrap();
+            assert_eq!(hs.msg_type, "HandshakeRequest");
+            let resp = HandshakeResponse {
+                status: "Accepted".to_string(),
+                protocol_version: CURRENT_PROTOCOL_VERSION,
+                daemon_process_id: 1,
+                session_token: "sess_p6".to_string(),
+                message: None,
+                is_emergency_stopped: false,
+                stop_generation: 1,
+            };
+            write_frame(&mut writer, &IpcEnvelope::new("HandshakeResponse", &resp, None).unwrap()).await.unwrap();
+
+            // Read until the stop arrives, ignoring the client's start-up messages.
+            loop {
+                let env = read_frame(&mut reader).await.unwrap().expect("client stayed connected");
+                if env.msg_type == "EmergencyStopRequest" {
+                    break;
+                }
+            }
+
+            // Like the daemon: reply inline, reading nothing until the reply is fully taken.
+            let big = serde_json::json!({ "padding": "x".repeat(200_000) });
+            write_frame(&mut writer, &IpcEnvelope::new("TelemetryUpdate", &big, None).unwrap()).await.unwrap();
+            // tokio buffers one write internally, so this next write returns only once the client has taken the
+            // whole frame above. That gives the same wait as the .NET daemon, whose write blocks until it is read.
+            write_frame(&mut writer, &IpcEnvelope::new("TelemetryUpdate", &serde_json::json!({}), None).unwrap()).await.unwrap();
+
+            // Then the message the client queued behind the stop must still arrive on this session.
+            loop {
+                let env = read_frame(&mut reader).await.unwrap().expect("client stayed connected");
+                if env.msg_type == "SecondMessage" {
+                    let _ = delivered_tx.send(());
+                    // Stay connected: the session must still be alive when the test cuts it off.
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    return;
+                }
+            }
+        });
+
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let stop = EmergencyStopRequest {
+                stop_id: "stop_p6".to_string(),
+                source: "Test".to_string(),
+                reason: "reply overlap".to_string(),
+                timestamp: Utc::now(),
+            };
+            priority_tx.try_send(IpcEnvelope::new("EmergencyStopRequest", &stop, None).unwrap()).unwrap();
+            // Too large for the pipe to absorb, so this write can only finish once the server reads again.
+            let large = serde_json::json!({ "padding": "y".repeat(200_000) });
+            ordinary_tx.try_send(IpcEnvelope::new("SecondMessage", &large, None).unwrap()).unwrap();
+            // Keep the channels open for the session.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+
+        // The session must outlive the 500 ms write timeout: it only ends when the test cuts it off.
+        let session = tokio::time::timeout(Duration::from_millis(1800), client.handle_connected_session(stream)).await;
+        assert!(session.is_err(), "the session ended early (write timeout deadlock): {:?}", session.map(|r| r.map_err(|e| e.to_string())));
+        assert!(delivered_rx.await.is_ok(), "the queued message must arrive on the original session");
+        server_task.abort();
+    }
+
+    #[test]
+    fn phase6_frames_are_not_read_inside_the_select_loop() {
+        // A half-read frame dropped by another select branch would corrupt the stream.
+        let src = include_str!("client.rs");
+        let session = &src[src.find("async fn session_inner").unwrap()..src.find("fn forward_to_frontend").unwrap()];
+        let banned = ["frame_res = ", "read_frame(&mut reader)"].concat();
+        assert!(!session.contains(&banned), "read_frame must not be a select branch");
+    }
+
+    // ───────── Phase 4B-1R.8 (H3): server verification ─────────
+
+    fn h3_pipe_name() -> String {
+        format!(r"\\.\pipe\dask-h3-{}", uuid::Uuid::new_v4().simple())
+    }
+
+    fn h3_client(policy: peer::ServerPolicy) -> IpcClient {
+        let state = Arc::new(std::sync::Mutex::new(crate::state::hud_state::HudState::default()));
+        let latch = Arc::new(NativeEmergencyStopLatch::new());
+        let (client, _ordinary_tx, _priority_tx) = IpcClient::new(state, latch, None);
+        client.with_server_policy(policy)
+    }
+
+    #[tokio::test]
+    async fn h3_unverified_server_is_refused_and_receives_nothing() {
+        use tokio::net::windows::named_pipe::ServerOptions;
+        use std::path::PathBuf;
+
+        let name = h3_pipe_name();
+        let mut server = ServerOptions::new().first_pipe_instance(true).create(&name).expect("create server");
+
+        // The in-process test "daemon" is NOT an allowed identity: only cmd.exe is.
+        let mut client = h3_client(peer::ServerPolicy::allow_only(vec![PathBuf::from(r"C:\Windows\System32\cmd.exe")]));
+
+        let server_task = tokio::spawn(async move {
+            server.connect().await.expect("server accept");
+            tokio::time::timeout(Duration::from_secs(1), read_frame(&mut server)).await
+        });
+
+        match client.connect_once(&name).await {
+            ConnectOutcome::Rejected(reason) => assert!(reason.contains("not in the allowed"), "{reason}"),
+            ConnectOutcome::NotReady(e) => panic!("expected Rejected, pipe not ready: {e}"),
+            ConnectOutcome::Session(_) => panic!("an unverified server was accepted and a session ran"),
+        }
+
+        // The refused server received no bytes at all: no handshake, no emergency-stop traffic.
+        match server_task.await.expect("server task") {
+            Ok(Ok(None)) | Ok(Err(_)) => {}
+            Ok(Ok(Some(env))) => panic!("refused server received a frame: {}", env.msg_type),
+            Err(_) => panic!("server read timed out instead of seeing the connection close"),
+        }
+    }
+
+    #[tokio::test]
+    async fn h3_handshake_must_report_the_verified_server_pid() {
+        use tokio::net::windows::named_pipe::ServerOptions;
+
+        for (offset, expect_ok) in [(0u32, true), (1u32, false)] {
+            let name = h3_pipe_name();
+            let server = ServerOptions::new().first_pipe_instance(true).create(&name).expect("create server");
+            let me = std::env::current_exe().unwrap();
+            let mut client = h3_client(peer::ServerPolicy::allow_only(vec![me]));
+
+            let server_task = tokio::spawn(async move {
+                let s = server;
+                s.connect().await.expect("server accept");
+                let (mut reader, mut writer) = tokio::io::split(s);
+                let hs = read_frame(&mut reader).await.unwrap().unwrap();
+                assert_eq!(hs.msg_type, "HandshakeRequest");
+                let resp = HandshakeResponse {
+                    status: "Accepted".to_string(),
+                    protocol_version: CURRENT_PROTOCOL_VERSION,
+                    daemon_process_id: std::process::id() + offset,
+                    session_token: "sess_h3".to_string(),
+                    message: Some("OK".to_string()),
+                    is_emergency_stopped: false,
+                    stop_generation: 1,
+                };
+                write_frame(&mut writer, &IpcEnvelope::new("HandshakeResponse", &resp, None).unwrap()).await.unwrap();
+                // Let the client finish its post-handshake messages, then close.
+                let _ = tokio::time::timeout(Duration::from_millis(300), async {
+                    while let Ok(Some(_)) = read_frame(&mut reader).await {}
+                })
+                .await;
+            });
+
+            let outcome = tokio::time::timeout(Duration::from_secs(5), client.connect_once(&name))
+                .await
+                .expect("connect_once within timeout");
+            match (outcome, expect_ok) {
+                (ConnectOutcome::Session(Ok(())), true) => {}
+                (ConnectOutcome::Session(Err(e)), false) => {
+                    assert!(e.to_string().contains("does not match the verified pipe server PID"), "{e}")
+                }
+                (ConnectOutcome::Session(r), _) => panic!("offset {offset}: unexpected session result {r:?}"),
+                (ConnectOutcome::Rejected(r), _) => panic!("offset {offset}: verified server was rejected: {r}"),
+                (ConnectOutcome::NotReady(e), _) => panic!("offset {offset}: pipe not ready: {e}"),
+            }
+            let _ = server_task.await;
+        }
+    }
+
+    #[test]
+    fn h3_client_source_has_explicit_sqos_and_no_unverified_production_entry() {
+        let src = include_str!("client.rs");
+        assert!(src.contains(".security_qos_flags(SECURITY_ANONYMOUS.0)"), "SQOS must be set explicitly to anonymous");
+        // Built at runtime: include_str! also embeds this test's own text.
+        let banned = ["Impersonate", "NamedPipeClient"].concat();
+        assert!(!src.contains(&banned), "pipe-client impersonation must never be introduced");
+        let idx = src.find("async fn handle_connected_session").expect("test helper present");
+        assert!(
+            src[..idx].trim_end().ends_with("#[cfg(test)]"),
+            "handle_connected_session skips server verification and must be test-only"
+        );
+        let cfg_idx = src.find("fn with_server_policy").expect("policy setter present");
+        assert!(src[..cfg_idx].trim_end().ends_with("#[cfg(test)]"), "policy override must be test-only");
+    }
+
+    /// Driven by the manual H3 live harness against a REAL DAsk.Daemon.exe; skipped in normal runs.
+    #[tokio::test]
+    #[ignore = "needs a live daemon: set DASK_LIVE_PIPE and DASK_LIVE_DAEMON_EXE (see the H3 live harness)"]
+    async fn h3_live_real_daemon_verification_and_stop_delivery() {
+        use std::path::PathBuf;
+
+        let pipe = std::env::var("DASK_LIVE_PIPE").expect("DASK_LIVE_PIPE");
+        let daemon = PathBuf::from(std::env::var("DASK_LIVE_DAEMON_EXE").expect("DASK_LIVE_DAEMON_EXE"));
+
+        // 1. A policy that does not name the real daemon: the host must refuse it and send nothing.
+        let mut refusing = h3_client(peer::ServerPolicy::allow_only(vec![PathBuf::from(r"C:\Windows\System32\cmd.exe")]));
+        match refusing.connect_once(&pipe).await {
+            ConnectOutcome::Rejected(r) => println!("LIVE: real daemon refused under a non-matching policy: {r}"),
+            ConnectOutcome::NotReady(e) => panic!("pipe not ready: {e}"),
+            ConnectOutcome::Session(_) => panic!("a non-allowlisted server was accepted"),
+        }
+
+        // 2. Correct policy, native stop latched BEFORE connecting: it must reach the real daemon.
+        let state = Arc::new(std::sync::Mutex::new(crate::state::hud_state::HudState::default()));
+        let latch = Arc::new(NativeEmergencyStopLatch::new());
+        latch.trigger_stop("LiveHarness", "stop before connect", Some("live_stop_1".to_string()));
+        let (client, _ordinary_tx, _priority_tx) = IpcClient::new(state.clone(), latch.clone(), None);
+        let mut client = client.with_server_policy(peer::ServerPolicy::allow_only(vec![daemon]));
+
+        // The session runs until the daemon closes it; cut it off after a few seconds.
+        let _ = tokio::time::timeout(Duration::from_secs(4), client.connect_once(&pipe)).await;
+
+        let s = state.lock().unwrap();
+        assert!(matches!(s.connection, ConnectionStatus::Connected), "host never reached Connected with the verified daemon");
+        assert!(s.session_id.is_some(), "no session established");
+        assert!(latch.is_latched(), "native latch must stay latched");
+        println!("LIVE: host verified the real daemon and completed the handshake (session {:?})", s.session_id);
     }
 }

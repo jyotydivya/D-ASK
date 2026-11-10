@@ -335,6 +335,15 @@ public class Win32ScreenObservationService : IScreenObservationService
         {
             targetDisplay = displays[request.TargetDisplayIndex.Value];
         }
+        else if (request.TargetHwnd is long th && th != 0 && GetWindowMetadata(new IntPtr(th)) is { } tw)
+        {
+            // Phase 7B.1b: capture the display that contains the target window's centre, not the primary by default.
+            int wx = tw.X + tw.Width / 2, wy = tw.Y + tw.Height / 2;
+            targetDisplay = displays.FirstOrDefault(d => wx >= d.X && wx < d.X + d.Width && wy >= d.Y && wy < d.Y + d.Height) ?? targetDisplay;
+        }
+        var capturedAt = DateTimeOffset.UtcNow;
+        bool captureFailed = false;
+        string? captureError = null;
 
         int captureX = targetDisplay.X;
         int captureY = targetDisplay.Y;
@@ -377,25 +386,33 @@ public class Win32ScreenObservationService : IScreenObservationService
             hOldBitmap = SelectObject(hdcMem, hBitmap);
 
             // BitBlt with SRCCOPY | CAPTUREBLT for accurate layered window capture
-            bool bitBltSuccess = BitBlt(
-                hdcMem, 0, 0, captureWidth, captureHeight,
+            bool bitBltSuccess = Blit(
+                hdcMem, captureWidth, captureHeight,
                 hdcScreen, captureX, captureY,
                 SRCCOPY | CAPTUREBLT);
 
             if (!bitBltSuccess)
             {
-                // Fallback without CAPTUREBLT
-                BitBlt(hdcMem, 0, 0, captureWidth, captureHeight, hdcScreen, captureX, captureY, SRCCOPY);
+                // Fallback without CAPTUREBLT. Phase 7B.1a/7B.1b: its result is checked too.
+                bitBltSuccess = Blit(hdcMem, captureWidth, captureHeight, hdcScreen, captureX, captureY, SRCCOPY);
+            }
+            if (!bitBltSuccess)
+            {
+                captureFailed = true;
+                captureError = "BitBlt failed for both capture modes";
             }
 
             captureDurationMs = captureSw.Elapsed.TotalMilliseconds;
 
-            // Copy pixel data to Shared Memory via non-async helper
-            (sharedMemoryName, targetHandle) = CopyToSharedBuffer(
-                observationId, pBits, totalImageBytes, clientProcessId, sessionId);
+            // A failed capture publishes no buffer: an uninitialised or stale image must never look like a new frame.
+            if (!captureFailed)
+            {
+                (sharedMemoryName, targetHandle) = CopyToSharedBuffer(
+                    observationId, pBits, totalImageBytes, clientProcessId, sessionId);
+            }
 
             // Optional bounded thumbnail creation
-            if (request.GeneratePreviewThumbnail)
+            if (!captureFailed && request.GeneratePreviewThumbnail)
             {
                 previewThumbnailBase64 = GenerateCompactBmpThumbnail(
                     pBits, captureWidth, captureHeight,
@@ -435,22 +452,31 @@ public class Win32ScreenObservationService : IScreenObservationService
             uiaDurationMs = uiaSw.Elapsed.TotalMilliseconds;
         }
 
-        string overallStatus = uiaStatus == "PartialUiaTimeout" ? "PartialUiaTimeout" : "Captured";
+        string overallStatus = captureFailed ? "Failed" : uiaStatus == "PartialUiaTimeout" ? "PartialUiaTimeout" : "Captured";
 
         return new CaptureObservationResponse
         {
             RequestId = request.RequestId,
             ObservationId = observationId,
             Timestamp = DateTimeOffset.UtcNow,
-            Success = true,
+            // Phase 7B.1b: a failed capture is a failure, whatever UI Automation returned.
+            Success = !captureFailed,
             Status = overallStatus,
+            ErrorMessage = captureError,
+            RejectionCode = captureFailed ? "CaptureFailed" : null,
+            CapturedAtUtc = capturedAt,
+            CaptureStatus = captureFailed ? "failed" : "ok",
+            UiaStatus = uiaStatus,
+            UiaInspectedAtUtc = request.IncludeUiAutomation && targetHwnd != IntPtr.Zero ? DateTimeOffset.UtcNow : null,
+            ExpiresAtUtc = capturedAt + ObservationMaxAge,
+            IsAtomic = false,
             DisplayIndex = targetDisplay.Index,
             PhysicalWidth = captureWidth,
             PhysicalHeight = captureHeight,
             DpiScale = targetDisplay.DpiScale,
             SharedMemoryName = sharedMemoryName ?? string.Empty,
             TargetHandle = targetHandle,
-            DataSizeBytes = totalImageBytes,
+            DataSizeBytes = captureFailed ? 0 : totalImageBytes,
             Format = "raw_bgra32",
             ActiveWindow = activeWindow,
             UiElements = uiElements,
@@ -460,6 +486,13 @@ public class Win32ScreenObservationService : IScreenObservationService
             PreviewThumbnailBase64 = previewThumbnailBase64
         };
     }
+
+    /// <summary>How long an observation may be used after capture (Phase 7B.1b). Older observations are stale.</summary>
+    public static readonly TimeSpan ObservationMaxAge = TimeSpan.FromSeconds(2);
+
+    /// <summary>The screen blit. A seam so tests can make capture fail; production uses BitBlt and checks its result.</summary>
+    protected virtual bool Blit(IntPtr hdcDest, int width, int height, IntPtr hdcSrc, int x, int y, int rop) =>
+        BitBlt(hdcDest, 0, 0, width, height, hdcSrc, x, y, rop);
 
     private (string? SharedMemoryName, long? TargetHandle) CopyToSharedBuffer(
         string observationId, IntPtr pBits, int totalBytes, uint? clientProcessId, string? sessionId)

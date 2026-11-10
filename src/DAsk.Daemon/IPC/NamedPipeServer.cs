@@ -13,8 +13,20 @@ using Microsoft.Extensions.Options;
 
 namespace DAsk.Daemon.IPC;
 
+/// <summary>
+/// The pipe server cannot guarantee it exclusively owns the pipe name (squatting, ACL failure, or a
+/// non-transient instance-creation error). The daemon terminates instead of serving a weaker pipe.
+/// </summary>
+public sealed class PipeServerFatalException : Exception
+{
+    public PipeServerFatalException(string message, Exception? inner = null) : base(message, inner) { }
+}
+
 public class NamedPipeServer : BackgroundService
 {
+    private const int ErrorPipeBusyHResult = unchecked((int)0x800700E7);
+
+    private readonly IPipePeerVerifier _peerVerifier;
     private readonly ILogger<NamedPipeServer> _logger;
     private readonly ISystemMonitor _systemMonitor;
     private readonly IResourceManager _resourceManager;
@@ -23,6 +35,7 @@ public class NamedPipeServer : BackgroundService
     private readonly Automation.Observation.IScreenObservationService? _observationService;
     private readonly Automation.Execution.ActionExecutionEngine? _executionEngine;
     private readonly Automation.Policy.ActionPolicyEngine? _policyEngine;
+    private readonly AgentHost.AgentHostManager? _agentHost;
     private readonly DaemonOptions _options;
     private readonly ConcurrentDictionary<string, IpcClientSession> _activeSessions = new();
 
@@ -37,9 +50,17 @@ public class NamedPipeServer : BackgroundService
         ModelRuntime.IModelRuntime? modelRuntime = null,
         Automation.Observation.IScreenObservationService? observationService = null,
         Automation.Execution.ActionExecutionEngine? executionEngine = null,
-        Automation.Policy.ActionPolicyEngine? policyEngine = null)
+        Automation.Policy.ActionPolicyEngine? policyEngine = null,
+        IPipePeerVerifier? peerVerifier = null,
+        AgentHost.AgentHostManager? agentHost = null,
+        HudLivenessMonitor? livenessMonitor = null)
     {
+        _agentHost = agentHost;
         _logger = logger;
+        // Fail closed by construction: without an explicitly injected verifier (tests only), the
+        // production verifier is used, and with an empty allowlist it accepts nobody.
+        _peerVerifier = peerVerifier ?? new WindowsPipePeerVerifier(
+            options.Value.AllowedClientImagePaths, AppContext.BaseDirectory, logger);
         _systemMonitor = systemMonitor;
         _resourceManager = resourceManager;
         _stateManager = stateManager;
@@ -59,44 +80,135 @@ public class NamedPipeServer : BackgroundService
                 var env = IpcEnvelope.Create(nameof(ActionLifecycleNotification), notification);
                 foreach (var sess in _activeSessions.Values)
                 {
+                    if (!sess.IsAuthenticated) continue;
                     _ = sess.SendEnvelopeAsync(env);
                 }
             };
         }
+
+        if (_agentHost != null)
+        {
+            // Only to the session that owns the task.
+            _agentHost.TaskProgress += (s, e) => SendToOwner(e.Task.OwnerSessionId, IpcEnvelope.Create(nameof(AgentTaskProgressNotification),
+                new AgentTaskProgressNotification { TaskId = e.Task.TaskId, Seq = e.Seq, Data = e.Data.Clone() }));
+            _agentHost.TaskFinished += (s, rec) => SendToOwner(rec.OwnerSessionId, IpcEnvelope.Create(nameof(AgentTaskResultNotification), rec.Result!));
+        }
+
+        // Phase 7B.1a: HUD liveness is always tracked. Without an injected monitor the server builds its own, so a
+        // session can never be treated as live merely because the pipe is open.
+        _ownsLiveness = livenessMonitor == null;
+        _liveness = livenessMonitor ?? new HudLivenessMonitor(
+            logger, executionEngine, policyEngine, evidence: null,
+            leaseMs: _options.HeartbeatLeaseMs, maxSkewMs: _options.HeartbeatMaxSkewMs);
+        _executionEngine?.SetSessionLivenessGate(_liveness.IsLive);
+        _policyEngine?.SetSessionLivenessGate(_liveness.IsLive);
+
+        if (_policyEngine != null)
+        {
+            // The exact operation goes to the owning HUD only, and so does every change of its state.
+            _policyEngine.ApprovalRequested += (s, req) =>
+                SendToOwner(req.SessionId, IpcEnvelope.Create(nameof(ActionApprovalRequest), req));
+            _policyEngine.ApprovalStateChanged += (s, e) =>
+                SendToOwner(e.SessionId, IpcEnvelope.Create(nameof(ApprovalStateNotification), e.Notification));
+        }
+    }
+
+    private readonly HudLivenessMonitor _liveness;
+    private readonly bool _ownsLiveness;
+
+    public HudLivenessMonitor Liveness => _liveness;
+
+    private void SendToOwner(string sessionId, IpcEnvelope envelope)
+    {
+        if (_activeSessions.TryGetValue(sessionId, out var sess) && sess.IsAuthenticated) _ = sess.SendEnvelopeAsync(envelope);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Starting D-ASK Named Pipe Server on '{PipeName}'...", _options.PipeName);
 
+        // BackgroundService.StartAsync runs ExecuteAsync synchronously up to its first await. An exception
+        // thrown before that point escapes StartAsync, so Host.StartAsync/RunAsync throws and, with the
+        // default Program.Main, the process dies with an unhandled exception (exit code 0xE0434352)
+        // that overrides Environment.ExitCode. Yielding first moves the fatal path behind that boundary:
+        // the fault is then handled by the host's BackgroundServiceExceptionBehavior.StopHost, which logs
+        // it, stops the host gracefully (RunAsync returns) and leaves Environment.ExitCode = 1.
+        // Failure is still fail-closed: nothing is served and there is no retry loop.
+        await Task.Yield();
+
+        NamedPipeServerStream? listening;
+        PipeSecurity security;
+        try
+        {
+            security = PipeSecurityFactory.CreateForCurrentUser();
+
+            // FirstPipeInstance on THIS instance only: if the name already exists (squatter, stale daemon)
+            // creation fails with UnauthorizedAccessException and we refuse to serve.
+            listening = CreateInstance(security, firstInstance: true);
+        }
+        catch (Exception ex)
+        {
+            throw Fatal($"Cannot establish exclusive, access-controlled ownership of pipe '{_options.PipeName}'. " +
+                        "Another process may already own the name, or the ACL could not be applied.", ex);
+        }
+
+        TimeSpan handshakeTimeout = TimeSpan.FromMilliseconds(_options.HandshakeTimeoutMs > 0 ? _options.HandshakeTimeoutMs : 5000);
+
         // Start periodic telemetry broadcast loop in background
         _ = Task.Run(() => TelemetryBroadcastLoopAsync(stoppingToken), stoppingToken);
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            NamedPipeServerStream? serverStream = null;
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                serverStream = new NamedPipeServerStream(
-                    _options.PipeName,
-                    PipeDirection.InOut,
-                    _options.MaxConnectedClients,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous | PipeOptions.WriteThrough);
+                if (listening == null)
+                {
+                    // Only reached when all MaxConnectedClients instances were busy at the last attempt.
+                    listening = TryCreateNextInstance(security);
+                    if (listening == null)
+                    {
+                        await Task.Delay(250, stoppingToken);
+                        continue;
+                    }
+                }
 
-                _logger.LogDebug("Waiting for incoming client pipe connection...");
-                await serverStream.WaitForConnectionAsync(stoppingToken);
+                NamedPipeServerStream connected = listening;
+                listening = null;
+
+                try
+                {
+                    await connected.WaitForConnectionAsync(stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { connected.Dispose(); } catch { }
+                    break;
+                }
+                catch (IOException ex)
+                {
+                    _logger.LogWarning(ex, "Pipe instance failed while waiting for a client; recreating.");
+                    try { connected.Dispose(); } catch { }
+                    continue;
+                }
 
                 _logger.LogInformation("Client connected on pipe '{PipeName}'.", _options.PipeName);
 
                 var session = new IpcClientSession(
-                    serverStream,
+                    connected,
                     _stateManager,
                     _logger,
+                    _peerVerifier,
                     _modelRuntime,
                     _observationService,
                     _executionEngine,
-                    _policyEngine);
+                    _policyEngine,
+                    handshakeTimeout,
+                    _agentHost,
+                    _liveness);
+
+                // Re-open a listening instance immediately, before doing any other work, so the window in
+                // which no instance of the name is held by this process stays as small as possible.
+                listening = TryCreateNextInstance(security);
 
                 _activeSessions.TryAdd(session.SessionId, session);
 
@@ -104,25 +216,52 @@ public class NamedPipeServer : BackgroundService
                 {
                     _activeSessions.TryRemove(id, out _);
                     _logger.LogInformation("Session {SessionId} removed. Active clients: {Count}", id, _activeSessions.Count);
-                    try { serverStream.Dispose(); } catch { }
+                    try { connected.Dispose(); } catch { }
                 };
 
-                // Run session handler asynchronously
+                // Run session handler asynchronously (peer verification happens first, inside the session)
                 _ = Task.Run(() => session.RunSessionAsync(stoppingToken), stoppingToken);
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error accepting client pipe connection.");
-                try { serverStream?.Dispose(); } catch { }
-                await Task.Delay(500, stoppingToken);
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // normal shutdown
+        }
+        finally
+        {
+            try { listening?.Dispose(); } catch { }
         }
 
         _logger.LogInformation("D-ASK Named Pipe Server stopping.");
+    }
+
+    private NamedPipeServerStream CreateInstance(PipeSecurity security, bool firstInstance) =>
+        HardenedPipeFactory.Create(_options.PipeName, _options.MaxConnectedClients, security, firstInstance);
+
+    /// <returns>A new listening instance, or null when every instance is currently in use (expected throttling).</returns>
+    /// <exception cref="PipeServerFatalException">Any other failure, e.g. access denied because the name is now owned by someone else.</exception>
+    private NamedPipeServerStream? TryCreateNextInstance(PipeSecurity security)
+    {
+        try
+        {
+            return CreateInstance(security, firstInstance: false);
+        }
+        catch (IOException ex) when (ex.HResult == ErrorPipeBusyHResult)
+        {
+            _logger.LogDebug("All {Max} pipe instances are in use; will retry.", _options.MaxConnectedClients);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            throw Fatal($"Cannot create a further instance of pipe '{_options.PipeName}'; ownership can no longer be guaranteed.", ex);
+        }
+    }
+
+    private PipeServerFatalException Fatal(string message, Exception inner)
+    {
+        _logger.LogCritical(inner, "{Message} Terminating the daemon instead of serving a weaker pipe.", message);
+        Environment.ExitCode = 1;
+        return new PipeServerFatalException(message, inner);
     }
 
     private async Task TelemetryBroadcastLoopAsync(CancellationToken cancellationToken)
@@ -197,6 +336,7 @@ public class NamedPipeServer : BackgroundService
     {
         _resourceManager.ResourceAlertTriggered -= OnResourceAlertTriggered;
         _stateManager.StateChanged -= OnStateChanged;
+        if (_ownsLiveness) _liveness.Dispose();
         base.Dispose();
     }
 }

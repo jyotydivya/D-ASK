@@ -1,8 +1,14 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(not(test), windows_subsystem = "windows")]
 
 pub mod ipc;
+pub mod overlay;
 pub mod render;
 pub mod state;
+pub mod tts;
+pub mod stt;
+pub mod whisper;
+#[cfg(feature = "approval-fixture")]
+mod approval_fixture;
 
 use ipc::protocol::{
     self, CURRENT_PROTOCOL_VERSION, IpcEnvelope,
@@ -101,6 +107,11 @@ pub enum WebBridgeMessage {
     ThemeChange { theme: String },
     EmergencyStop { reason: Option<String> },
     ResumeExecution { reason: Option<String> },
+    AgentTaskSubmit(ipc::agent_bridge::AgentSubmitPayload),
+    AgentTaskCancel(ipc::agent_bridge::AgentCancelPayload),
+    /// The page may only lower interaction: "ambient" or "hidden".
+    SetInteraction { mode: String },
+    HitRegions(HitRegionsPayload),
     ActionApprovalDecision {
         approval_id: String,
         approved: bool,
@@ -108,8 +119,38 @@ pub enum WebBridgeMessage {
         parameters_sha256: Option<String>,
         action_id: Option<String>,
         action_type: Option<String>,
+        /// Phase 7B.1a: echo of the daemon's action digest; without it the daemon refuses an approval.
+        #[serde(default)]
+        action_digest: Option<String>,
     },
+    /// Phase 7B.1a: where the approval panel is (CSS pixels), so it alone can take clicks in Ambient mode.
+    ApprovalSurface(ApprovalSurfacePayload),
+    /// Offline TTS (Windows SAPI, local voices only): speak this text / stop speaking now.
+    Speak { text: String },
+    StopSpeaking,
     Ping,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalSurfacePayload {
+    pub approval_id: String,
+    /// `[x, y, width, height]`, or null when the panel is not showing a pending approval.
+    pub rect: Option<[f64; 4]>,
+}
+
+/// The page's interactive areas in CSS pixels, `[x, y, width, height]`, and its viewport `[width, height, dpr]`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitRegionsPayload {
+    pub rects: Vec<[f64; 4]>,
+    pub viewport: [f64; 3],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayHotkey {
+    ToggleInteractive,
+    ToggleHidden,
 }
 
 #[derive(Debug, Clone)]
@@ -121,8 +162,16 @@ pub enum HudAppEvent {
     IpcActionLifecycle(Box<protocol::ActionLifecycleNotification>),
     IpcEmergencyStopResponse(Box<protocol::EmergencyStopResponse>),
     IpcResumeExecutionResponse(Box<protocol::ResumeExecutionResponse>),
+    IpcAgent(Box<ipc::agent_bridge::AgentFrontendMessage>),
+    IpcConnection { connected: bool, emergency_stopped: bool },
     GlobalPanicStop,
+    OverlayHotkeysRegistered { toggle_ok: bool, hide_ok: bool },
+    OverlayHotkeyPressed(OverlayHotkey),
     FrontendMessage(String),
+    /// Phase 7B.1a: a liveness probe the UI event loop must acknowledge (proves it is not hung).
+    LivenessProbe(i64),
+    IpcApprovalState(Box<protocol::ApprovalStateNotification>),
+    IpcMessageRejected(Box<protocol::MessageRejectedNotification>),
 }
 
 fn get_mime_type(path: &str) -> &'static str {
@@ -178,12 +227,6 @@ fn serve_local_file(root: &Path, rel_path: &str) -> Option<(Vec<u8>, &'static st
             "application/json; charset=utf-8",
         ));
     }
-    if clean == "api/assistant" {
-        return Some((
-            b"{\"reply\":\"D-ASK ONLINE\",\"actionType\":\"none\"}".to_vec(),
-            "application/json; charset=utf-8",
-        ));
-    }
     let target = if clean.is_empty() || clean == "index.html" {
         root.join(".next").join("server").join("app").join("index.html")
     } else if let Some(stripped) = clean.strip_prefix("_next/static/") {
@@ -204,12 +247,23 @@ fn serve_local_file(root: &Path, rel_path: &str) -> Option<(Vec<u8>, &'static st
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let log_path = "d:\\D-ASK\\D-ASK\\scratch\\hud_trace.log";
+    // One HUD per user session. A second one couldn't register the hotkeys (Emergency Stop included) and would stack
+    // a second full-screen overlay over the first. Checked before the log is opened: opening it truncates the file,
+    // which would erase the running HUD's log.
+    let _single_instance = match acquire_single_instance() {
+        Some(guard) => guard,
+        None => {
+            eprintln!("Another D-ASK HUD is already running in this session; this one exits without starting.");
+            return Ok(());
+        }
+    };
+
+    let log_path = std::env::var("DASK_HUD_LOG").unwrap_or_else(|_| "d:\\D-ASK\\D-ASK\\scratch\\hud_trace.log".to_string());
     if let Ok(f) = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(log_path)
+        .open(&log_path)
     {
         tracing_subscriber::fmt()
             .with_writer(std::sync::Mutex::new(f))
@@ -228,6 +282,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!("Starting D-ASK Native Desktop Host (Rust + WebView2 + Three.js)...");
+
 
     let state = HudState::new_shared();
     let args: Vec<String> = std::env::args().collect();
@@ -266,10 +321,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let native_latch = Arc::new(state::emergency_stop::NativeEmergencyStopLatch::new());
+    // Phase 7B.1a: shared with the UI event loop and the hotkey thread; each heartbeat carries their acknowledgements.
+    let liveness_probe = Arc::new(state::liveness::LivenessProbe::new());
     let (client, outgoing_tx, priority_tx) = IpcClient::new(state.clone(), native_latch.clone(), event_proxy.clone());
+    let client = client.with_liveness(liveness_probe.clone());
 
     let mut hotkey_handle = if let Some(ref ep) = event_proxy {
-        Some(spawn_global_panic_hotkey_thread(state.clone(), native_latch.clone(), ep.clone(), priority_tx.clone()))
+        Some(spawn_global_panic_hotkey_thread(state.clone(), native_latch.clone(), ep.clone(), priority_tx.clone(), liveness_probe.clone()))
     } else {
         None
     };
@@ -319,15 +377,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = event_loop.unwrap();
     let event_proxy = event_proxy.unwrap();
 
+    // Created hidden; the overlay controller sizes it to the display's work area and shows it without focus.
     let window = Arc::new(
         WindowBuilder::new()
             .with_title("D-ASK Holographic Orb HUD")
-            .with_position(LogicalPosition::new(100.0, 100.0))
+            .with_position(LogicalPosition::new(0.0, 0.0))
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_transparent(true)
             .with_decorations(false)
             .with_window_level(WindowLevel::AlwaysOnTop)
-            .with_resizable(true)
+            .with_resizable(false)
+            .with_visible(false)
             .with_no_redirection_bitmap(true)
             .build(&event_loop)?,
     );
@@ -346,6 +406,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    let overlay = overlay::OverlayController::new(hwnd);
+    // Offline TTS (Windows SAPI): owned by the event loop; stopped on every Emergency Stop path.
+    let tts = tts::Tts::start();
+    overlay.prepare();
+
     let root_path = resolve_root();
     info!("Resolved project root: {}", root_path.display());
 
@@ -355,23 +420,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let webview_builder = wry::WebViewBuilder::new()
         .with_transparent(true)
         .with_background_color((0, 0, 0, 0))
-        .with_custom_protocol("dask".into(), move |_id, req: Request<Vec<u8>>| {
-            let path = req.uri().path();
+        .with_asynchronous_custom_protocol("dask".into(), move |_id, req: Request<Vec<u8>>, responder| {
+            let path = req.uri().path().to_string();
             debug!("[CUSTOM PROTOCOL] Request: {}", path);
 
-            if let Some((bytes, mime)) = serve_local_file(&root_for_protocol, path) {
-                Response::builder()
+            // Offline STT: the page POSTs 16-bit PCM WAV; Windows SAPI transcribes it on its own thread (never this one).
+            if path == "/api/stt" {
+                let json = |status: StatusCode, body: serde_json::Value| Response::builder()
+                    .status(status)
+                    .header("Content-Type", "application/json")
+                    .body(Cow::Owned(body.to_string().into_bytes()))
+                    .unwrap();
+                if req.method() != "POST" { responder.respond(json(StatusCode::METHOD_NOT_ALLOWED, serde_json::json!({ "error": "POST a WAV" }))); return; }
+                let body = req.into_body();
+                if let Err(why) = stt::validate_wav(&body) { responder.respond(json(StatusCode::BAD_REQUEST, serde_json::json!({ "error": why }))); return; }
+                let stt_root = root_for_protocol.clone();
+                std::thread::spawn(move || {
+                    let file = std::env::temp_dir().join(format!("dask-stt-{}.wav", uuid::Uuid::new_v4()));
+                    let t0 = std::time::Instant::now();
+                    let result = std::fs::write(&file, &body).map_err(|e| e.to_string()).and_then(|_| stt::transcribe(&stt_root, &file, &body));
+                    // Acceptance evidence ONLY: DASK_STT_EVIDENCE_DIR (unset in normal use; set by scripts\hud\voice-live.ps1 for its own
+                    // stack) keeps the recording and its transcript in that folder. Otherwise the recording is never kept.
+                    if let Some(dir) = std::env::var_os("DASK_STT_EVIDENCE_DIR").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
+                        let stem = format!("utt-{}", chrono::Utc::now().format("%H%M%S%3f"));
+                        let _ = std::fs::copy(&file, dir.join(format!("{stem}.wav")));
+                        let note = match &result { Ok((t, e)) => format!("{e}\t{t}\n"), Err(e) => format!("error\t{e}\n") };
+                        let _ = std::fs::write(dir.join(format!("{stem}.txt")), note);
+                    }
+                    let _ = std::fs::remove_file(&file);   // the temporary file is always deleted
+                    match result {
+                        Ok((text, engine)) => { info!("[STT] Transcribed {} bytes of audio ({} characters) with {} in {} ms.", body.len(), text.len(), engine, t0.elapsed().as_millis()); responder.respond(json(StatusCode::OK, serde_json::json!({ "text": text, "engine": engine }))) }
+                        Err(e) => { warn!("[STT] Transcription failed: {}", e); responder.respond(json(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "error": "transcription failed" }))) }
+                    }
+                });
+                return;
+            }
+
+            if let Some((bytes, mime)) = serve_local_file(&root_for_protocol, &path) {
+                responder.respond(Response::builder()
                     .header("Content-Type", mime)
                     .header("Access-Control-Allow-Origin", "*")
                     .body(Cow::Owned(bytes))
-                    .unwrap()
+                    .unwrap())
             } else {
                 warn!("[CUSTOM PROTOCOL] 404 Not Found: {}", path);
-                Response::builder()
+                responder.respond(Response::builder()
                     .status(StatusCode::NOT_FOUND)
                     .header("Content-Type", "text/plain")
                     .body(Cow::Borrowed(b"404 Not Found" as &[u8]))
-                    .unwrap()
+                    .unwrap())
             }
         })
         .with_ipc_handler(move |req| {
@@ -456,13 +553,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    overlay.show_without_focus();
+    let _overlay_watcher = overlay.spawn_watcher();
+    let mut last_viewport: Option<[f64; 3]> = None;
+
     // Spawn IPC client and forward events to event_proxy
+    // Test-only fixture mode (feature-gated, absent from production builds): no daemon connection at all.
+    #[cfg(feature = "approval-fixture")]
+    let fixture_mode = approval_fixture::enabled();
+    #[cfg(not(feature = "approval-fixture"))]
+    let fixture_mode = false;
+    #[cfg(feature = "approval-fixture")]
+    let proxy_for_fixture = event_proxy.clone();
+    #[cfg(feature = "approval-fixture")]
+    if fixture_mode {
+        warn!("[FIXTURE] Approval-surface fixture mode: no daemon connection; approvals are synthetic and authorize nothing.");
+        approval_fixture::spawn(event_proxy.clone());
+    }
+
     let proxy_for_daemon = event_proxy.clone();
     let state_for_daemon = state.clone();
-    rt.spawn(async move {
-        // Run IPC client in background
-        rt_daemon_bridge(client, state_for_daemon, proxy_for_daemon).await;
-    });
+    if !fixture_mode {
+        rt.spawn(async move {
+            // Run IPC client in background
+            rt_daemon_bridge(client, state_for_daemon, proxy_for_daemon).await;
+        });
+    }
 
     let app_start = std::time::Instant::now();
     let outgoing_tx_for_events = outgoing_tx.clone();
@@ -480,6 +596,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 ..
             } => match code {
+                // While interactive, Escape returns to ambient instead of closing the HUD.
+                KeyCode::Escape if overlay.mode() == overlay::InteractionMode::Interactive => {
+                    set_overlay_mode(&overlay, &webview, overlay::InteractionMode::Ambient);
+                }
                 KeyCode::Escape | KeyCode::KeyQ => target.exit(),
                 _ => {}
             },
@@ -523,6 +643,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             HudAppEvent::IpcActionApproval(req) => {
+                // Phase 7B.1a: open the (bounded, armed-later) Ambient approval surface for exactly this approval.
+                let remaining = (req.expires_at_utc - chrono::Utc::now()).to_std().unwrap_or(std::time::Duration::ZERO);
+                overlay.begin_approval(&req.approval_id, remaining);
                 if let Ok(json) = serde_json::to_string(&serde_json::json!({
                     "type": "ActionApprovalRequest",
                     "payload": *req,
@@ -547,6 +670,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             HudAppEvent::IpcEmergencyStopResponse(resp) => {
+                tts.stop();
+                overlay.end_approval(None);
                 if let Ok(json) = serde_json::to_string(&serde_json::json!({
                     "type": "EmergencyStopResponse",
                     "payload": *resp,
@@ -570,7 +695,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = webview.evaluate_script(&script);
                 }
             }
+            HudAppEvent::IpcAgent(message) => {
+                // P1/P2: the task an approved input belonged to has ended: stop passing input through.
+                if message.msg_type == "AgentTaskResultNotification" {
+                    overlay.end_input_passthrough();
+                }
+                dispatch_to_frontend(&webview, &*message);
+            }
+            HudAppEvent::LivenessProbe(seq) => {
+                liveness_probe.ack_event_loop(seq);
+            }
+            HudAppEvent::IpcApprovalState(n) => {
+                // Any state the daemon reports for this approval other than Pending means it can no longer be decided.
+                if n.is_terminal() {
+                    overlay.end_approval(Some(&n.approval_id));
+                }
+                dispatch_to_frontend(&webview, &serde_json::json!({ "type": "ApprovalStateNotification", "payload": *n }));
+            }
+            HudAppEvent::IpcMessageRejected(n) => {
+                dispatch_to_frontend(&webview, &serde_json::json!({ "type": "MessageRejectedNotification", "payload": *n }));
+            }
+            HudAppEvent::IpcConnection { connected, emergency_stopped } => {
+                if !connected {
+                    // Disconnect fails closed: the daemon has invalidated this session's approvals.
+                    overlay.end_approval(None);
+                }
+                dispatch_connection(&webview, connected, emergency_stopped);
+            }
+            HudAppEvent::OverlayHotkeysRegistered { toggle_ok, hide_ok } => {
+                overlay.toggle_hotkey_ok.store(toggle_ok, std::sync::atomic::Ordering::SeqCst);
+                overlay.hide_hotkey_ok.store(hide_ok, std::sync::atomic::Ordering::SeqCst);
+                // Never fall back to interactive: an overlay that takes input without the user asking blocks the desktop.
+                // It stays click-through and says why it can't be made interactive.
+                if !toggle_ok {
+                    warn!("[OVERLAY] Ctrl+Alt+Space is unavailable; staying in ambient mode (click-through). The HUD can't be made interactive until it is restarted without the conflict.");
+                }
+                dispatch_interaction(&webview, &overlay);
+            }
+            HudAppEvent::OverlayHotkeyPressed(key) => {
+                let next = match key {
+                    OverlayHotkey::ToggleInteractive => overlay::after_toggle_interactive(overlay.mode()),
+                    OverlayHotkey::ToggleHidden => overlay::after_toggle_hidden(overlay.mode()),
+                };
+                set_overlay_mode(&overlay, &webview, next);
+            }
             HudAppEvent::GlobalPanicStop => {
+                tts.stop();
+                overlay.end_approval(None);
                 let script = "if (window.__DASK_IPC_DISPATCH__) window.__DASK_IPC_DISPATCH__({type:'EmergencyStopTriggered',payload:{source:'GlobalHotkey'}});";
                 let _ = webview.evaluate_script(script);
             }
@@ -579,10 +750,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     warn!("[IPC BRIDGE SECURITY] Discarded payload exceeding 64KB limit: {} bytes", raw_msg.len());
                     return;
                 }
-                debug!("[IPC BRIDGE] Frontend raw message: {}", raw_msg);
+                // Never the content: it can hold what the user typed.
+                debug!("[IPC BRIDGE] Frontend message: {} bytes", raw_msg.len());
                 match serde_json::from_str::<WebBridgeMessage>(&raw_msg) {
                     Ok(WebBridgeMessage::FrontendReady) => {
                         info!("[IPC BRIDGE] Frontend UI is ready and mounted");
+                        // The page can load after the handshake, so it is told the current state.
+                        let (connected, stopped) = {
+                            let s = state.lock().unwrap();
+                            (matches!(s.connection, state::hud_state::ConnectionStatus::Connected), s.is_emergency_stopped)
+                        };
+                        dispatch_connection(&webview, connected, stopped || native_latch_for_events.is_latched());
+                        dispatch_interaction(&webview, &overlay);
                     }
                     Ok(WebBridgeMessage::CameraIntent { enabled }) => {
                         info!("[IPC BRIDGE] Camera intent updated by user action: enabled={}", enabled);
@@ -624,7 +803,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     Ok(WebBridgeMessage::UserCommand { text }) => {
-                        info!("[IPC BRIDGE] User command dispatched: {}", text);
+                        info!("[IPC BRIDGE] User command dispatched ({} chars)", text.chars().count());
                         if let Ok(envelope) = IpcEnvelope::new(
                             "UserCommand",
                             &serde_json::json!({ "text": text }),
@@ -633,18 +812,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let _ = outgoing_tx_for_events.try_send(envelope);
                         }
                     }
-                    Ok(WebBridgeMessage::Approval { task_id, approved }) => {
-                        info!(
-                            "[IPC BRIDGE] Task approval: task_id={}, approved={}",
-                            task_id, approved
-                        );
-                        if let Ok(envelope) = IpcEnvelope::new(
-                            "TaskApproval",
-                            &serde_json::json!({ "taskId": task_id, "approved": approved }),
-                            None,
-                        ) {
-                            let _ = outgoing_tx_for_events.try_send(envelope);
-                        }
+                    Ok(WebBridgeMessage::Approval { task_id: _, approved: _ }) => {
+                        // Phase 7B.1a (F6): the retired page approval path. It never reached any policy; there is exactly
+                        // one approval path (ActionApprovalDecision -> daemon policy). Refused here, explicitly, and not sent.
+                        warn!("[IPC BRIDGE] Refused obsolete 'Approval' message: it authorizes nothing.");
+                        dispatch_to_frontend(&webview, &serde_json::json!({
+                            "type": "MessageRejectedNotification",
+                            "payload": {
+                                "rejectedType": "Approval",
+                                "code": "obsolete_authorization_message",
+                                "message": "This approval path is obsolete and authorizes nothing. Approvals are decided only in the approval panel.",
+                                "timestamp": chrono::Utc::now(),
+                            },
+                        }));
                     }
                     Ok(WebBridgeMessage::Cancel { task_id }) => {
                         info!("[IPC BRIDGE] Task cancellation: task_id={}", task_id);
@@ -656,7 +836,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let _ = outgoing_tx_for_events.try_send(envelope);
                         }
                     }
+                    Ok(WebBridgeMessage::AgentTaskSubmit(payload)) => {
+                        let connected = matches!(state.lock().unwrap().connection, state::hud_state::ConnectionStatus::Connected);
+                        let stopped = native_latch_for_events.is_latched();
+                        info!("[IPC BRIDGE] Agent task requested ({} chars)", payload.objective.chars().count());
+                        match ipc::agent_bridge::build_submit(&payload, connected, stopped) {
+                            Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
+                            Err(message) => dispatch_to_frontend(&webview, &message),
+                        }
+                    }
+                    Ok(WebBridgeMessage::Speak { text }) => tts.speak(&text),
+                    Ok(WebBridgeMessage::StopSpeaking) => tts.stop(),
+                    Ok(WebBridgeMessage::AgentTaskCancel(payload)) => {
+                        let connected = matches!(state.lock().unwrap().connection, state::hud_state::ConnectionStatus::Connected);
+                        info!("[IPC BRIDGE] Agent task cancel requested: {}", payload.task_id);
+                        match ipc::agent_bridge::build_cancel(&payload, connected) {
+                            Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
+                            Err(message) => dispatch_to_frontend(&webview, &message),
+                        }
+                    }
+                    Ok(WebBridgeMessage::SetInteraction { mode }) => match overlay::InteractionMode::from_page_request(&mode) {
+                        Some(m) => set_overlay_mode(&overlay, &webview, m),
+                        None => warn!("[OVERLAY] Ignored a page request for mode {:?}: the page can only lower interaction.", mode),
+                    },
+                    Ok(WebBridgeMessage::HitRegions(payload)) => {
+                        match overlay::regions_from_css(&payload.rects, window.scale_factor()) {
+                            Ok(regions) => overlay.set_regions(regions),
+                            Err(e) => warn!("[OVERLAY] Rejected hit regions: {e}"),
+                        }
+                        if last_viewport != Some(payload.viewport) {
+                            last_viewport = Some(payload.viewport);
+                            let r = overlay.window_rect();
+                            info!(
+                                "[OVERLAY] Page viewport {}x{} CSS px at DPR {}; window {}x{} at {},{}; scale factor {}",
+                                payload.viewport[0], payload.viewport[1], payload.viewport[2],
+                                r.right - r.left, r.bottom - r.top, r.left, r.top, window.scale_factor()
+                            );
+                        }
+                    }
+                    Ok(WebBridgeMessage::ApprovalSurface(p)) => {
+                        if let Err(e) = overlay.set_approval_region(&p.approval_id, p.rect, window.scale_factor()) {
+                            warn!("[OVERLAY] Refused approval surface for {}: {e}", p.approval_id);
+                        }
+                    }
                     Ok(WebBridgeMessage::EmergencyStop { reason }) => {
+                        overlay.end_approval(None);
                         let r = reason.unwrap_or_else(|| "User clicked Stop HUD button".to_string());
                         warn!("[IPC BRIDGE] Emergency Stop requested from HUD UI: {}", r);
                         let (stop_req, gen, _) = native_latch_for_events.trigger_stop("FrontendButton", &r, None);
@@ -710,12 +934,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         parameters_sha256,
                         action_id,
                         action_type,
+                        action_digest,
                     }) => {
                         info!(
                             "[IPC BRIDGE] Action approval decision: approval_id={}, approved={}",
                             approval_id, approved
                         );
+                        // One click per approval: the surface takes no more input until the daemon answers.
+                        overlay.disarm_approval(&approval_id);
+                        // P1/P2: the user just approved ONE input action in this (foreground) HUD. Windows lets only the
+                        // foreground process hand on the foreground, so grant it to the VERIFIED daemon process only, for
+                        // these input types only; the daemon still checks the foreground before every input event.
+                        if approved
+                            && matches!(action_type.as_deref(), Some("Desktop.ClickElement") | Some("Desktop.TypeText") | Some("Desktop.PressKeys"))
+                        {
+                            let pid = ipc::client::VERIFIED_DAEMON_PID.load(std::sync::atomic::Ordering::SeqCst);
+                            if pid != 0 {
+                                let granted = unsafe { windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(pid) }.is_ok();
+                                info!("[IPC BRIDGE] Foreground permission for the approved input granted to daemon PID {}: {}", pid, granted);
+                                overlay.begin_input_passthrough(std::time::Duration::from_secs(45));
+                            } else {
+                                info!("[IPC BRIDGE] No verified daemon PID; foreground permission not granted (the daemon will refuse the input).");
+                            }
+                        }
                         let dec = protocol::ActionApprovalResponse {
+                            action_digest,
                             approval_id,
                             action_id: action_id.unwrap_or_default(),
                             action_type: action_type.unwrap_or_default(),
@@ -727,6 +970,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             stop_generation: 0,
                             rejection_reason: reason,
                         };
+                        #[cfg(feature = "approval-fixture")]
+                        if fixture_mode {
+                            approval_fixture::on_decision(proxy_for_fixture.clone(), &dec.approval_id, dec.approved);
+                            return;
+                        }
                         if let Ok(envelope) = protocol::IpcEnvelope::new("ActionApprovalResponse", &dec, None) {
                             let _ = outgoing_tx_for_events.try_send(envelope);
                         }
@@ -740,7 +988,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     Err(e) => {
-                        warn!("[IPC BRIDGE] Discarding invalid bridge message: {} ({})", raw_msg, e);
+                        warn!("[IPC BRIDGE] Discarding invalid bridge message ({} bytes): line {}, column {}", raw_msg.len(), e.line(), e.column());
                     }
                 }
             }
@@ -754,6 +1002,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Event::LoopExiting => {
+            overlay.shutdown();
             info!("HUD event loop exiting. Cleaning up panic hotkey thread...");
             if let Some(ref mut handle) = hotkey_handle {
                 handle.shutdown();
@@ -763,6 +1012,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     Ok(())
+}
+
+fn dispatch_to_frontend<T: serde::Serialize>(webview: &wry::WebView, message: &T) {
+    if let Ok(json) = serde_json::to_string(message) {
+        let script = format!("if (window.__DASK_IPC_DISPATCH__) window.__DASK_IPC_DISPATCH__({});", json);
+        let _ = webview.evaluate_script(&script);
+    }
+}
+
+/// Holds a named mutex for the life of the process. None when another HUD already holds it.
+fn acquire_single_instance() -> Option<windows::Win32::Foundation::HANDLE> {
+    use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows::Win32::System::Threading::CreateMutexW;
+    let name = std::env::var("DASK_HUD_INSTANCE").unwrap_or_else(|_| "D-ASK-HUD".to_string());
+    let wide: Vec<u16> = format!("Local\\{name}").encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let handle = CreateMutexW(None, true, windows::core::PCWSTR(wide.as_ptr())).ok()?;
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            return None;
+        }
+        Some(handle)
+    }
+}
+
+fn set_overlay_mode(overlay: &overlay::OverlayController, webview: &wry::WebView, mode: overlay::InteractionMode) {
+    if overlay.apply_mode(mode) {
+        // Hidden stops rendering; the page's scripts, its pipe traffic and any task keep running.
+        let _ = webview.set_visible(mode != overlay::InteractionMode::Hidden);
+        if mode == overlay::InteractionMode::Interactive {
+            let _ = webview.focus();
+        }
+    }
+    dispatch_interaction(webview, overlay);
+}
+
+fn dispatch_interaction(webview: &wry::WebView, overlay: &overlay::OverlayController) {
+    use std::sync::atomic::Ordering;
+    dispatch_to_frontend(
+        webview,
+        &serde_json::json!({
+            "type": "InteractionState",
+            "payload": {
+                "mode": overlay.mode().as_str(),
+                "toggleHotkey": "Ctrl+Alt+Space",
+                "hideHotkey": "Ctrl+Alt+H",
+                "stopHotkey": "Ctrl+Shift+F12",
+                "toggleAvailable": overlay.toggle_hotkey_ok.load(Ordering::SeqCst),
+                "hideAvailable": overlay.hide_hotkey_ok.load(Ordering::SeqCst),
+            },
+        }),
+    );
+}
+
+fn dispatch_connection(webview: &wry::WebView, connected: bool, emergency_stopped: bool) {
+    dispatch_to_frontend(
+        webview,
+        &serde_json::json!({
+            "type": "AgentConnection",
+            "payload": { "connected": connected, "emergencyStopped": emergency_stopped },
+        }),
+    );
+}
+
+/// A full or closed queue fails the request now instead of leaving the frontend waiting.
+fn send_agent_request(tx: &mpsc::Sender<IpcEnvelope>, webview: &wry::WebView, envelope: IpcEnvelope) {
+    if let Err(e) = tx.try_send(envelope) {
+        let refused = match e {
+            mpsc::error::TrySendError::Full(env) | mpsc::error::TrySendError::Closed(env) => env,
+        };
+        warn!("[IPC BRIDGE] {} refused: the outgoing queue is full or closed.", refused.msg_type);
+        if let Some(message) = ipc::agent_bridge::queue_rejection(&refused) {
+            dispatch_to_frontend(webview, &message);
+        }
+    }
 }
 
 async fn rt_daemon_bridge(
@@ -842,6 +1165,7 @@ fn spawn_global_panic_hotkey_thread(
     latch: Arc<state::NativeEmergencyStopLatch>,
     proxy: winit::event_loop::EventLoopProxy<HudAppEvent>,
     priority_tx: tokio::sync::mpsc::Sender<protocol::IpcEnvelope>,
+    probe: Arc<state::liveness::LivenessProbe>,
 ) -> HotkeyThreadHandle {
     let (tx_tid, rx_tid) = std::sync::mpsc::channel();
     let state_clone = state.clone();
@@ -849,12 +1173,14 @@ fn spawn_global_panic_hotkey_thread(
     let join_handle = std::thread::spawn(move || unsafe {
         use windows::Win32::System::Threading::GetCurrentThreadId;
         use windows::Win32::UI::Input::KeyboardAndMouse::{
-            RegisterHotKey, UnregisterHotKey, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_F12,
+            RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_F12, VK_SPACE,
         };
         use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
         let tid = GetCurrentThreadId();
         let _ = tx_tid.send(tid);
+        // Phase 7B.1a: the IPC task posts liveness probes here; answering them proves this message loop is pumping.
+        probe.set_hotkey_thread(tid);
 
         const PANIC_HOTKEY_ID: i32 = 0x9001;
 
@@ -896,6 +1222,23 @@ fn spawn_global_panic_hotkey_thread(
             }
         }
 
+        // Overlay hotkeys. Ctrl+Shift+Space is avoided: VS Code-based editors use it, and a global hotkey would take it.
+        const OVERLAY_TOGGLE_ID: i32 = 0x9002;
+        const OVERLAY_HIDE_ID: i32 = 0x9003;
+        let toggle_ok = RegisterHotKey(None, OVERLAY_TOGGLE_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE.0 as u32).is_ok();
+        let hide_ok = RegisterHotKey(None, OVERLAY_HIDE_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x48).is_ok();
+        if toggle_ok {
+            info!("[OVERLAY] Registered Ctrl+Alt+Space (ambient / interactive).");
+        } else {
+            error!("[OVERLAY] Could not register Ctrl+Alt+Space; another application may own it.");
+        }
+        if hide_ok {
+            info!("[OVERLAY] Registered Ctrl+Alt+H (hide / show).");
+        } else {
+            error!("[OVERLAY] Could not register Ctrl+Alt+H; another application may own it.");
+        }
+        let _ = proxy.send_event(HudAppEvent::OverlayHotkeysRegistered { toggle_ok, hide_ok });
+
         let notif = protocol::PanicHotkeyStatusNotification {
             is_available: is_ok,
             reason: reason_str,
@@ -909,7 +1252,15 @@ fn spawn_global_panic_hotkey_thread(
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == PANIC_HOTKEY_ID {
+            if msg.message == state::liveness::WM_LIVENESS_PROBE {
+                probe.ack_hotkey(msg.wParam.0 as i64);
+                continue;
+            }
+            if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == OVERLAY_TOGGLE_ID {
+                let _ = proxy.send_event(HudAppEvent::OverlayHotkeyPressed(OverlayHotkey::ToggleInteractive));
+            } else if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == OVERLAY_HIDE_ID {
+                let _ = proxy.send_event(HudAppEvent::OverlayHotkeyPressed(OverlayHotkey::ToggleHidden));
+            } else if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == PANIC_HOTKEY_ID {
                 warn!("[PANIC HOTKEY] >>> GLOBAL PANIC HOTKEY (Ctrl + Shift + F12) ACTIVATED <<<");
 
                 // 1. Immediately set native thread-safe monotonic stop latch
@@ -946,6 +1297,8 @@ fn spawn_global_panic_hotkey_thread(
         }
 
         let _ = UnregisterHotKey(None, PANIC_HOTKEY_ID);
+        let _ = UnregisterHotKey(None, OVERLAY_TOGGLE_ID);
+        let _ = UnregisterHotKey(None, OVERLAY_HIDE_ID);
         info!("[PANIC HOTKEY] Panic hotkey unregistered and thread exiting cleanly.");
     });
 

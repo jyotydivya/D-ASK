@@ -5,6 +5,11 @@ edition = "2021"
 authors = ["D-ASK Team"]
 description = "Native Rust wgpu HUD client for D-ASK Assistant"
 
+[features]
+# Test-only (Phase 7B.1a): synthetic approvals for the Ambient approval-surface test. Never enabled in production
+# builds; build it into a separate target directory: cargo build --release --features approval-fixture --target-dir target/fixture
+approval-fixture = []
+
 [dependencies]
 # Async Runtime & IPC
 tokio = { version = "1.38", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net", "signal"] }
@@ -25,7 +30,7 @@ bytemuck = { version = "1.16", features = ["derive"] }
 futures-lite = "2.3"
 wry = "0.57.1"
 webview2-com = "0.39"
-windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading"] }
+windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_RemoteDesktop", "Win32_Media_Speech", "Win32_Media_Audio", "Win32_System_Com", "Win32_Security_Cryptography", "Foundation", "Foundation_Collections", "Globalization", "Graphics_Imaging", "Media_Ocr", "Storage_Streams"] }
 
 [profile.release]
 opt-level = 3

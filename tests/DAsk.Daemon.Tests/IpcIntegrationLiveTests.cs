@@ -32,6 +32,11 @@ public class IpcIntegrationLiveTests
             RedirectStandardError = true
         };
 
+        // H3: the daemon only talks to allowlisted executables. Allow exactly this test host through the
+        // daemon's normal configuration (both checked-in default entries are replaced). Not a bypass.
+        for (int i = 0; i < 2; i++)
+            psi.Environment[$"DASK_Daemon__AllowedClientImagePaths__{i}"] = Environment.ProcessPath!;
+
         using var daemonProcess = new Process { StartInfo = psi };
         daemonProcess.OutputDataReceived += (_, e) => { if (e.Data != null) _output.WriteLine($"[DAEMON OUT] {e.Data}"); };
         daemonProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) _output.WriteLine($"[DAEMON ERR] {e.Data}"); };

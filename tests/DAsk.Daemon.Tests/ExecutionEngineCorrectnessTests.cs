@@ -193,7 +193,7 @@ public class ExecutionEngineCorrectnessTests
         Assert.Equal(1, engine.ActiveActionCount); // Old action remains registered!
 
         // Attempt resume with drain timeout shorter than the held cleanup (50 ms)
-        var resumeResult = await engine.ResumeExecutionAsync("Test", "Attempt resume", drainTimeout: TimeSpan.FromMilliseconds(50));
+        var resumeResult = await engine.ResumeExecutionAsync("Test", "Attempt resume", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromMilliseconds(50));
 
         // Unconditional assertions: Must fail and system must remain stopped
         Assert.False(resumeResult.Success);
@@ -210,7 +210,7 @@ public class ExecutionEngineCorrectnessTests
         Assert.Equal(0, engine.ActiveActionCount); // Fully unregistered now!
 
         // Subsequent resume succeeds only after cleanup finishes
-        var secondResumeResult = await engine.ResumeExecutionAsync("Test", "Resume after cleanup complete", drainTimeout: TimeSpan.FromSeconds(2));
+        var secondResumeResult = await engine.ResumeExecutionAsync("Test", "Resume after cleanup complete", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromSeconds(2));
         Assert.True(secondResumeResult.Success);
         Assert.False(engine.IsEmergencyStopped);
         Assert.Equal(0, engine.ActiveActionCount);
@@ -326,6 +326,54 @@ public class ExecutionEngineCorrectnessTests
     // ─────────────────────────────────────────────────────────────────────────
     // Test 6: Stop cancels queued work
     // ─────────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Regression for the stop-count race: the shared token used to fire before the count, so an action could
+    /// finish cancelling and unregister first, and the stop reported 0 for an action it had just cancelled.
+    /// </summary>
+    [Fact]
+    public async Task EmergencyStop_ReportedActiveCount_IsExact_WhenActionsUnwindImmediately()
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            var (engine, _, _) = CreateTestEngine();
+            var action = engine.ExecuteSimulatedActionAsync(new SimulatedActionRequest
+            {
+                ActionId = $"act_race_{i}",
+                ActionType = "SimulatedScroll",
+                SimulatedDurationMs = 30_000
+            }, "sess_1");
+
+            var deadline = Stopwatch.StartNew();
+            while (engine.ActiveActionCount == 0 && deadline.ElapsedMilliseconds < 5000) await Task.Delay(1);
+            Assert.Equal(1, engine.ActiveActionCount);
+
+            var stop = await engine.TriggerEmergencyStopAsync("TestRunner", "race regression");
+            var result = await action;
+
+            Assert.Equal(1, stop.ActiveActionsCancelled);
+            Assert.Equal("Cancelled", result.Status);
+            engine.Dispose();
+        }
+    }
+
+    /// <summary>A stop with nothing running must report zero, not a stale or inflated number.</summary>
+    [Fact]
+    public async Task EmergencyStop_WithNoActiveActions_ReportsZero()
+    {
+        var (engine, _, _) = CreateTestEngine();
+        var done = await engine.ExecuteSimulatedActionAsync(new SimulatedActionRequest
+        {
+            ActionId = "act_finished_before_stop",
+            ActionType = "SimulatedScroll",
+            SimulatedDurationMs = 1
+        }, "sess_1");
+        Assert.Equal("Completed", done.Status);
+
+        var stop = await engine.TriggerEmergencyStopAsync("TestRunner", "nothing running");
+        Assert.Equal(0, stop.ActiveActionsCancelled);
+        engine.Dispose();
+    }
+
     [Fact]
     public async Task Test06_EmergencyStop_CancelsQueuedWork()
     {
@@ -461,7 +509,7 @@ public class ExecutionEngineCorrectnessTests
             SessionId = "sess_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "sess_1");
         await appTask;
 
         // Block queue with a 200ms active task
@@ -533,7 +581,7 @@ public class ExecutionEngineCorrectnessTests
             SessionId = "sess_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "sess_1");
         await appTask;
 
         // Emergency stop increments epoch to 2
@@ -541,7 +589,7 @@ public class ExecutionEngineCorrectnessTests
         Assert.Equal(2UL, engine.CurrentStopGeneration);
 
         // Resume execution into epoch 2
-        await engine.ResumeExecutionAsync("TestRunner", "Resume in epoch 2");
+        await engine.ResumeExecutionAsync("TestRunner", "Resume in epoch 2", engine.CurrentStopGeneration);
         Assert.Equal(2UL, engine.CurrentStopGeneration);
 
         // Attempt execution in epoch 2 with the approval from epoch 1
@@ -711,7 +759,7 @@ public class ExecutionEngineCorrectnessTests
         // Invariant 2: Trigger Emergency Stop and attempt Resume with short timeout (50ms)
         // Resume CANNOT succeed while the disconnected session's action is still unwinding!
         await engine.TriggerEmergencyStopAsync("Test", "Emergency stop during disconnect unwind");
-        var resumeResult = await engine.ResumeExecutionAsync("Test", "Attempt resume", drainTimeout: TimeSpan.FromMilliseconds(50));
+        var resumeResult = await engine.ResumeExecutionAsync("Test", "Attempt resume", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromMilliseconds(50));
         Assert.False(resumeResult.Success);
         Assert.True(engine.IsEmergencyStopped);
         Assert.Equal(1, engine.ActiveActionCount);
@@ -727,7 +775,7 @@ public class ExecutionEngineCorrectnessTests
         Assert.Equal(0, engine.ActiveActionCount);
 
         // Now subsequent resume succeeds cleanly
-        var secondResume = await engine.ResumeExecutionAsync("Test", "Resume after unwound", drainTimeout: TimeSpan.FromSeconds(2));
+        var secondResume = await engine.ResumeExecutionAsync("Test", "Resume after unwound", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromSeconds(2));
         Assert.True(secondResume.Success);
         Assert.False(engine.IsEmergencyStopped);
 
@@ -946,7 +994,7 @@ public class ExecutionEngineCorrectnessTests
             var resumeTask = Task.Run(async () =>
             {
                 await Task.Delay(5);
-                return await engine.ResumeExecutionAsync("Test", $"Race resume #{i}", drainTimeout: TimeSpan.FromSeconds(2));
+                return await engine.ResumeExecutionAsync("Test", $"Race resume #{i}", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromSeconds(2));
             });
 
             await Task.WhenAll(stopTask, resumeTask, task);
@@ -1000,7 +1048,7 @@ public class ExecutionEngineCorrectnessTests
         Assert.Equal("Cancelled", res.Status);
 
         // Resume execution in new epoch
-        var resumeResp = await engine.ResumeExecutionAsync("Test", "Epoch resume", drainTimeout: TimeSpan.FromSeconds(2));
+        var resumeResp = await engine.ResumeExecutionAsync("Test", "Epoch resume", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromSeconds(2));
         Assert.True(resumeResp.Success);
         Assert.False(engine.IsEmergencyStopped);
 
@@ -1130,7 +1178,7 @@ public class ExecutionEngineCorrectnessTests
         await client.ConnectAsync();
         await connectTask;
 
-        var session = new IpcClientSession(server, stateMgr, NullLogger<IpcClientSession>.Instance, executionEngine: engine);
+        var session = new IpcClientSession(server, stateMgr, NullLogger<IpcClientSession>.Instance, TestPeerVerifiers.AllowAll, executionEngine: engine);
         using var cts = new CancellationTokenSource();
         var sessionTask = Task.Run(() => session.RunSessionAsync(cts.Token));
 
@@ -1198,7 +1246,7 @@ public class ExecutionEngineCorrectnessTests
         await client.ConnectAsync();
         await connectTask;
 
-        var session = new IpcClientSession(server, stateMgr, NullLogger<IpcClientSession>.Instance, executionEngine: engine);
+        var session = new IpcClientSession(server, stateMgr, NullLogger<IpcClientSession>.Instance, TestPeerVerifiers.AllowAll, executionEngine: engine);
         using var cts = new CancellationTokenSource();
         var sessionTask = Task.Run(() => session.RunSessionAsync(cts.Token));
 
@@ -1262,7 +1310,7 @@ public class ExecutionEngineCorrectnessTests
         await cleanupReached.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         // Attempt resume while worker is held in cleanup
-        var resumeResp = await engine.ResumeExecutionAsync("Test", "Attempt resume", drainTimeout: TimeSpan.FromMilliseconds(50));
+        var resumeResp = await engine.ResumeExecutionAsync("Test", "Attempt resume", engine.CurrentStopGeneration, drainTimeout: TimeSpan.FromMilliseconds(50));
         Assert.False(resumeResp.Success);
         Assert.True(engine.IsEmergencyStopped, "System must remain stopped");
 
@@ -1343,7 +1391,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "Resume attempt with stale generation",
             resumeId: "res_stale",
             sessionId: "sess_test",
-            expectedGeneration: 1);
+            stopGeneration: 1);
 
         // Must reject fail-closed
         Assert.False(resumeResp.Success);
@@ -1358,7 +1406,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "Resume with matching generation",
             resumeId: "res_valid",
             sessionId: "sess_test",
-            expectedGeneration: 2);
+            stopGeneration: 2);
 
         Assert.True(validResume.Success);
         Assert.Equal("sess_test", validResume.SessionId);
@@ -1411,7 +1459,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "User confirmed",
             resumeId: "res_bind_test",
             sessionId: "session_xyz",
-            expectedGeneration: 2);
+            stopGeneration: 2);
 
         Assert.True(resp.Success);
         Assert.Equal("res_bind_test", resp.ResumeId);
@@ -1445,7 +1493,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "Resume to running",
             resumeId: "res_init",
             sessionId: "sess_1",
-            expectedGeneration: 2);
+            stopGeneration: 2);
         Assert.True(initialResume.Success);
         Assert.False(engine.IsEmergencyStopped);
 
@@ -1463,7 +1511,7 @@ public class ExecutionEngineCorrectnessTests
                 source: "SpamSource",
                 reason: "Resume filler",
                 sessionId: "sess_1",
-                expectedGeneration: engine.CurrentStopGeneration);
+                stopGeneration: engine.CurrentStopGeneration);
             Assert.True(res.Success);
         }
 
@@ -1495,7 +1543,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "Attempt resume with epoch 2 token",
             resumeId: "res_stale_epoch2",
             sessionId: "sess_1",
-            expectedGeneration: 2);
+            stopGeneration: 2);
         Assert.False(staleResume.Success);
         Assert.Contains("Generation mismatch", staleResume.ErrorMessage);
         Assert.True(engine.IsEmergencyStopped, "Engine must remain stopped");
@@ -1506,7 +1554,7 @@ public class ExecutionEngineCorrectnessTests
             reason: "Resume new epoch",
             resumeId: "res_valid_epoch",
             sessionId: "sess_1",
-            expectedGeneration: replayStop.StopGeneration);
+            stopGeneration: replayStop.StopGeneration);
         Assert.True(validResume.Success);
         Assert.False(engine.IsEmergencyStopped);
 

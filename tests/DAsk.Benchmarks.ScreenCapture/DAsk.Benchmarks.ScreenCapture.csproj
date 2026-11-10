@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Dedicated, explicitly run screen-capture LATENCY benchmark (Phase 7B.3).
+    It is NOT part of the correctness-gating daemon suite (tests/DAsk.Daemon.Tests) and is not run by dotnet test.
+    Run: dotnet run, with the project argument set to tests/DAsk.Benchmarks.ScreenCapture and configuration Debug or Release (see Program.cs).
+    The daemon must be built first in the same configuration. Exit code: 0 = 30 ms target achieved, 1 = NOT achieved, 2 = error.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <NuGetAudit>false</NuGetAudit>
+    <!-- Which daemon build is measured; defaults to this project's own configuration (Debug or Release). -->
+    <DaskDaemonConfiguration Condition="'$(DaskDaemonConfiguration)' == ''">$(Configuration)</DaskDaemonConfiguration>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageReference Include="System.Text.Json" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="DAsk.Daemon">
+      <HintPath>..\..\src\DAsk.Daemon\bin\$(DaskDaemonConfiguration)\net8.0\DAsk.Daemon.dll</HintPath>
+    </Reference>
+    <Reference Include="DAsk.Protocol">
+      <HintPath>..\..\src\DAsk.Daemon\bin\$(DaskDaemonConfiguration)\net8.0\DAsk.Protocol.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

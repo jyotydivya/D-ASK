@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { taskService } from "../../../../services/taskService";
 import { eventService } from "../../../../services/eventService";
 import { requireAuth } from "../../../../lib/security/apiAuth";
+import { cancelRuntimeTask } from "../../../../agent/runtime";
 
 export const runtime = "nodejs";
 
@@ -50,6 +51,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   taskService.updateTaskStatus(id, "cancelled");
   eventService.publish(id, "task.cancelled", { taskId: id, reason: "User cancelled" });
+  // Agent-runtime tasks stop for real: the abort reaches the in-flight model/tool call.
+  // (Legacy orchestrator tasks keep their previous behaviour: status only.)
+  cancelRuntimeTask(id);
 
   return NextResponse.json({ success: true, taskId: id, status: "cancelled" });
 }

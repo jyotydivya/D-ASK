@@ -5,9 +5,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { taskService } from "../../../services/taskService";
 import { eventService } from "../../../services/eventService";
-import { orchestrator } from "../../../agent/orchestrator";
-import type { CreateTaskRequest, CreateTaskResponse } from "../../../agent/types";
+import type { CreateTaskRequest, CreateTaskResponse, TaskEngine } from "../../../agent/types";
 import { requireAuth } from "../../../lib/security/apiAuth";
+import { runRuntimeTask } from "../../../agent/runtime";
+import { inferenceMode } from "../../../agent/runtime/inference/policy";
+
+function resolveEngine(requested: unknown): TaskEngine | null {
+  // Offline-first (default): the local agent runtime. The legacy orchestrator is
+  // cloud-only and is reachable only with DASK_INFERENCE=cloud.
+  if (requested === undefined) {
+    if (inferenceMode() !== "cloud") return "runtime";
+    return process.env.DASK_AGENT_ENGINE === "runtime" ? "runtime" : "legacy";
+  }
+  return requested === "legacy" || requested === "runtime" ? requested : null;
+}
 
 export const runtime = "nodejs";
 
@@ -21,6 +32,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "objective is required" },
         { status: 400 }
+      );
+    }
+
+    const engine = resolveEngine(body.engine);
+    if (engine === null) {
+      return NextResponse.json(
+        { error: 'engine must be "legacy" or "runtime"' },
+        { status: 400 }
+      );
+    }
+    if (engine === "legacy" && inferenceMode() !== "cloud") {
+      return NextResponse.json(
+        { error: 'The legacy engine uses hosted models and is disabled while DASK_INFERENCE=local. Use engine "runtime".', unavailable: "cloud-inference-disabled" },
+        { status: 409 }
       );
     }
 
@@ -41,10 +66,17 @@ export async function POST(request: NextRequest) {
       objective: task.objective,
       priority: task.priority,
       sessionId,
+      engine,
     });
 
-    // Launch orchestrator asynchronously — do NOT await
-    void orchestrator.run(task.id);
+    // Launch asynchronously — do NOT await
+    if (engine === "runtime") {
+      void runRuntimeTask(task.id);
+    } else {
+      // Legacy (cloud-only) orchestrator, loaded lazily so the offline path never
+      // pulls in agent/modelRouter.ts or a cloud SDK. Reached only with DASK_INFERENCE=cloud.
+      void import("../../../agent/orchestrator").then(({ orchestrator }) => orchestrator.run(task.id));
+    }
 
     const response: CreateTaskResponse = {
       taskId: task.id,

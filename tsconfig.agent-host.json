@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["es2023", "dom"],
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "incremental": false,
+    "noEmitOnError": true,
+    "rootDir": ".",
+    "outDir": "dist/agent-host"
+  },
+  "files": ["agent/host/stdioHost.ts"]
+}

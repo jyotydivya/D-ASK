@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { modelRouter } from "../../../agent/modelRouter";
 import { requireAuth } from "../../../lib/security/apiAuth";
+import { inferenceMode } from "../../../agent/runtime/inference/policy";
 
 const MAX_MESSAGE_LENGTH = 1_000;
 
@@ -22,6 +23,17 @@ export async function POST(request: Request) {
 
   if (userPrompt.length > MAX_MESSAGE_LENGTH) {
     return NextResponse.json({ error: "Please keep requests under 1,000 characters." }, { status: 400 });
+  }
+
+  // This route classifies intent with a hosted model; refused in offline-first mode.
+  // Tasks still run locally through POST /api/tasks (local agent runtime).
+  if (inferenceMode() !== "cloud") {
+    return NextResponse.json({
+      error: "Conversational replies use a hosted model and are unavailable while DASK_INFERENCE=local.",
+      reply: "Conversation mode is offline. Send this as a task and I'll run it locally.",
+      actionType: "none",
+      unavailable: "cloud-inference-disabled",
+    }, { status: 503 });
   }
 
   try {

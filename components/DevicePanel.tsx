@@ -83,7 +83,7 @@ export default function DevicePanel({
   if (!activeDev) {
     return (
       <>
-        <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel">
+        <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
           <div className="device-header">
             <div className="device-title-wrap">
               <span className="device-indicator" data-physical={false} />
@@ -154,7 +154,7 @@ export default function DevicePanel({
         </aside>
 
         {showSetupGuide && (
-          <div className="modal-backdrop" onClick={() => setShowSetupGuide(false)}>
+          <div className="modal-backdrop" data-hud-interactive onClick={() => setShowSetupGuide(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <span>WIRELESS PHONE CONNECTION</span>
@@ -283,7 +283,7 @@ export default function DevicePanel({
 
   return (
     <>
-      <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel">
+      <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
         {/* HUD Top Bar & Multi-Device Selector */}
         <div className="device-header">
           <div className="device-title-wrap">
@@ -593,7 +593,7 @@ export default function DevicePanel({
 
       {/* Add New Device Modal (iPhone / Android) */}
       {showAddModal && (
-        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+        <div className="modal-backdrop" data-hud-interactive onClick={() => setShowAddModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <span>ADD NEW DEVICE TO MATRIX</span>
@@ -652,7 +652,7 @@ export default function DevicePanel({
 
       {/* Wireless Setup Guide Modal */}
       {showSetupGuide && (
-        <div className="modal-backdrop" onClick={() => setShowSetupGuide(false)}>
+        <div className="modal-backdrop" data-hud-interactive onClick={() => setShowSetupGuide(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <span>WIRELESS PHONE CONNECTION GUIDE</span>

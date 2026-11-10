@@ -8,7 +8,9 @@
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1",
     "desktop": "electron .",
-    "test:security": "npx tsx tests/security/api-auth.test.ts"
+    "test:security": "npx tsx tests/security/api-auth.test.ts",
+    "build:agent-host": "tsc -p tsconfig.agent-host.json",
+    "build:agent-host-test": "tsc -p tsconfig.agent-host-test.json"
   },
   "dependencies": {
     "@google/genai": "^2.19.0",
