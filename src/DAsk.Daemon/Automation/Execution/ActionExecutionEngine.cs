@@ -79,6 +79,12 @@ public class ActionExecutionEngine : IDisposable
 
     public event EventHandler<ActionLifecycleNotification>? ActionLifecycleChanged;
 
+    /// <summary>Raised on every Emergency Stop (with the active generation), so other subsystems can stop too. Handlers must not block.</summary>
+    public event EventHandler<ulong>? EmergencyStopActivated;
+
+    /// <summary>Raised after a validated resume, with the generation that was resumed. Handlers must not block.</summary>
+    public event EventHandler<ulong>? ExecutionResumed;
+
     public ActionExecutionEngine(
         ILogger<ActionExecutionEngine> logger,
         IStateManager stateManager,
@@ -95,6 +101,22 @@ public class ActionExecutionEngine : IDisposable
         _maxConcurrency = maxConcurrency > 0 ? maxConcurrency : MaxConcurrencyDefault;
         _concurrencySemaphore = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
         _queueWorkerTask = Task.Run(ProcessQueueLoopAsync);
+    }
+
+    private volatile Func<string, bool>? _isSessionLive;
+
+    /// <summary>
+    /// Installs the HUD liveness check (Phase 7B.1a). Once installed, no action is admitted for a session whose HUD
+    /// liveness lease is not valid. The pipe server installs it in production; engine unit tests may leave it unset.
+    /// </summary>
+    public void SetSessionLivenessGate(Func<string, bool> isSessionLive) => _isSessionLive = isSessionLive;
+
+    private bool IsSessionLive(string sessionId)
+    {
+        var gate = _isSessionLive;
+        if (gate == null) return true;
+        try { return gate(sessionId); }
+        catch { return false; } // fail closed
     }
 
     public void SetPanicHotkeyStatus(bool isAvailable, string reason, int errorCode = 0)
@@ -119,7 +141,7 @@ public class ActionExecutionEngine : IDisposable
                     StopGeneration = _stopGeneration,
                     Decision = "FailClosedBlocked",
                     Reason = reason,
-                    DetailsJson = $"{{\"errorCode\":{errorCode}}}"
+                    DetailsJson = AuditJson.Details(new { errorCode })
                 });
             }
         }
@@ -149,6 +171,7 @@ public class ActionExecutionEngine : IDisposable
         int activeCancelled = 0;
         int queuedCancelled = 0;
         ulong stopGen;
+        ActiveActionContext[] activeAtStop;
 
         lock (_stateLock)
         {
@@ -165,6 +188,11 @@ public class ActionExecutionEngine : IDisposable
             }
             stopGen = _stopGeneration;
 
+            // Taken before the shared token is cancelled. Actions register and unregister under this lock,
+            // but once the token fires an action can finish and unregister as soon as the lock is released,
+            // so counting afterwards under-reports what this stop actually cancelled.
+            activeAtStop = _activeActions.Values.Where(a => a.State == ActionLifecycleState.Executing).ToArray();
+
             try
             {
                 _emergencyStopCts.Cancel();
@@ -173,6 +201,9 @@ public class ActionExecutionEngine : IDisposable
             _emergencyStopCts.Dispose();
             _emergencyStopCts = new CancellationTokenSource();
         }
+
+        try { EmergencyStopActivated?.Invoke(this, stopGen); }
+        catch (Exception ex) { _logger.LogError(ex, "[EMERGENCY STOP] A stop subscriber failed."); }
 
         _logger.LogWarning("[EMERGENCY STOP] Triggered from source '{Source}' (StopId: {StopId}, New Epoch={Gen}): {Reason}",
             source, stopId, stopGen, reason);
@@ -204,19 +235,17 @@ public class ActionExecutionEngine : IDisposable
         }
 
         // Cancel all active in-flight actions
-        foreach (var kvp in _activeActions)
+        foreach (var active in activeAtStop)
         {
-            if (_activeActions.TryGetValue(kvp.Key, out var active))
+            activeCancelled++;
+            try
             {
-                activeCancelled++;
-                try
-                {
-                    active.Cts.Cancel();
-                    active.State = ActionLifecycleState.Cancelled;
-                    EmitLifecycleNotification(active.ActionId, active.ActionType, ActionLifecycleState.Executing.ToString(), ActionLifecycleState.Cancelled.ToString(), "Emergency stop triggered", active.SessionId, stopGen);
-                }
-                catch { }
+                // Throws ObjectDisposedException when the action already finished cancelling on the shared token.
+                active.Cts.Cancel();
+                active.State = ActionLifecycleState.Cancelled;
+                EmitLifecycleNotification(active.ActionId, active.ActionType, ActionLifecycleState.Executing.ToString(), ActionLifecycleState.Cancelled.ToString(), "Emergency stop triggered", active.SessionId, stopGen);
             }
+            catch { }
         }
 
         // Update daemon state
@@ -234,7 +263,7 @@ public class ActionExecutionEngine : IDisposable
                     StopGeneration = stopGen,
                     Decision = "Stopped",
                     Reason = reason,
-                    DetailsJson = $"{{\"activeCancelled\":{activeCancelled},\"queuedCancelled\":{queuedCancelled},\"durationMs\":{sw.Elapsed.TotalMilliseconds:F3}}}"
+                    DetailsJson = AuditJson.Details(new { activeCancelled, queuedCancelled, durationMs = Math.Round(sw.Elapsed.TotalMilliseconds, 3) })
                 });
             }
             catch (Exception ex)
@@ -294,15 +323,39 @@ public class ActionExecutionEngine : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// The ONLY code path that clears the emergency-stop latch.
+    ///
+    /// Invariant (H3-8): a Resume must name the exact, currently active Stop generation.
+    /// A generation of 0 (also what a missing wire field deserializes to), a stale generation and a
+    /// future generation are all rejected, whether or not execution is currently stopped. There is no
+    /// "unbound" overload: callers must pass a generation.
+    /// </summary>
+    /// <param name="stopGeneration">The Stop generation the caller was told about. 0 is never valid.</param>
     public async Task<ResumeExecutionResponse> ResumeExecutionAsync(
         string source,
         string reason,
+        ulong stopGeneration,
         string? resumeId = null,
         string? sessionId = null,
-        ulong? expectedGeneration = null,
         TimeSpan? drainTimeout = null)
     {
         resumeId ??= Guid.NewGuid().ToString("N");
+
+        // 0. Fail fast, BEFORE the drain: an invalid request must neither wait for in-flight actions to
+        //    unwind nor be answered with idempotent success. This pre-check is advisory (it can race with
+        //    a new Stop); the authoritative check is repeated under _stateLock below.
+        ulong activeGeneration;
+        lock (_stateLock)
+        {
+            activeGeneration = _stopGeneration;
+        }
+
+        var invalid = ValidateResumeGeneration(stopGeneration, activeGeneration, resumeId, sessionId);
+        if (invalid != null)
+        {
+            return invalid;
+        }
 
         // 1. Drain active tasks to ensure previous-generation tasks have completely finished unwinding
         var timeout = drainTimeout ?? TimeSpan.FromSeconds(5);
@@ -324,6 +377,16 @@ public class ActionExecutionEngine : IDisposable
         ulong resumeGen;
         lock (_stateLock)
         {
+            // 2. Authoritative generation check, atomic with the latch transition below. A Stop that
+            //    arrived during the drain has already advanced _stopGeneration under this same lock,
+            //    so an older Resume can no longer match.
+            var stale = ValidateResumeGeneration(stopGeneration, _stopGeneration, resumeId, sessionId);
+            if (stale != null)
+            {
+                return stale;
+            }
+
+            // 3. Idempotent success: reachable only with the exact current generation.
             if (!_isEmergencyStopped)
             {
                 _logger.LogInformation("[RESUME] Resume requested, but execution is not stopped. Idempotent success.");
@@ -333,21 +396,6 @@ public class ActionExecutionEngine : IDisposable
                     Success = true,
                     SessionId = sessionId ?? string.Empty,
                     StopGeneration = _stopGeneration,
-                    Timestamp = DateTimeOffset.UtcNow
-                };
-            }
-
-            if (expectedGeneration.HasValue && expectedGeneration.Value != _stopGeneration)
-            {
-                _logger.LogWarning("[RESUME REJECTED] Generation mismatch: expected {ExpectedGen}, but active stop generation is {ActiveGen}.",
-                    expectedGeneration.Value, _stopGeneration);
-                return new ResumeExecutionResponse
-                {
-                    ResumeId = resumeId,
-                    Success = false,
-                    SessionId = sessionId ?? string.Empty,
-                    StopGeneration = _stopGeneration,
-                    ErrorMessage = $"Generation mismatch: expected {expectedGeneration.Value}, but active stop generation is {_stopGeneration}.",
                     Timestamp = DateTimeOffset.UtcNow
                 };
             }
@@ -368,6 +416,9 @@ public class ActionExecutionEngine : IDisposable
             _isEmergencyStopped = false;
             resumeGen = _stopGeneration;
         }
+
+        try { ExecutionResumed?.Invoke(this, resumeGen); }
+        catch (Exception ex) { _logger.LogError(ex, "[RESUME] A resume subscriber failed."); }
 
         _logger.LogInformation("[RESUME] Execution resumed by user explicit confirmation from source '{Source}': {Reason} (Epoch={Gen})",
             source, reason, resumeGen);
@@ -403,6 +454,36 @@ public class ActionExecutionEngine : IDisposable
         };
     }
 
+    /// <summary>Returns a fail-closed rejection when <paramref name="requested"/> is not exactly <paramref name="active"/>; null when valid.</summary>
+    private ResumeExecutionResponse? ValidateResumeGeneration(ulong requested, ulong active, string resumeId, string? sessionId)
+    {
+        string? error = null;
+        if (requested == 0)
+        {
+            error = $"Missing or zero stop generation: a Resume must name the active stop generation ({active}).";
+        }
+        else if (requested != active)
+        {
+            error = $"Generation mismatch: expected {requested}, but active stop generation is {active}.";
+        }
+
+        if (error == null)
+        {
+            return null;
+        }
+
+        _logger.LogWarning("[RESUME REJECTED] {Error}", error);
+        return new ResumeExecutionResponse
+        {
+            ResumeId = resumeId,
+            Success = false,
+            SessionId = sessionId ?? string.Empty,
+            StopGeneration = active,
+            ErrorMessage = error,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+    }
+
     public async Task<SimulatedActionResponse> ExecuteSimulatedActionAsync(
         SimulatedActionRequest request,
         string sessionId,
@@ -424,6 +505,22 @@ public class ActionExecutionEngine : IDisposable
                 Success = false,
                 Status = ActionLifecycleState.Blocked.ToString(),
                 ErrorMessage = "Action blocked: Emergency Stop is active.",
+                ExecutionDurationMs = sw.Elapsed.TotalMilliseconds,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+        }
+
+        // 2a. Phase 7B.1a: the requesting session must hold a valid HUD liveness lease.
+        if (!IsSessionLive(sessionId))
+        {
+            _logger.LogError("[ExecutionEngine] Blocked action {ActionId}: the requesting HUD session has no valid liveness lease.", request.ActionId);
+            EmitLifecycleNotification(request.ActionId, request.ActionType, ActionLifecycleState.Created.ToString(), ActionLifecycleState.Blocked.ToString(), "HUD liveness not established", sessionId, _stopGeneration);
+            return new SimulatedActionResponse
+            {
+                ActionId = request.ActionId,
+                Success = false,
+                Status = ActionLifecycleState.Blocked.ToString(),
+                ErrorMessage = "Action blocked: the HUD has no valid liveness lease (heartbeat and panic hotkey not confirmed).",
                 ExecutionDurationMs = sw.Elapsed.TotalMilliseconds,
                 Timestamp = DateTimeOffset.UtcNow
             };
@@ -645,6 +742,23 @@ public class ActionExecutionEngine : IDisposable
                     Success = false,
                     Status = ActionLifecycleState.Blocked.ToString(),
                     ErrorMessage = $"Action blocked: Emergency panic hotkey is unavailable ({_panicHotkeyUnavailableReason}).",
+                    ExecutionDurationMs = sw.Elapsed.TotalMilliseconds,
+                    Timestamp = DateTimeOffset.UtcNow
+                });
+                return;
+            }
+
+            // 2a. Phase 7B.1a: the session's HUD liveness lease is re-checked at the authoritative point.
+            if (!IsSessionLive(item.SessionId))
+            {
+                _logger.LogError("[ExecutionEngine] Blocked action {ActionId}: HUD liveness lease lost before execution.", item.Request.ActionId);
+                EmitLifecycleNotification(item.Request.ActionId, item.Request.ActionType, ActionLifecycleState.Created.ToString(), ActionLifecycleState.Blocked.ToString(), "HUD liveness lost", item.SessionId, _stopGeneration);
+                item.CompletionSource.TrySetResult(new SimulatedActionResponse
+                {
+                    ActionId = item.Request.ActionId,
+                    Success = false,
+                    Status = ActionLifecycleState.Blocked.ToString(),
+                    ErrorMessage = "Action blocked: the HUD liveness lease was lost before execution.",
                     ExecutionDurationMs = sw.Elapsed.TotalMilliseconds,
                     Timestamp = DateTimeOffset.UtcNow
                 });
@@ -966,12 +1080,13 @@ public class ActionExecutionEngine : IDisposable
                 {
                     EventType = $"Action_{currentState}",
                     Source = "ActionExecutionEngine",
-                    ActionId = actionId,
+                    ActionId = AuditJson.Bound(actionId, 128),
                     SessionId = sessionId,
                     StopGeneration = stopGeneration > 0 ? stopGeneration : _stopGeneration,
                     Decision = currentState,
-                    Reason = reason,
-                    DetailsJson = $"{{\"actionType\":\"{actionType}\",\"previousState\":\"{previousState}\"}}"
+                    Reason = AuditJson.Bound(reason, 1024),
+                    // Serializer-built (Phase 7B.1a, F5): a caller-supplied action type can no longer change the JSON.
+                    DetailsJson = AuditJson.Details(new { actionType = AuditJson.Bound(actionType), previousState = AuditJson.Bound(previousState) })
                 });
             }
             catch (Exception ex)

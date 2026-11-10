@@ -1075,3 +1075,94 @@ body {
     width: calc(100vw - 32px);
   }
 }
+
+/* ── Desktop overlay modes (native HUD only; a browser has no data-hud-mode) ───────────────────────────────── */
+
+/* Where the orb takes drag and scroll while interactive. Sized like the orb; draws nothing. */
+.orb-core-region {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(44vh, 44vw);
+  height: min(44vh, 44vw);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.hud-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--hud-text-bright);
+  text-shadow: 0 0 6px var(--hud-glow);
+}
+
+.hud-mode-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--hud-border);
+  border-radius: 3px;
+  background: var(--hud-bg);
+  color: var(--hud-color);
+  font: inherit;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.hud-mode-btn:hover {
+  border-color: var(--hud-color);
+}
+
+/* Panels never run off the screen. */
+.command-console {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+/* Below the header, whatever its height (measured by useHudInteraction). Narrow screens keep their own placement. */
+.device-hud-panel {
+  max-height: calc(100vh - var(--hud-header-bottom, 148px) - 36px);
+  overflow-y: auto;
+}
+
+@media (min-width: 901px) {
+  .device-hud-panel {
+    top: calc(var(--hud-header-bottom, 148px) + 12px);
+  }
+}
+
+/* Ambient: compact. Nothing here takes input, so controls that can't be used are folded away and panels show only
+   their status. Interactive shows the full layout. */
+body[data-hud-mode="ambient"] .command-form,
+body[data-hud-mode="ambient"] .command-shortcuts,
+body[data-hud-mode="ambient"] .hud-controls,
+body[data-hud-mode="ambient"] .hud-hint,
+body[data-hud-mode="ambient"] .device-hud-panel > :not(.device-header) {
+  /* Some of these set display inline, so only !important folds them. */
+  display: none !important;
+}
+
+body[data-hud-mode="ambient"] .command-console {
+  width: min(320px, calc(100vw - 48px));
+  padding: 10px 12px;
+  opacity: 0.85;
+}
+
+body[data-hud-mode="ambient"] .command-history {
+  max-height: 72px;
+}
+
+body[data-hud-mode="ambient"] .device-hud-panel {
+  width: 220px;
+  opacity: 0.8;
+}
+
+body[data-hud-mode="ambient"] .agent-status-panel {
+  opacity: 0.9;
+}
+
+body[data-hud-mode="interactive"] .command-console {
+  border-color: var(--hud-color);
+}

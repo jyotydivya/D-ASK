@@ -1,3 +1,4 @@
+using DAsk.Daemon.AgentHost;
 using DAsk.Daemon.Automation.Execution;
 using DAsk.Daemon.Automation.Observation;
 using DAsk.Daemon.Automation.Policy;
@@ -59,6 +60,7 @@ public class Program
             // Configuration POCOs
             services.Configure<DaemonOptions>(context.Configuration.GetSection(DaemonOptions.SectionName));
             services.Configure<ResourceManagerOptions>(context.Configuration.GetSection(ResourceManagerOptions.SectionName));
+            services.Configure<AgentHostOptions>(context.Configuration.GetSection(AgentHostOptions.SectionName));
 
             // Core Telemetry & GPU Monitor
             services.AddSingleton<IntelGpuMonitor>();
@@ -118,6 +120,142 @@ public class Program
                 var sysMon = sp.GetRequiredService<ISystemMonitor>();
                 var evidence = sp.GetService<IEvidenceRecorder>();
                 return new LlamaModelRuntime(logger, resMgr, sysMon, evidence, manifest);
+            });
+
+            // Phase 7B.1b: read-only desktop intelligence for the agent (list and inspect windows). No input of any kind.
+            services.AddSingleton<IWindowSource, Win32WindowSource>();
+            services.AddSingleton<DAsk.Daemon.Automation.Desktop.IDesktopReadService>(sp => sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>());
+            services.AddSingleton(sp =>
+            {
+                var hostOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentHostOptions>>().Value;
+                return new DAsk.Daemon.Automation.Desktop.DesktopReadService(
+                    sp.GetRequiredService<IWindowSource>(),
+                    sp.GetRequiredService<IUiAutomationService>(),
+                    new DAsk.Daemon.Automation.Desktop.DesktopReadOptions
+                    {
+                        AllowedProcessIds = new HashSet<int>(hostOpts.DesktopReadAllowedProcessIds),
+                        // Resolved per call: the agent host's pid changes when it restarts.
+                        OwnProcessIds = () => sp.GetService<AgentHostManager>()?.HostPid is int pid ? new[] { pid } : Array.Empty<int>(),
+                    },
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Desktop.DesktopReadService>>());
+            });
+
+            // Phase 7B.2/7B.3: approval-gated window operations. Executed only when AgentHost:DesktopActionExecution is true.
+            services.AddSingleton<DAsk.Daemon.Automation.Desktop.IDesktopActionRequestService>(sp =>
+            {
+                var engine = sp.GetRequiredService<ActionExecutionEngine>();
+                var hostOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentHostOptions>>().Value;
+                // P1/P2: guarded element-bound input beside the window operations. Mouse and keyboard are separate policies.
+                var input = new DAsk.Daemon.Automation.Input.GuardedInputRequestService(
+                    sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
+                    sp.GetRequiredService<IUiAutomationService>(),
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
+                    new DAsk.Daemon.Automation.Input.Win32DesktopInputPlatform(),
+                    new DAsk.Daemon.Automation.Input.GuardedInputOptions { MouseEnabled = hostOpts.DesktopMouseInput, KeyboardEnabled = hostOpts.DesktopKeyboardInput },
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Input.GuardedInputRequestService>>());
+                // Browser stage 2: approval authority for D-ASK's private browser (the agent host performs, then verifies).
+                var browserActions = new DAsk.Daemon.Automation.Browser.BrowserActionRequestService(
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    hostOpts.BrowserActions,
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Browser.BrowserActionRequestService>>());
+                // File organisation: the daemon validates, asks for approval of the exact moves, performs them and keeps an undo journal.
+                var fileOrganize = new DAsk.Daemon.Automation.Files.FileOrganizeRequestService(
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    new DAsk.Daemon.Automation.Files.FileOrganizeOptions
+                    {
+                        Enabled = hostOpts.FileOrganize,
+                        Roots = hostOpts.FileOrganizeRoots,
+                        JournalDir = string.IsNullOrWhiteSpace(hostOpts.FileOrganizeJournalDir)
+                            ? new DAsk.Daemon.Automation.Files.FileOrganizeOptions().JournalDir : hostOpts.FileOrganizeJournalDir!,
+                    },
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Files.FileOrganizeRequestService>>());
+                var workflows = sp.GetRequiredService<DAsk.Daemon.Automation.Workflows.WorkflowService>();
+                // Plugins: the daemon validates and approves plugin folders; the agent host runs approved ones in its sandbox.
+                var pluginDefaults = new DAsk.Daemon.Automation.Plugins.PluginOptions();
+                var plugins = new DAsk.Daemon.Automation.Plugins.PluginService(
+                    sp.GetRequiredService<ActionPolicyEngine>(), () => engine.IsEmergencyStopped, () => engine.CurrentStopGeneration, sp.GetService<IEvidenceRecorder>(),
+                    new DAsk.Daemon.Automation.Plugins.PluginOptions
+                    {
+                        Enabled = hostOpts.Plugins,
+                        PluginsDir = string.IsNullOrWhiteSpace(hostOpts.PluginsDir) ? pluginDefaults.PluginsDir : hostOpts.PluginsDir!,
+                        ApprovedPath = string.IsNullOrWhiteSpace(hostOpts.PluginsApprovedPath) ? pluginDefaults.ApprovedPath : hostOpts.PluginsApprovedPath!,
+                    },
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Plugins.PluginService>>());
+                // Vision: read-only, offline text recognition of one named window (Windows OCR via dask-ocr).
+                var windowText = new DAsk.Daemon.Automation.Desktop.WindowTextReadService(
+                    sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
+                    new DAsk.Daemon.Automation.Desktop.WindowTextReadOptions { Enabled = hostOpts.DesktopOcr, HelperPath = hostOpts.DesktopOcrHelperPath },
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Desktop.WindowTextReadService>>());
+                // Notes: the daemon validates the title and exact text, asks for approval, writes ONE new file in the notes folder and verifies it.
+                var notes = new DAsk.Daemon.Automation.Files.NoteCreateRequestService(
+                    sp.GetRequiredService<ActionPolicyEngine>(), () => engine.IsEmergencyStopped, () => engine.CurrentStopGeneration, sp.GetService<IEvidenceRecorder>(),
+                    new DAsk.Daemon.Automation.Files.NoteOptions
+                    {
+                        Enabled = hostOpts.Notes,
+                        NotesDir = string.IsNullOrWhiteSpace(hostOpts.NotesDir) ? new DAsk.Daemon.Automation.Files.NoteOptions().NotesDir : hostOpts.NotesDir!,
+                    },
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Files.NoteCreateRequestService>>());
+                return new DAsk.Daemon.Automation.Input.CompositeDesktopActionRequestService(input, browserActions, fileOrganize, notes, workflows, plugins, windowText, new DAsk.Daemon.Automation.Desktop.DesktopActionRequestService(
+                    sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    // Phase 7B.3: execution only when configured; the executor makes one Win32 call per approved action.
+                    new DAsk.Daemon.Automation.Desktop.DesktopActionOptions { ExecutionEnabled = hostOpts.DesktopActionExecution },
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Desktop.DesktopActionRequestService>>(),
+                    new DAsk.Daemon.Automation.Desktop.Win32WindowOperationExecutor(),
+                    // The owner's HUD lease, checked immediately before acting (resolved per call).
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId)));
+            });
+
+            // Workflows: one daemon-owned store, shared by the agent's tools and the scheduler (which only submits ordinary tasks).
+            services.AddSingleton(sp =>
+            {
+                var engine = sp.GetRequiredService<ActionExecutionEngine>();
+                var hostOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentHostOptions>>().Value;
+                return new DAsk.Daemon.Automation.Workflows.WorkflowService(
+                    sp.GetRequiredService<ActionPolicyEngine>(), () => engine.IsEmergencyStopped, () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    new DAsk.Daemon.Automation.Workflows.WorkflowOptions
+                    {
+                        Enabled = hostOpts.Workflows,
+                        StorePath = string.IsNullOrWhiteSpace(hostOpts.WorkflowStorePath) ? new DAsk.Daemon.Automation.Workflows.WorkflowOptions().StorePath : hostOpts.WorkflowStorePath!,
+                    },
+                    logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Workflows.WorkflowService>>());
+            });
+            services.AddHostedService(sp => DAsk.Daemon.Automation.Workflows.WorkflowScheduler.ForAgentHost(
+                sp.GetRequiredService<DAsk.Daemon.Automation.Workflows.WorkflowService>(),
+                sp.GetRequiredService<AgentHostManager>(),
+                () => sp.GetRequiredService<HudLivenessMonitor>().LiveSessions,
+                () => sp.GetRequiredService<ActionExecutionEngine>().IsEmergencyStopped,
+                sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Workflows.WorkflowScheduler>>()));
+
+            // Stdio agent host: owns the local TypeScript agent runtime process. Hosted so it stops with the daemon.
+            services.AddSingleton<AgentHostManager>();
+            services.AddHostedService(sp => sp.GetRequiredService<AgentHostManager>());
+
+            // HUD liveness (Phase 7B.1a): derives panic-hotkey availability from live, heartbeating HUD sessions.
+            services.AddSingleton(sp =>
+            {
+                var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<DaemonOptions>>().Value;
+                return new HudLivenessMonitor(
+                    sp.GetRequiredService<ILogger<HudLivenessMonitor>>(),
+                    sp.GetRequiredService<ActionExecutionEngine>(),
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    sp.GetService<IEvidenceRecorder>(),
+                    opts.HeartbeatLeaseMs,
+                    opts.HeartbeatMaxSkewMs);
             });
 
             // IPC Named Pipe Hosted Service

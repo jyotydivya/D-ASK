@@ -44,6 +44,9 @@ internal interface IUIAutomation
     [PreserveSig] int get_RawViewCondition(out IntPtr condition);
     [PreserveSig] int get_ControlViewCondition(out IntPtr condition);
     [PreserveSig] int get_ContentViewCondition(out IntPtr condition);
+    // Vtable order per UIAutomationClient.h: CreateCacheRequest precedes CreateTrueCondition. (It was missing, so
+    // "CreateTrueCondition" called CreateCacheRequest and every FindAll received a cache request as its condition.)
+    [PreserveSig] int CreateCacheRequest(out IntPtr cacheRequest);
     [PreserveSig] int CreateTrueCondition(out IntPtr newCondition);
 }
 
@@ -80,7 +83,33 @@ public interface IUiAutomationService
         int timeoutMs = 300,
         int maxElements = 100,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Phase 7B.1b: bounded, read-only inspection of a window's UI Automation tree. Reads properties only: never a
+    /// control's value, never a pattern invocation. Status is one of ok, partial (deadline or element bound reached),
+    /// timeout, unavailable, worker_busy, cancelled.
+    /// </summary>
+    Task<UiaInspection> InspectTreeAsync(IntPtr hwnd, int maxDepth, int maxElements, int timeoutMs, CancellationToken cancellationToken = default)
+        => Task.FromResult(new UiaInspection("unavailable", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, "not supported by this implementation"));
 }
+
+/// <summary>One UI Automation element, read-only properties only. <see cref="Name"/> is bounded; values are never read.</summary>
+public sealed record UiaNode(
+    int[]? RuntimeId,
+    int Depth,
+    int ParentIndex,
+    string ControlType,
+    string AutomationId,
+    string Name,
+    string ClassName,
+    int[] Bounds,
+    bool IsEnabled,
+    bool IsOffscreen,
+    bool IsPassword,
+    bool IsKeyboardFocusable,
+    IReadOnlyList<string> Patterns);
+
+public sealed record UiaInspection(string Status, IReadOnlyList<UiaNode> Nodes, bool Truncated, DateTimeOffset InspectedAtUtc, string? Detail);
 
 public class WindowsUiAutomationService : IUiAutomationService, IDisposable
 {
@@ -95,7 +124,8 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
     // Standard UIA Property IDs
     private const int UIA_BoundingRectanglePropertyId = 30001;
     private const int UIA_ControlTypePropertyId = 30003;
-    private const int UIA_ClassNamePropertyId = 30004;
+    // 30012 per UIAutomationClient.h (30004 is LocalizedControlType, which read "window", "button", … as the class).
+    private const int UIA_ClassNamePropertyId = 30012;
     private const int UIA_NamePropertyId = 30005;
     private const int UIA_IsKeyboardFocusablePropertyId = 30009;
     private const int UIA_IsEnabledPropertyId = 30010;
@@ -111,7 +141,9 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
         IntPtr Hwnd,
         int MaxElements,
         CancellationToken CancellationToken,
-        TaskCompletionSource<(IReadOnlyList<UiElementInfo>, string)> Tcs);
+        TaskCompletionSource<(IReadOnlyList<UiElementInfo>, string)>? Tcs,
+        Func<UiaInspection>? Tree = null,
+        TaskCompletionSource<UiaInspection>? TreeTcs = null);
 
     public WindowsUiAutomationService(ILogger<WindowsUiAutomationService>? logger = null)
     {
@@ -127,8 +159,13 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
         _workerThread.Start();
     }
 
+    [DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+    private static readonly IntPtr DpiPerMonitorAwareV2 = new(-4);
+
     private void WorkerLoop()
     {
+        // Phase 7B.1b: UI Automation coordinates are physical pixels, whatever the hosting process's awareness.
+        try { SetThreadDpiAwarenessContext(DpiPerMonitorAwareV2); } catch (EntryPointNotFoundException) { }
         CoInitialize(IntPtr.Zero);
         try
         {
@@ -141,18 +178,26 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
                 _busyStartTime = DateTimeOffset.UtcNow;
                 try
                 {
+                    if (item.Tree != null)
+                    {
+                        if (item.CancellationToken.IsCancellationRequested) item.TreeTcs!.TrySetCanceled(item.CancellationToken);
+                        else item.TreeTcs!.TrySetResult(item.Tree());
+                        continue;
+                    }
+
                     if (item.CancellationToken.IsCancellationRequested)
                     {
-                        item.Tcs.TrySetCanceled(item.CancellationToken);
+                        item.Tcs!.TrySetCanceled(item.CancellationToken);
                         continue;
                     }
 
                     var result = ExecuteInspection(item.Hwnd, item.MaxElements, item.CancellationToken);
-                    item.Tcs.TrySetResult(result);
+                    item.Tcs!.TrySetResult(result);
                 }
                 catch (Exception ex)
                 {
-                    item.Tcs.TrySetException(ex);
+                    item.Tcs?.TrySetException(ex);
+                    item.TreeTcs?.TrySetException(ex);
                 }
                 finally
                 {
@@ -160,6 +205,12 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
                     _busyStartTime = DateTimeOffset.MinValue;
                 }
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            // The queue was disposed while this worker was still busy (Dispose waits only 500 ms, and a recycled worker's
+            // queue is completed under it). The worker simply ends: an exception escaping a background thread would
+            // terminate the whole process (observed: the test host crashed in a full-suite run on 2026-11-09).
         }
         finally
         {
@@ -258,6 +309,156 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
         {
             _logger?.LogWarning("UIA inspection timed out after {TimeoutMs}ms for HWND {Hwnd}. Using Win32 fallback.", timeoutMs, hwnd);
             return (InspectWin32ControlsFallback(hwnd, maxElements), "PartialUiaTimeout");
+        }
+    }
+
+    // ── Phase 7B.1b: bounded tree inspection ──────────────────────────────────────────────────────────────────────
+
+    private const int UIA_RuntimeIdPropertyId = 30000;
+    private const int UIA_IsPasswordPropertyId = 30019;
+    private const int UIA_IsOffscreenPropertyId = 30022;
+    public const int MaxNameChars = 160;
+
+    // Pattern availability properties: reported only, never used to invoke anything.
+    private static readonly (int Id, string Name)[] PatternProperties =
+    {
+        (30028, "ExpandCollapse"), (30031, "Invoke"), (30033, "RangeValue"), (30034, "Scroll"),
+        (30036, "SelectionItem"), (30037, "Selection"), (30040, "Text"), (30041, "Toggle"),
+        (30043, "Value"), (30044, "Window"),
+    };
+
+    public async Task<UiaInspection> InspectTreeAsync(IntPtr hwnd, int maxDepth, int maxElements, int timeoutMs, CancellationToken cancellationToken = default)
+    {
+        if (hwnd == IntPtr.Zero) return new UiaInspection("unavailable", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, "no window");
+        if (_disposed) return new UiaInspection("unavailable", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, "service disposed");
+        maxDepth = Math.Clamp(maxDepth, 0, 6);
+        maxElements = Math.Clamp(maxElements, 1, 400);
+        timeoutMs = Math.Clamp(timeoutMs, 50, 10_000);
+
+        if (_isWorkerBusy)
+        {
+            lock (_workerLock)
+            {
+                if (_isWorkerBusy && (DateTimeOffset.UtcNow - _busyStartTime) > TimeSpan.FromSeconds(5)) RecycleWorkerThread_UnderLock();
+            }
+            if (_isWorkerBusy) return new UiaInspection("worker_busy", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, "UI Automation is busy with another window");
+        }
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        var tcs = new TaskCompletionSource<UiaInspection>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var item = new UiaWorkItem(hwnd, maxElements, cancellationToken, null,
+            () => ExecuteTree(hwnd, maxDepth, maxElements, deadline, cancellationToken), tcs);
+        BlockingCollection<UiaWorkItem> q;
+        lock (_workerLock) q = _workQueue;
+        try { q.Add(item, cancellationToken); }
+        catch (OperationCanceledException) { return new UiaInspection("cancelled", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, null); }
+        catch (InvalidOperationException) { return new UiaInspection("unavailable", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, "worker queue closed"); }
+
+        // The tree walk honours the deadline itself; the extra grace only covers a provider that hangs inside one call.
+        var done = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs + 750, CancellationToken.None));
+        if (done != tcs.Task) return new UiaInspection("timeout", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, $"no answer within {timeoutMs} ms");
+        try { return await tcs.Task; }
+        catch (OperationCanceledException) { return new UiaInspection("cancelled", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, null); }
+        catch (Exception ex) { return new UiaInspection("unavailable", Array.Empty<UiaNode>(), false, DateTimeOffset.UtcNow, ex.GetType().Name); }
+    }
+
+    private static object? Prop(IUIAutomationElement e, int id)
+    {
+        try { return e.GetCurrentPropertyValue(id, out var v) == 0 ? v : null; } catch { return null; }
+    }
+
+    private static UiaNode ReadNode(IUIAutomationElement e, int depth, int parent)
+    {
+        string name = Prop(e, UIA_NamePropertyId) as string ?? string.Empty;
+        if (name.Length > MaxNameChars) name = name[..MaxNameChars] + "…";
+        // UIA reports left, top, width, height; reported as left, top, right, bottom like the window bounds.
+        int[] bounds = Prop(e, UIA_BoundingRectanglePropertyId) is double[] r && r.Length == 4
+            ? new[] { (int)Math.Round(r[0]), (int)Math.Round(r[1]), (int)Math.Round(r[0] + r[2]), (int)Math.Round(r[1] + r[3]) }
+            : new[] { 0, 0, 0, 0 };
+        var patterns = new List<string>();
+        foreach (var (id, pname) in PatternProperties)
+            if (Prop(e, id) is true) patterns.Add(pname);
+        return new UiaNode(
+            Prop(e, UIA_RuntimeIdPropertyId) as int[],
+            depth,
+            parent,
+            Prop(e, UIA_ControlTypePropertyId) is int ct ? MapControlTypeIdToString(ct) : "Unknown",
+            Prop(e, UIA_AutomationIdPropertyId) as string ?? string.Empty,
+            name,
+            Prop(e, UIA_ClassNamePropertyId) as string ?? string.Empty,
+            bounds,
+            Prop(e, UIA_IsEnabledPropertyId) is true,
+            Prop(e, UIA_IsOffscreenPropertyId) is true,
+            Prop(e, UIA_IsPasswordPropertyId) is true,
+            Prop(e, UIA_IsKeyboardFocusablePropertyId) is true,
+            patterns);
+    }
+
+    private UiaInspection ExecuteTree(IntPtr hwnd, int maxDepth, int maxElements, DateTime deadline, CancellationToken ct)
+    {
+        IUIAutomation? uia = null;
+        IntPtr cond = IntPtr.Zero;
+        var nodes = new List<UiaNode>();
+        var frontier = new Queue<(IUIAutomationElement El, int Depth, int Index)>();
+        bool truncated = false, partial = false;
+        int failures = 0;
+        string? lastFailure = null;
+        try
+        {
+            try { uia = (IUIAutomation)new CUIAutomation(); }
+            catch (Exception ex) { return new UiaInspection("unavailable", nodes, false, DateTimeOffset.UtcNow, ex.GetType().Name); }
+            if (uia.ElementFromHandle(hwnd, out var root) != 0 || root == null)
+                return new UiaInspection("unavailable", nodes, false, DateTimeOffset.UtcNow, "the window exposes no UI Automation element");
+            if (uia.CreateTrueCondition(out cond) != 0 || cond == IntPtr.Zero)
+            {
+                Marshal.ReleaseComObject(root);
+                return new UiaInspection("unavailable", nodes, false, DateTimeOffset.UtcNow, "no tree condition");
+            }
+
+            nodes.Add(ReadNode(root, 0, -1));
+            frontier.Enqueue((root, 0, 0));
+            while (frontier.Count > 0)
+            {
+                var (el, depth, index) = frontier.Dequeue();
+                try
+                {
+                    if (ct.IsCancellationRequested) return new UiaInspection("cancelled", nodes, truncated, DateTimeOffset.UtcNow, null);
+                    if (DateTime.UtcNow >= deadline) { partial = true; continue; }
+                    if (depth >= maxDepth || truncated) continue;
+                    int hrFind = el.FindAll(TreeScope.TreeScope_Children, cond, out var children);
+                    if (hrFind != 0 || children == null)
+                    {
+                        // A failed child query is a gap in the tree, never silently reported as "ok".
+                        partial = true;
+                        failures++;
+                        lastFailure = $"children of element {index} could not be read (0x{hrFind:X8})";
+                        continue;
+                    }
+                    try
+                    {
+                        children.get_Length(out int count);
+                        for (int i = 0; i < count; i++)
+                        {
+                            if (nodes.Count >= maxElements) { truncated = true; break; }
+                            if (DateTime.UtcNow >= deadline) { partial = true; break; }
+                            if (children.GetElement(i, out var child) != 0 || child == null) continue;
+                            nodes.Add(ReadNode(child, depth + 1, index));
+                            frontier.Enqueue((child, depth + 1, nodes.Count - 1));
+                        }
+                    }
+                    finally { Marshal.ReleaseComObject(children); }
+                }
+                finally { if (Marshal.IsComObject(el)) Marshal.ReleaseComObject(el); }
+            }
+            return new UiaInspection(partial || truncated ? "partial" : "ok", nodes, truncated, DateTimeOffset.UtcNow,
+                failures > 0 ? $"{failures} part(s) of the tree could not be read; last: {lastFailure}"
+                : partial ? "the inspection deadline was reached" : truncated ? $"stopped at {maxElements} elements" : null);
+        }
+        finally
+        {
+            while (frontier.Count > 0) { var (el, _, _) = frontier.Dequeue(); if (Marshal.IsComObject(el)) Marshal.ReleaseComObject(el); }
+            if (cond != IntPtr.Zero) Marshal.Release(cond);
+            if (uia != null && Marshal.IsComObject(uia)) Marshal.ReleaseComObject(uia);
         }
     }
 
@@ -596,6 +797,8 @@ public class WindowsUiAutomationService : IUiAutomationService, IDisposable
         {
             _workerThread.Join(500);
         }
-        _workQueue.Dispose();
+        // Only dispose the queue once its worker has exited; a worker still inside a slow inspection ends by itself when
+        // it sees the completed queue (disposing it under the worker was the crash described in WorkerLoop).
+        if (!_workerThread.IsAlive) _workQueue.Dispose();
     }
 }

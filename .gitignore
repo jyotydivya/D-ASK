@@ -46,6 +46,9 @@ src/hud-native/target/
 # ── Local ML model weights ───────────────────────────────────────────────────
 models/*.gguf
 
+# ── Pinned local inference runtime (installed by scripts/inference/fetch-llama-server.mjs) ──
+local-inference/
+
 # ── Scratch sub-project build outputs (keep source, ignore compiled output) ──
 scratch/Benchmark/bin/
 scratch/Benchmark/obj/
@@ -64,3 +67,6 @@ scratch/Benchmark/*.runtimeconfig.json
 
 # ── Env file with secrets (also caught by .env* above, made explicit) ─────────
 .env.local
+
+# Compiled agent host (npm run build:agent-host)
+/dist/

@@ -30,7 +30,26 @@ export interface OrbSceneApi {
   dispose(): void;
 }
 
-const HOME_POSITION = new THREE.Vector3(0, 0.5, 5.5);
+/** The orb's extent in world units, outer rings included: about 95% of the view height at the original 5.5 distance. */
+const ORB_EXTENT = 5.4;
+const FOV_DEGREES = 55;
+
+/**
+ * Home camera distance for a viewport, so the orb takes a set share of the shorter screen side instead of filling it:
+ * about 56% on large displays and more on small ones, where the panels need the space less.
+ */
+export function homeDistanceFor(width: number, height: number): number {
+  const tanHalf = Math.tan(((FOV_DEGREES / 2) * Math.PI) / 180);
+  const shorter = Math.min(width, height);
+  const share = shorter < 640 ? 0.8 : shorter < 900 ? 0.66 : 0.56;
+  const aspectLimit = Math.min(1, width / Math.max(1, height));
+  return ORB_EXTENT / (share * 2 * tanHalf * aspectLimit);
+}
+
+function homePositionFor(width: number, height: number): THREE.Vector3 {
+  const d = homeDistanceFor(width, height);
+  return new THREE.Vector3(0, 0.5 * (d / 5.5), d);
+}
 const MIN_DISTANCE = 0.6;
 const MAX_DISTANCE = 40;
 
@@ -328,8 +347,9 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
 
   // ——— SCENE ———
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 500);
-  camera.position.copy(HOME_POSITION);
+  const camera = new THREE.PerspectiveCamera(FOV_DEGREES, width / height, 0.1, 500);
+  let homeDistance = homeDistanceFor(width, height);
+  camera.position.copy(homePositionFor(width, height));
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: "high-performance" });
   renderer.setClearColor(0x000000, 0);
@@ -992,7 +1012,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   }
 
   function resetView() {
-    camera.position.copy(HOME_POSITION);
+    camera.position.copy(homePositionFor(container.clientWidth, container.clientHeight));
     controls.target.set(0, 0, 0);
     camera.lookAt(controls.target);
     controls.update();
@@ -1206,6 +1226,14 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     const h = container.clientHeight;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // Keep the orb's share of the screen when the display changes, unless the user has zoomed.
+    const next = homeDistanceFor(w, h);
+    offsetScratch.copy(camera.position).sub(controls.target);
+    if (Math.abs(offsetScratch.length() - homeDistance) / homeDistance < 0.02) {
+      offsetScratch.setLength(next);
+      camera.position.copy(controls.target).add(offsetScratch);
+    }
+    homeDistance = next;
     renderer.setSize(w, h);
     composer.setSize(w, h);
   }

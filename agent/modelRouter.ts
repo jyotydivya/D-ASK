@@ -6,6 +6,8 @@
 
 import OpenAI from "openai";
 import type { LLMProvider, ModelRequest, ModelResponse, ModelTier } from "../agent/types";
+// Offline-first: every hosted-model call is refused unless DASK_INFERENCE=cloud.
+import { assertCloudInferenceAllowed } from "./runtime/inference/policy";
 
 // ── Cooldown Tracker ──────────────────────────────────────────────────────────
 // When a model fails (429, 503, timeout), we skip it for COOLDOWN_MS.
@@ -350,6 +352,7 @@ class ModelRouter {
    * Generate a text response — tries providers in order with full failover.
    */
   async generate(request: ModelRequest, providerName?: string): Promise<ModelResponse> {
+    assertCloudInferenceAllowed("Cloud model router (generate)");
     if (providerName) {
       return this.getProvider(providerName).generate(request);
     }
@@ -374,6 +377,7 @@ class ModelRouter {
    * Generate a typed structured JSON response — tries providers in order.
    */
   async generateStructured<T>(request: ModelRequest, providerName?: string): Promise<T> {
+    assertCloudInferenceAllowed("Cloud model router (generateStructured)");
     if (providerName) {
       return this.getProvider(providerName).generateStructured<T>(request);
     }

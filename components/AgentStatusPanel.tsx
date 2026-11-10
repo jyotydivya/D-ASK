@@ -7,6 +7,7 @@
 
 import React, { useEffect, useRef } from "react";
 import type { TaskEvent, TaskNode, OrbState } from "../agent/types";
+import { outcomeLabel, type TaskResultView } from "../hooks/useTask";
 
 interface AgentStatusPanelProps {
   isActive: boolean;
@@ -17,7 +18,18 @@ interface AgentStatusPanelProps {
   progressPct: number;
   taskId: string | null;
   onCancel?: () => void;
+  /** Final outcome reported by the server, shown verbatim (never inferred client-side). */
+  result?: TaskResultView | null;
 }
+
+const OUTCOME_COLORS: Record<string, string> = {
+  completed: "#39ff14",
+  unverified: "#fbbf24",
+  partial: "#fbbf24",
+  refused: "#a8b4c0",
+  failed: "#ff4444",
+  cancelled: "#a8b4c0",
+};
 
 const STATE_COLORS: Record<OrbState, string> = {
   standby:      "#00d4ff",
@@ -88,6 +100,7 @@ export function AgentStatusPanel({
   progressPct,
   taskId,
   onCancel,
+  result,
 }: AgentStatusPanelProps) {
   const eventsEndRef = useRef<HTMLDivElement>(null);
 
@@ -109,13 +122,15 @@ export function AgentStatusPanel({
 
   return (
     <div
+      data-hud-interactive
+      className="agent-status-panel"
       style={{
         position: "fixed",
         right: "20px",
-        top: "50%",
-        transform: "translateY(-50%)",
-        width: "340px",
-        maxHeight: "70vh",
+        // Between the command console and the bottom controls (measured by useHudInteraction), on any screen size.
+        top: "calc(var(--hud-console-bottom, 24px) + 12px)",
+        width: "min(340px, calc(100vw - 40px))",
+        maxHeight: "max(160px, calc(100vh - var(--hud-console-bottom, 24px) - var(--hud-controls-height, 24px) - 36px))",
         background: "rgba(0, 8, 20, 0.92)",
         border: `1px solid ${color}40`,
         borderRadius: "12px",
@@ -291,31 +306,76 @@ export function AgentStatusPanel({
                 node.status === "completed" ? "#39ff14"
                 : node.status === "running" ? "#00d4ff"
                 : node.status === "failed" ? "#ff4444"
+                : node.status === "skipped" ? "#6b7280"
                 : "#2d3748";
               const nodeIcon =
                 node.status === "completed" ? "●"
                 : node.status === "running" ? "▶"
                 : node.status === "failed" ? "✗"
+                : node.status === "skipped" ? "⊘"
                 : "○";
+              const evidence = (node.result as { evidence?: unknown } | undefined)?.evidence;
+              const detail = node.status === "completed" && evidence !== undefined ? String(evidence)
+                : (node.status === "failed" || node.status === "skipped") && node.error ? node.error
+                : "";
               return (
-                <div
-                  key={node.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    fontSize: "9px",
-                    color: nodeColor,
-                    letterSpacing: "0.5px",
-                  }}
-                >
-                  <span style={{ flexShrink: 0 }}>{nodeIcon}</span>
-                  <span style={{ textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    [{node.agentType}] {node.name}
-                  </span>
+                <div key={node.id} style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "9px",
+                      color: nodeColor,
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    <span style={{ flexShrink: 0 }}>{nodeIcon}</span>
+                    <span style={{ textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      [{node.agentType}] {node.name}
+                    </span>
+                  </div>
+                  {detail && (
+                    <span style={{ fontSize: "9px", color: "#7a8a9a", paddingLeft: "14px", wordBreak: "break-word", lineHeight: "1.4" }}>
+                      {detail.slice(0, 160)}
+                    </span>
+                  )}
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Final result (server-reported outcome + evidence-based response) */}
+      {result && !isActive && (
+        <div style={{ padding: "8px 16px", borderBottom: `1px solid ${color}15` }}>
+          <div
+            style={{
+              fontSize: "9px",
+              letterSpacing: "2px",
+              marginBottom: "4px",
+              color: OUTCOME_COLORS[result.outcome] ?? "#a8b4c0",
+              textTransform: "uppercase",
+            }}
+          >
+            RESULT — {result.outcome}
+          </div>
+          {result.independentlyVerified !== undefined && result.independentlyVerified !== null && (
+            <div
+              data-testid="agent-verification"
+              style={{ fontSize: "9px", letterSpacing: "1px", marginBottom: "4px", color: result.independentlyVerified ? "#39ff14" : "#fbbf24" }}
+            >
+              {result.independentlyVerified ? "INDEPENDENTLY VERIFIED" : "NOT INDEPENDENTLY VERIFIED"}
+            </div>
+          )}
+          {result.interrupted && (
+            <div style={{ fontSize: "9px", letterSpacing: "1px", marginBottom: "4px", color: "#fbbf24" }}>
+              INTERRUPTED — NOT RETRIED
+            </div>
+          )}
+          <div style={{ fontSize: "10px", color: "#c0ccd8", whiteSpace: "pre-wrap", lineHeight: "1.5", maxHeight: "140px", overflowY: "auto" }}>
+            {result.response}
           </div>
         </div>
       )}
@@ -383,9 +443,11 @@ export function eventToMessage(event: TaskEvent): string {
   const { type, payload } = event;
   switch (type) {
     case "task.created":     return `Task created: "${String(payload.objective ?? "").slice(0, 60)}"`;
-    case "task.planned":     return `Plan ready — ${payload.nodeCount} steps`;
+    case "task.planned":     return payload.intent === "unsupported"
+                               ? `Cannot plan: ${String(payload.refusalReason ?? "no suitable tool").slice(0, 80)}`
+                               : `Plan ready — ${payload.nodeCount} steps`;
     case "task.started":     return "Execution started";
-    case "task.completed":   return "✓ Task completed";
+    case "task.completed":   return outcomeLabel(payload.outcome);
     case "task.failed":      return `✗ Task failed: ${String(payload.error ?? "").slice(0, 80)}`;
     case "task.cancelled":   return "Task cancelled";
     case "task.replanned":   return `Replanning (attempt ${payload.replanCount})`;
@@ -398,9 +460,9 @@ export function eventToMessage(event: TaskEvent): string {
     case "tool.failed":      return `✗ ${String(payload.tool)} — ${String(payload.error ?? "").slice(0, 60)}`;
     case "approval.required": return `⚠ Approval required for: ${String(payload.tool)}`;
     case "verification.started": return "Verifying task outcome...";
-    case "verification.completed": return `Verification ${payload.passed ? "✓ passed" : "✗ failed"} (${Number(payload.score ?? 0).toFixed(2)})`;
+    case "verification.completed": return `Verification ${payload.passed ? "✓ passed" : "✗ not confirmed"}${payload.score === undefined ? "" : ` (${Number(payload.score).toFixed(2)})`}`;
     case "node.completed":   return `Step complete: ${String(payload.name)}`;
-    case "node.failed":      return `Step failed: ${String(payload.name)}`;
+    case "node.failed":      return `Step ${payload.status === "skipped" ? "not run" : payload.status === "cancelled" ? "cancelled" : "failed"}: ${String(payload.name)}`;
     default:                 return "";
   }
 }

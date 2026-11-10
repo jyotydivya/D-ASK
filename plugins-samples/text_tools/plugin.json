@@ -1,0 +1,14 @@
+{
+  "id": "text_tools",
+  "name": "Text tools",
+  "version": "1.0.0",
+  "description": "Offline text utilities: word counts and title case.",
+  "entry": "index.js",
+  "permissions": ["compute"],
+  "tools": [
+    { "name": "word_count", "description": "Count the words, characters and lines of a text the user gives.", "keywords": ["word count", "count the words"],
+      "inputSchema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 20000 } }, "required": ["text"] } },
+    { "name": "title_case", "description": "Convert a text the user gives to Title Case.", "keywords": ["title case"],
+      "inputSchema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 2000 } }, "required": ["text"] } }
+  ]
+}

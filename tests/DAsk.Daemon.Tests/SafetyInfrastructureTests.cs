@@ -158,7 +158,10 @@ public class SafetyInfrastructureTests
             ActionId = "act_elevated_01",
             ActionType = "SimulatedClick",
             RiskLevel = "Elevated",
+            // Phase 7B.1a: the claimed hash must be the canonical hash of the parameters actually sent.
+            ActionParameters = new() { ["x"] = "100", ["y"] = "200" },
             ParametersSha256 = ActionPolicyEngine.ComputeCanonicalHash(new() { ["x"] = "100", ["y"] = "200" }),
+            SessionId = "session_1",
             ExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(30)
         };
 
@@ -198,7 +201,7 @@ public class SafetyInfrastructureTests
         }
 
         // Explicit Resume
-        var resumeResp = await engine.ResumeExecutionAsync("UserExplicitConfirmation", "Safety cleared");
+        var resumeResp = await engine.ResumeExecutionAsync("UserExplicitConfirmation", "Safety cleared", engine.CurrentStopGeneration);
         Assert.True(resumeResp.Success);
         Assert.False(engine.IsEmergencyStopped);
         Assert.Equal("Normal", stateMgr.OrbMode);
@@ -228,7 +231,10 @@ public class SafetyInfrastructureTests
             ApprovalId = "appr_short_ttl",
             ActionId = "act_short_ttl",
             ActionType = "SimulatedClick",
-            ParametersSha256 = "hash123",
+            // Phase 7B.1a: a non-canonical claimed hash is now refused at registration (covered by the 7B.1a tests);
+            // this scenario is about expiry, so it sends the daemon-computable hash of its (empty) parameters.
+            ParametersSha256 = ActionPolicyEngine.ComputeCanonicalHash(null),
+            SessionId = "session_1",
             ExpiresAtUtc = DateTimeOffset.UtcNow.AddMilliseconds(50) // 50ms TTL
         };
 
@@ -276,7 +282,7 @@ public class SafetyInfrastructureTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         var grantRes = await appTask;
         Assert.True(grantRes.Approved, $"Approval was not granted: {grantRes.RejectionReason}");
 
@@ -322,6 +328,7 @@ public class SafetyInfrastructureTests
             ActionId = "act_tamper_check",
             ActionType = "SimulatedClick",
             ParametersSha256 = origHash,
+            SessionId = "session_1",
             ExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(30)
         };
 
@@ -336,7 +343,7 @@ public class SafetyInfrastructureTests
             ActionType = "SimulatedClick",
             ParametersSha256 = tamperedHash,
             Approved = true
-        });
+        }, "session_1");
 
         var result = await reqTask;
         Assert.False(result.Approved);
@@ -422,6 +429,7 @@ public class SafetyInfrastructureTests
             ActionId = "act_race_01",
             ActionType = "SimulatedClick",
             ParametersSha256 = "hash_race",
+            SessionId = "session_1",
             ExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(30)
         };
 
@@ -436,7 +444,7 @@ public class SafetyInfrastructureTests
             ActionType = "SimulatedClick",
             ParametersSha256 = "hash_race",
             Approved = true
-        }));
+        }.WithDigest(policy), "session_1"));
 
         await Task.WhenAll(t1, t2);
 
@@ -533,7 +541,7 @@ public class SafetyInfrastructureTests
         for (int i = 0; i < n; i++)
         {
             // Reset state
-            await engine.ResumeExecutionAsync("Bench", "Reset");
+            await engine.ResumeExecutionAsync("Bench", "Reset", engine.CurrentStopGeneration);
 
             var sw = Stopwatch.StartNew();
             await engine.TriggerEmergencyStopAsync("Bench", $"Stop #{i}");
@@ -566,7 +574,7 @@ public class SafetyInfrastructureTests
 
         for (int i = 0; i < n; i++)
         {
-            await engine.ResumeExecutionAsync("Bench", "Reset");
+            await engine.ResumeExecutionAsync("Bench", "Reset", engine.CurrentStopGeneration);
 
             // Start an active action
             var actTask = engine.ExecuteSimulatedActionAsync(new SimulatedActionRequest

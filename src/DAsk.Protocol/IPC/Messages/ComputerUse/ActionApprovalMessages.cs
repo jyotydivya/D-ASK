@@ -52,6 +52,66 @@ public record ActionApprovalRequest
 
     [JsonPropertyName("reason")]
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Set by the daemon only (Phase 7B.1a): SHA-256 over <see cref="CanonicalAction"/>. Any value a caller supplies
+    /// is ignored. The HUD must echo it in its decision.
+    /// </summary>
+    [JsonPropertyName("actionDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActionDigest { get; init; }
+
+    /// <summary>
+    /// Set by the daemon only: the exact action being authorized, as canonical JSON (DASK-CJ-1). The HUD renders the
+    /// approval from these bytes, so what the user sees is what was hashed.
+    /// </summary>
+    [JsonPropertyName("canonicalAction")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CanonicalAction { get; init; }
+}
+
+/// <summary>Approval lifecycle states reported to the owning HUD. The daemon is authoritative for all of them.</summary>
+public static class ApprovalStates
+{
+    public const string Pending = "Pending";
+    public const string Approved = "Approved";
+    public const string Denied = "Denied";
+    public const string Expired = "Expired";
+    public const string Cancelled = "Cancelled";
+    public const string InvalidatedByEmergencyStop = "InvalidatedByEmergencyStop";
+    public const string Disconnected = "Disconnected";
+    /// <summary>The daemon refused the request or the decision (integrity, representability, liveness).</summary>
+    public const string Rejected = "Rejected";
+
+    public static bool IsTerminal(string state) => state != Pending;
+}
+
+/// <summary>
+/// Daemon to owning HUD: an approval changed state, or a decision was not accepted. A HUD must never show an approval
+/// as granted before it receives <c>Approved</c>, and must stop offering a decision on any terminal state.
+/// </summary>
+public record ApprovalStateNotification
+{
+    [JsonPropertyName("approvalId")]
+    public string ApprovalId { get; init; } = string.Empty;
+
+    [JsonPropertyName("actionId")]
+    public string ActionId { get; init; } = string.Empty;
+
+    [JsonPropertyName("state")]
+    public string State { get; init; } = ApprovalStates.Pending;
+
+    /// <summary>False when this notification answers a decision the daemon did not accept (late, duplicate, invalid).</summary>
+    [JsonPropertyName("decisionAccepted")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DecisionAccepted { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
 }
 
 public record ActionApprovalResponse
@@ -87,6 +147,11 @@ public record ActionApprovalResponse
     [JsonPropertyName("rejectionReason")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? RejectionReason { get; init; }
+
+    /// <summary>Echo of the request's <c>actionDigest</c>. Required for an approval to be granted.</summary>
+    [JsonPropertyName("actionDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActionDigest { get; init; }
 }
 
 public record ResumeExecutionRequest

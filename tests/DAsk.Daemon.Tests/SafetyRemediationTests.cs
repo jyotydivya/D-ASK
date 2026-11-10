@@ -120,7 +120,7 @@ public class SafetyRemediationTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         await appTask;
 
         // Attempt execution targeting a DIFFERENT HWND 0x2000
@@ -179,7 +179,7 @@ public class SafetyRemediationTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         await appTask;
 
         // Attempt execution targeting a DIFFERENT PID 8888
@@ -242,7 +242,7 @@ public class SafetyRemediationTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         await appTask;
 
         // Present identical HWND & PID, but DIFFERENT creation time (recycled HWND attack)
@@ -300,7 +300,7 @@ public class SafetyRemediationTests
             SessionId = "session_A",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_A");
         await appTask;
 
         // Session B attempts to consume the token granted to session A
@@ -355,7 +355,7 @@ public class SafetyRemediationTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         await appTask;
 
         // Emergency Stop occurs! This increments StopGeneration to 2
@@ -363,7 +363,7 @@ public class SafetyRemediationTests
         Assert.Equal(2UL, engine.CurrentStopGeneration);
 
         // Resume execution (still at Generation 2)
-        await engine.ResumeExecutionAsync("Test", "Resume into Gen 2");
+        await engine.ResumeExecutionAsync("Test", "Resume into Gen 2", engine.CurrentStopGeneration);
         Assert.Equal(2UL, engine.CurrentStopGeneration);
 
         // Attempt to consume the old Generation 1 approval token in Generation 2
@@ -420,7 +420,7 @@ public class SafetyRemediationTests
             SessionId = "session_1",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "session_1");
         await appTask;
 
         int concurrentAttempts = 20;
@@ -524,7 +524,7 @@ public class SafetyRemediationTests
             SessionId = "sess_A",
             StopGeneration = 1,
             Approved = true
-        });
+        }.WithDigest(policy), "sess_A");
         await grantedTask;
 
         // Session A disconnects!
@@ -579,7 +579,7 @@ public class SafetyRemediationTests
 
         // Resume execution must wait for activeTask to completely drain
         var sw = Stopwatch.StartNew();
-        var resumeResp = await engine.ResumeExecutionAsync("Test", "Resume after drain");
+        var resumeResp = await engine.ResumeExecutionAsync("Test", "Resume after drain", engine.CurrentStopGeneration);
         sw.Stop();
 
         Assert.True(resumeResp.Success);
@@ -613,7 +613,7 @@ public class SafetyRemediationTests
 
             // Trigger emergency stop and resume
             await engine.TriggerEmergencyStopAsync("TestRunner", "Audit verification stop");
-            await engine.ResumeExecutionAsync("TestRunner", "Audit verification resume");
+            await engine.ResumeExecutionAsync("TestRunner", "Audit verification resume", engine.CurrentStopGeneration);
 
             // Query audit trail records from SQLite
             var auditRecords = await recorder.GetSafetyAuditRecordsAsync(100);
@@ -710,7 +710,7 @@ public class SafetyRemediationTests
                 SessionId = "session_bench",
                 StopGeneration = 1,
                 Approved = true
-            });
+            }.WithDigest(policy), "session_bench");
             await task;
 
             var sw = Stopwatch.StartNew();
