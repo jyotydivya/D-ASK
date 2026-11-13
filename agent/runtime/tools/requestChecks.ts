@@ -17,10 +17,53 @@ const contradicted = (reason: string): GroundingVerdict => ({ status: "contradic
 
 // ── math.evaluate ────────────────────────────────────────────────────────────
 
+// ── spoken numbers ("seven times eight") ─────────────────────────────────────
+// Speech recognition and typed requests alike may spell numbers. A run of number words is turned into digits so the request's own
+// arithmetic can be extracted and checked deterministically; the model never supplies the numbers that ground its own answer.
+const UNIT_WORDS: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const TENS_WORDS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const NUMBER_WORD = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand";
+const NUMBER_RUN = new RegExp(String.raw`\b(?:${NUMBER_WORD})(?:(?:[\s-]+(?:and\s+)?)(?:${NUMBER_WORD}))*\b`, "g");
+
+/** "twenty one" → 21, "one hundred and five" → 105, "two thousand" → 2000; null for anything that is not one well-formed number. */
+export function parseNumberWords(run: string): number | null {
+  const tokens = run.toLowerCase().split(/[\s-]+/).filter((t) => t && t !== "and");
+  let total = 0, current = 0, last: "start" | "unit" | "teen" | "tens" | "hundred" | "thousand" = "start";
+  for (const t of tokens) {
+    if (t in UNIT_WORDS) {
+      const v = UNIT_WORDS[t];
+      const kind = v >= 10 ? "teen" : "unit";
+      if (last === "unit" || last === "teen" || (last === "tens" && kind !== "unit")) return null;
+      current += v; last = kind;
+    } else if (t in TENS_WORDS) {
+      if (last === "unit" || last === "teen" || last === "tens") return null;
+      current += TENS_WORDS[t]; last = "tens";
+    } else if (t === "hundred") {
+      if (last === "start" || last === "hundred" || last === "thousand" || current >= 100 || current === 0) { if (!(last === "start")) return null; }
+      current = (current || 1) * 100; last = "hundred";
+    } else if (t === "thousand") {
+      if (last === "thousand") return null;
+      total += (current || 1) * 1000; current = 0; last = "thousand";
+    } else return null;
+  }
+  return total + current;
+}
+
+/** Number-word runs of a request with their values (lower-case, in order). */
+export function numberWordRuns(text: string): { words: string; value: number }[] {
+  const out: { words: string; value: number }[] = [];
+  for (const m of text.toLowerCase().matchAll(NUMBER_RUN)) {
+    const value = parseNumberWords(m[0]);
+    if (value !== null) out.push({ words: m[0], value });
+  }
+  return out;
+}
+const wordsToDigits = (text: string) => text.replace(NUMBER_RUN, (run) => { const v = parseNumberWords(run); return v === null ? run : String(v); });
+
 /** Rewrite spoken operators and typographic symbols into the evaluator's syntax. */
 export function normalizeMathText(text: string): string {
-  return text
-    .toLowerCase()
+  return wordsToDigits(text.toLowerCase())
     .replace(/(\d),(?=\d{3}\b)/g, "$1")            // 1,000 → 1000
     .replace(/[×✕]/g, "*").replace(/÷/g, "/").replace(/[−–]/g, "-")
     .replace(/\bmultiplied by\b/g, "*").replace(/\btimes\b/g, "*")
@@ -90,7 +133,13 @@ export function createMathRequestCheck(evaluate: (s: string) => number): ToolReq
     satisfies(facet, _input, outcome: ToolOutcome<{ expression: string; value: number }>) {
       return outcome.ok && typeof outcome.output?.value === "number" && sameValue(outcome.output.value, facet.data as number);
     },
-    vocabulary: () => MATH_WORDS,
+    // Number words are explained only when they sit next to an operator of an expression this check extracted from the request.
+    vocabulary: (objective: string) => {
+      if (extractExpressions(objective, evaluate).length === 0) return MATH_WORDS;
+      const normalized = normalizeMathText(objective);
+      const used = numberWordRuns(objective).filter((r) => new RegExp(String.raw`(?:[-+*/%^(]\s*${r.value}(?!\d))|(?:(?<![\d.])${r.value}\s*[-+*/%^)])`).test(normalized));
+      return [...MATH_WORDS, ...used.flatMap((r) => r.words.split(/[\s-]+/))];
+    },
   };
 }
 

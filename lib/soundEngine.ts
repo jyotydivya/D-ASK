@@ -1,4 +1,5 @@
 // Web Audio API & Speech Synthesis engine for D-ASK ULTRON HUD
+import { estimateSpeechMs, toSpokenText } from "./spokenText";
 
 export type ThemeColor = "amber" | "crimson" | "cyan" | "emerald";
 
@@ -284,18 +285,17 @@ class SpeechEngine {
     return this.enabled;
   }
 
-  public speak(text: string, onBoundary?: (audioLevel: number) => void, onEnd?: () => void) {
+  /** Returns the estimated speaking time in ms (0 if nothing is spoken), so the caller can ignore the microphone for exactly that long. */
+  public speak(text: string, onBoundary?: (audioLevel: number) => void, onEnd?: () => void): number {
     if (!this.enabled || typeof window === "undefined") {
       if (onEnd) onEnd();
-      return;
+      return 0;
     }
-    const cleanText = text
-      .replace(/[#*`_~]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    // Markdown markers are removed; content (a multiplication sign, an underscore in a name) is never deleted (lib/spokenText.ts).
+    const cleanText = toSpokenText(text);
     if (!cleanText) {
       if (onEnd) onEnd();
-      return;
+      return 0;
     }
 
     // Native HUD: Windows SAPI in the HUD process (local voices only). It reports no progress, so the orb animation
@@ -304,18 +304,18 @@ class SpeechEngine {
     if (native) {
       this.stop();
       native.postMessage(JSON.stringify({ type: "Speak", payload: { text: cleanText } }));
-      const ms = Math.min(60_000, 600 + cleanText.split(" ").length * 380);
+      const ms = estimateSpeechMs(cleanText);
       const started = Date.now();
       this.nativeTimer = window.setInterval(() => {
         if (Date.now() - started >= ms) { if (this.nativeTimer !== null) clearInterval(this.nativeTimer); this.nativeTimer = null; if (onBoundary) onBoundary(0); if (onEnd) onEnd(); return; }
         if (onBoundary) onBoundary(0.3 + Math.random() * 0.7);
       }, 80);
-      return;
+      return ms;
     }
 
     if (!("speechSynthesis" in window)) {
       if (onEnd) onEnd();
-      return;
+      return 0;
     }
     window.speechSynthesis.cancel();
 
@@ -326,7 +326,7 @@ class SpeechEngine {
     // Never an online voice: without a local one, nothing is spoken (the default voice could be an online one).
     if (!this.voice) {
       if (onEnd) onEnd();
-      return;
+      return 0;
     }
     utterance.voice = this.voice;
 
@@ -353,6 +353,7 @@ class SpeechEngine {
     utterance.onerror = cleanup;
 
     window.speechSynthesis.speak(utterance);
+    return estimateSpeechMs(cleanText);
   }
 }
 

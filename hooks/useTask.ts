@@ -26,7 +26,7 @@ export interface TaskState {
   isActive: boolean;
   progressPct: number;
   lastMessage: string;
-  /** Final outcome as reported by the server (agent runtime: completed | unverified | partial | failed | refused | cancelled). */
+  /** Final outcome as reported by the server (agent runtime: completed | answered | unverified | partial | failed | refused | cancelled). */
   result: TaskResultView | null;
 }
 
@@ -36,6 +36,8 @@ export interface TaskResultView {
   /** Native HUD only: the daemon's verification report, shown as reported. null means none was reported. */
   independentlyVerified?: boolean | null;
   interrupted?: boolean;
+  /** Native HUD only: the result came from the local knowledge index (retrieved passages with checked citations). */
+  grounded?: boolean;
 }
 
 const INITIAL_STATE: TaskState = {
@@ -140,6 +142,7 @@ export function eventToMessage(event: TaskEvent): string {
 /** Honest label for a finished task: the runtime reports partial/unverified results distinctly. */
 export function outcomeLabel(outcome: unknown): string {
   switch (outcome) {
+    case "answered":   return "✓ Answered";
     case "unverified": return "⚠ Finished — result not confirmed";
     case "partial":    return "⚠ Partially completed";
     case "refused":    return "⊘ Not possible with available tools";
@@ -228,7 +231,7 @@ export function reduceNativeResult(prev: TaskState, result: NativeTaskResult): T
     if (step.status === "succeeded") return { ...n, status: "completed", result: step.detail ? { evidence: step.detail } : n.result };
     return { ...n, status: step.status === "failed" ? "failed" : "skipped", error: step.detail ?? n.error };
   });
-  const orbState: OrbState = result.outcome === "completed" ? "completed" : result.outcome === "failed" ? "error" : "standby";
+  const orbState: OrbState = result.outcome === "completed" || result.outcome === "answered" ? "completed" : result.outcome === "failed" ? "error" : "standby";
   return {
     ...prev,
     nodes,
@@ -240,6 +243,8 @@ export function reduceNativeResult(prev: TaskState, result: NativeTaskResult): T
       response: result.response,
       independentlyVerified: result.independentlyVerified,
       interrupted: result.interrupted,
+      // Knowledge-engine steps are reported with ids "kb-…" (agent/runtime/knowledge/service.ts): the answer came from indexed documents.
+      grounded: result.steps.some((s) => s.id.startsWith("kb-")),
     },
   };
 }
@@ -247,6 +252,10 @@ export function reduceNativeResult(prev: TaskState, result: NativeTaskResult): T
 export type TaskCallbacks = {
   onComplete?: (response: string, taskId: string) => void;
   onFail?: (error: string, taskId: string) => void;
+  /** Native HUD: the daemon gave the submitted task this id (recorded on the history entry, so its result can be recovered after a restart). */
+  onAccepted?: (taskId: string) => void;
+  /** Native HUD: the daemon's answer to recoverTask(taskId); text is null when the result is not known. */
+  onRecovered?: (taskId: string, text: string | null, failed: boolean) => void;
 };
 
 export function useTask(callbacks?: TaskCallbacks) {
@@ -274,11 +283,26 @@ export function useTask(callbacks?: TaskCallbacks) {
       {
         onAccepted: (taskId) => {
           activeTaskIdRef.current = taskId;
+          callbacksRef.current?.onAccepted?.(taskId);
           setState((prev) => ({ ...prev, lastMessage: "Accepted by the local agent" }));
         },
         onEvent: (taskId, event) => setState((prev) => reduceTaskEvent(prev, event, taskId)),
         onCancelling: () => setState((prev) => ({ ...prev, lastMessage: "Cancelling..." })),
         onCancelFailed: (_taskId, message) => setState((prev) => ({ ...prev, lastMessage: message })),
+        // A scheduled run the daemon started: shown as its own history entry; the task panel (a task the user is running) is not touched.
+        onExternalFinished: (taskId, result) => {
+          const label = result.outcome === "completed" || result.outcome === "answered" ? "" : `${outcomeLabel(result.outcome)}
+`;
+          const text = `SCHEDULED RUN · ${label}${result.response}`;
+          if (result.outcome === "failed") callbacksRef.current?.onFail?.(text, taskId);
+          else callbacksRef.current?.onComplete?.(text, taskId);
+        },
+        onRecovered: (taskId, result) => {
+          if (!result) { callbacksRef.current?.onRecovered?.(taskId, null, false); return; }
+          const label = result.outcome === "completed" || result.outcome === "answered" ? "" : `${outcomeLabel(result.outcome)}
+`;
+          callbacksRef.current?.onRecovered?.(taskId, `${label}${result.response}`, result.outcome === "failed");
+        },
         onFinished: (taskId, result) => {
           setState((prev) => reduceNativeResult(prev, result));
           const id = taskId ?? "";
@@ -287,7 +311,7 @@ export function useTask(callbacks?: TaskCallbacks) {
           } else if (result.outcome === "cancelled") {
             callbacksRef.current?.onComplete?.("Task cancelled", id);
           } else {
-            const label = result.outcome === "completed" ? "" : `${outcomeLabel(result.outcome)}\n`;
+            const label = result.outcome === "completed" || result.outcome === "answered" ? "" : `${outcomeLabel(result.outcome)}\n`;
             callbacksRef.current?.onComplete?.(`${label}${result.response}`, id);
           }
         },
@@ -461,9 +485,13 @@ export function useTask(callbacks?: TaskCallbacks) {
     return () => { eventSourceRef.current?.close(); };
   }, []);
 
+  /** Native HUD only: ask the daemon for the finished result of a task submitted before the HUD was closed. */
+  const recoverTask = useCallback((taskId: string) => { nativeRef.current?.recover(taskId); }, []);
+
   return {
     ...state,
     taskId: activeTaskIdRef.current,
+    recoverTask,
     submitTask,
     cancelTask,
     resolveApproval,

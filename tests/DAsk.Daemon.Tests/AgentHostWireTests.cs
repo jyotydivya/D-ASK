@@ -134,6 +134,38 @@ public partial class PipeSecurityBehaviorTests
     }
 
     [Fact]
+    public async Task AgentWire_FinishedResult_IsRecoverable_OnlyAfterItsOwnerDisconnected()
+    {
+        await using var rig = await AgentRig.StartAsync();
+        var a = await AgentClientAsync(rig.PipeName);
+        using var b = await AgentClientAsync(rig.PipeName);
+        var ack = await AgentSubmitAsync(a, "What time is it?");
+        Assert.True(ack.Accepted, ack.ErrorMessage);
+        await AgentReadUntilAsync(a, e => e.Type == nameof(AgentTaskResultNotification));
+
+        var st = IpcEnvelope.Create(nameof(AgentTaskStatusRequest), new AgentTaskStatusRequest { TaskId = ack.TaskId! });
+        await SendAsync(b, st);
+        Assert.False((await AgentReadUntilAsync(b, e => e.ReplyToId == st.Id)).DeserializePayload<AgentTaskStatusResponse>()!.Found);   // owner still connected
+
+        a.Dispose();                                                    // the owner's HUD goes away (closed or killed)
+        AgentTaskStatusResponse? got = null;
+        for (int i = 0; i < 50 && got?.Found != true; i++)
+        {
+            await Task.Delay(100);
+            var st2 = IpcEnvelope.Create(nameof(AgentTaskStatusRequest), new AgentTaskStatusRequest { TaskId = ack.TaskId! });
+            await SendAsync(b, st2);
+            got = (await AgentReadUntilAsync(b, e => e.ReplyToId == st2.Id)).DeserializePayload<AgentTaskStatusResponse>();
+        }
+        Assert.True(got!.Found);
+        Assert.Equal("finished", got.State);
+        Assert.Equal("completed", got.Result!.Outcome);
+
+        var unknown = IpcEnvelope.Create(nameof(AgentTaskStatusRequest), new AgentTaskStatusRequest { TaskId = "t" + Guid.NewGuid().ToString("N") });
+        await SendAsync(b, unknown);
+        Assert.False((await AgentReadUntilAsync(b, e => e.ReplyToId == unknown.Id)).DeserializePayload<AgentTaskStatusResponse>()!.Found);
+    }
+
+    [Fact]
     public async Task AgentWire_BeforeHandshake_NothingIsProcessed_AndTheConnectionCloses()
     {
         await using var rig = await AgentRig.StartAsync();

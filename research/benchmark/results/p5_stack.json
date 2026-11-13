@@ -1,0 +1,134 @@
+{
+  "at": "2026-11-05T14:36:50.282Z",
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i5-1335U",
+    "totalMB": 16067
+  },
+  "host": {
+    "startToReadyMs": {
+      "samples": [
+        193,
+        176,
+        175,
+        167,
+        170
+      ],
+      "median": 175
+    },
+    "requestRoundTripMs": {
+      "n": 500,
+      "p50": 0.21,
+      "p95": 0.36,
+      "p99": 0.69,
+      "max": 1.34
+    },
+    "idleRssMB": 54
+  },
+  "stack": {
+    "hud": {
+      "path": "src\\hud-native\\target\\h3-verify\\debug\\hud-native.exe",
+      "running": true,
+      "connectedToDaemon": "see the daemon log; HUD peer check is mutual"
+    },
+    "model": "qwen2.5-0.5b-instruct-q4_k_m",
+    "availableMB": {
+      "beforeStack": 4618,
+      "daemonAndHudIdle": 4509,
+      "lowestDuringTasks": 3762
+    },
+    "workingSetMB": {
+      "daemon": 57,
+      "hud": 28,
+      "webview2": 342,
+      "agentHost": 71,
+      "llamaServer": 697,
+      "total": 1195,
+      "peakTotal": 1219
+    },
+    "samples": 16,
+    "maxLlamaServers": 1,
+    "tasks": [
+      {
+        "objective": "What is (17+25)*2?",
+        "ms": 10529,
+        "outcome": "completed",
+        "response": "Done.\n• (17+25)*2 = 84"
+      },
+      {
+        "objective": "What time is it?",
+        "ms": 5408,
+        "outcome": "completed",
+        "response": "Done.\n• Current time in Asia/Calcutta: Thursday, 5 November 2026 at 20:07:33 GMT+5:30"
+      },
+      {
+        "objective": "How much memory does this computer have?",
+        "ms": 3384,
+        "outcome": "completed",
+        "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.8 GB free of 15.7 GB; up 153.2 h"
+      },
+      {
+        "objective": "What time is it in Tokyo, and what is in agent/runtime?",
+        "ms": 5275,
+        "outcome": "partial",
+        "response": "Partially done: 2 of 2 steps succeeded.\n• Current time in Asia/Calcutta: Thursday, 5 November 2026 at 20:07:42 GMT+5:30\n• Current time in Asia/Calcutta: Thursda"
+      },
+      {
+        "objective": "What is 144/12 + 7*3?",
+        "ms": 3406,
+        "outcome": "completed",
+        "response": "Done.\n• 144/12+7*3 = 33"
+      }
+    ],
+    "oneGbFreeTarget": "met",
+    "afterShutdown": {
+      "llamaServers": 0,
+      "hostRunning": false,
+      "availMB": 4752
+    }
+  },
+  "tiers": {
+    "steps": [
+      {
+        "label": "start low: expect 0.5B",
+        "target": "fallback",
+        "availBeforeMB": 4727,
+        "availAtDecisionMB": 3706,
+        "availLowestDuringMB": 2998,
+        "llamaPeakMB": 694,
+        "availAfterUnloadMB": 4751,
+        "llamaAfterUnload": 0,
+        "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+        "firstTaskMs": 10467,
+        "outcome": "completed"
+      },
+      {
+        "label": "memory free: expect 3B if admitted",
+        "target": "preferred",
+        "availBeforeMB": 4757,
+        "availAtDecisionMB": 4754,
+        "availLowestDuringMB": 2358,
+        "llamaPeakMB": 2399,
+        "availAfterUnloadMB": 4805,
+        "llamaAfterUnload": 0,
+        "modelId": "qwen2.5-3b-instruct-q4_k_m",
+        "firstTaskMs": 26680,
+        "outcome": "completed"
+      },
+      {
+        "label": "low again: expect 0.5B",
+        "target": "fallback",
+        "availBeforeMB": 4809,
+        "availAtDecisionMB": 3776,
+        "availLowestDuringMB": 3126,
+        "llamaPeakMB": 694,
+        "availAfterUnloadMB": 4842,
+        "llamaAfterUnload": 0,
+        "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+        "firstTaskMs": 6603,
+        "outcome": "completed"
+      }
+    ],
+    "maxConcurrentLlamaServers": 1,
+    "afterShutdownLlamaServers": 0
+  }
+}

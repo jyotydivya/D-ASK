@@ -230,6 +230,15 @@ public sealed class DesktopActionRequestService : IDesktopActionRequestService
             ctx.OwnerSessionId, _generation(), _isStopped());
         if (!valid)
         {
+            // Phase 4B-2A: the policy engine now re-reads the target itself and refuses (and burns) the approval when the window
+            // changed; report that precisely, as the check after consumption always has.
+            var gone = _reader.ReadNow(target.Hwnd);
+            if (WindowIdentityRules.Mismatch(target, gone) is { } changedFirst)
+            {
+                await AuditAsync("DesktopActionTargetChanged", request, ctx, "Refused", changedFirst, target);
+                return DesktopCallResult.Fail(gone == null ? "target_disappeared" : "target_changed",
+                    $"You approved it, but the window changed afterwards ({changedFirst}). Nothing was done.");
+            }
             await AuditAsync("DesktopActionApprovalInvalid", request, ctx, "Refused", error ?? "invalid", target);
             return DesktopCallResult.Fail("approval_invalid", $"The approval could not be validated ({Bounded(error ?? "", 200)}). Nothing was done.");
         }

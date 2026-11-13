@@ -77,6 +77,14 @@ public class AgentHostOptions
     public bool DesktopMouseInput { get; set; } = false;
     /// <summary>P2: perform approved text entry and key chords. Separate policy from mouse input; off by default.</summary>
     public bool DesktopKeyboardInput { get; set; } = false;
+    /// <summary>Offer desktop.launch_app: open one application from the daemon's fixed list (Notepad), after the user approves it. Off by default.</summary>
+    public bool DesktopAppLaunch { get; set; } = false;
+    /// <summary>Offer office.create_word_document / office.create_excel_workbook: a new document in Documents with exactly the approved content. Off by default.</summary>
+    public bool OfficeDocuments { get; set; } = false;
+    /// <summary>Allow "open &lt;browser&gt; and search for …" (a web search needs internet access). Off by default (offline-first).</summary>
+    public bool WebSearch { get; set; } = false;
+    /// <summary>Folders whose projects D-ASK may build or test (dev.run_task), each run after approval. Empty (default): off.</summary>
+    public string[] DevProjectRoots { get; set; } = Array.Empty<string>();
     /// <summary>Browser stage 1: the agent may read web pages the user names (local Chromium, network locked to that site). Off by default.</summary>
     public bool BrowserRead { get; set; } = false;
     /// <summary>Browser stage 2: approval-gated clicks and field fills in D-ASK's private browser. Off by default.</summary>
@@ -97,6 +105,11 @@ public class AgentHostOptions
     public bool Workflows { get; set; } = false;
     /// <summary>Workflow store; default %LOCALAPPDATA%\D-ASK\workflows.json.</summary>
     public string? WorkflowStorePath { get; set; }
+    /// <summary>
+    /// Where the last finished task results are kept (outcome + response, at most 40, local only), so a HUD that was closed or killed right
+    /// after a task finished can recover the real result instead of "result unknown". Null: %LOCALAPPDATA%\D-ASK\task-results.json.
+    /// </summary>
+    public string? TaskResultsPath { get; set; }
     /// <summary>Dynamic plugins: approved, compute-only, sandboxed tools. Off by default.</summary>
     public bool Plugins { get; set; } = false;
     /// <summary>Plugin folders; default %LOCALAPPDATA%\D-ASK\plugins.</summary>
@@ -307,6 +320,7 @@ public sealed partial class AgentHostManager : IHostedService, IAsyncDisposable
         string taskId = "t" + Guid.NewGuid().ToString("N");
         // Registered before sending, so an immediate finish cannot race past the record.
         var rec = new AgentTaskRecord { TaskId = taskId, OwnerSessionId = ownerSessionId, InstanceEpoch = inst.Epoch };
+        NoteOwner(ownerSessionId);
         _tasks[taskId] = rec;
         try
         {
@@ -330,6 +344,63 @@ public sealed partial class AgentHostManager : IHostedService, IAsyncDisposable
 
     public AgentTaskRecord? GetTask(string taskId, string sessionId) =>
         _tasks.TryGetValue(taskId, out var r) && r.OwnerSessionId == sessionId ? r : null;
+
+    // ── Finished results that survive a HUD (or daemon) restart ──────────────────────────────────────────────
+    private readonly object _resultsGate = new();
+    private const int MaxKeptResults = 40;
+    private string ResultsPath => string.IsNullOrWhiteSpace(_options.TaskResultsPath)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D-ASK", "task-results.json") : _options.TaskResultsPath!;
+    public sealed record KeptResult(string TaskId, string Outcome, string Response, bool Interrupted, DateTime FinishedUtc, string? Owner = null);
+    /// <summary>Sessions that submitted tasks and are still connected: their results are never given to another session (recovery is only after the owner is gone).</summary>
+    private readonly HashSet<string> _openSessions = new(StringComparer.Ordinal);
+    private void NoteOwner(string sessionId) { lock (_resultsGate) _openSessions.Add(sessionId); }
+
+    private void KeepResult(AgentTaskResultNotification r, string owner)
+    {
+        try
+        {
+            lock (_resultsGate)
+            {
+                var all = ReadKept();
+                all.RemoveAll(k => k.TaskId == r.TaskId);
+                all.Add(new KeptResult(r.TaskId, r.Outcome, r.Response.Length > 4000 ? r.Response[..4000] : r.Response, r.Interrupted, DateTime.UtcNow, owner));
+                if (all.Count > MaxKeptResults) all.RemoveRange(0, all.Count - MaxKeptResults);
+                Directory.CreateDirectory(Path.GetDirectoryName(ResultsPath)!);
+                string tmp = ResultsPath + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(all), new UTF8Encoding(false));
+                File.Move(tmp, ResultsPath, overwrite: true);
+            }
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "[AgentHost] Could not keep the finished result for recovery."); }
+    }
+
+    private List<KeptResult> ReadKept()
+    {
+        try { return File.Exists(ResultsPath) ? JsonSerializer.Deserialize<List<KeptResult>>(File.ReadAllText(ResultsPath)) ?? new() : new(); }
+        catch { return new(); }
+    }
+
+    /// <summary>
+    /// The FINISHED result of a task by id, for recovery after a HUD restart. Only when the task is finished AND its owning session is no longer
+    /// connected (a closed or killed HUD, or a previous daemon run): a session that is still connected keeps its results to itself, exactly as status
+    /// and notifications do. The 128-bit random task id is required as well. Null otherwise.
+    /// </summary>
+    public AgentTaskResultNotification? RecoverResult(string taskId)
+    {
+        if (string.IsNullOrWhiteSpace(taskId)) return null;
+        if (_tasks.TryGetValue(taskId, out var r))
+        {
+            lock (_resultsGate) if (_openSessions.Contains(r.OwnerSessionId)) return null;
+            return r.State == "finished" && r.Result != null ? r.Result : null;
+        }
+        KeptResult? k;
+        lock (_resultsGate)
+        {
+            k = ReadKept().FirstOrDefault(x => x.TaskId == taskId);
+            if (k?.Owner != null && _openSessions.Contains(k.Owner)) return null;
+        }
+        return k == null ? null : new AgentTaskResultNotification { TaskId = k.TaskId, Outcome = k.Outcome, Response = k.Response, Interrupted = k.Interrupted };
+    }
 
     public async Task<AgentTaskCancelResponse> CancelAsync(string taskId, string sessionId)
     {
@@ -358,6 +429,7 @@ public sealed partial class AgentHostManager : IHostedService, IAsyncDisposable
     /// <summary>Fail-closed, like the execution engine: a session's tasks do not outlive it.</summary>
     public void CancelTasksForSession(string sessionId)
     {
+        lock (_resultsGate) _openSessions.Remove(sessionId);   // the session is gone: its FINISHED results become recoverable by a later HUD
         foreach (var t in _tasks.Values.Where(t => t.OwnerSessionId == sessionId && t.State != "finished"))
             _ = CancelAsync(t.TaskId, sessionId);
     }
@@ -688,7 +760,7 @@ public sealed partial class AgentHostManager : IHostedService, IAsyncDisposable
         {
             TaskId = taskId,
             // A result without a recognisable outcome is a failure, never a success.
-            Outcome = S("outcome") is { } o && o is "completed" or "unverified" or "partial" or "failed" or "refused" or "cancelled" ? o : "failed",
+            Outcome = S("outcome") is { } o && o is "completed" or "unverified" or "partial" or "failed" or "refused" or "cancelled" or "answered" ? o : "failed",
             Response = S("response") ?? string.Empty,
             Error = S("error"),
             Steps = J("steps"),
@@ -706,6 +778,7 @@ public sealed partial class AgentHostManager : IHostedService, IAsyncDisposable
             rec.Result = result;
             rec.State = "finished";
         }
+        KeepResult(result, rec.OwnerSessionId);
         try { rec.Watchdog?.Cancel(); } catch { }
         try { rec.CallsCts.Cancel(); } catch { }
         try { TaskFinished?.Invoke(this, rec); }

@@ -1,0 +1,95 @@
+[bench] qwen2.5-0.5b-instruct-q4_k_m_vulkan_full: 36 tasks
+[bench] ready in 2243 ms on vulkan (pid 12536)
+[bench] s01 failed     legacy=failed     success=false 2811ms tools=-
+[bench] s02 completed  legacy=completed  success=true 2004ms tools=system.time
+[bench] s03 failed     legacy=failed     success=false 11942ms tools=-
+[bench] s04 failed     legacy=failed     success=false 4252ms tools=-
+[bench] s05 failed     legacy=failed     success=false 3120ms tools=-
+[bench] s06 failed     legacy=failed     success=false 4320ms tools=-
+[bench] s07 completed  legacy=completed  success=true 2554ms tools=system.info
+[bench] s08 completed  legacy=completed  success=true 3423ms tools=system.info
+[bench] s09 completed  legacy=completed  success=true 2978ms tools=workspace.list_dir
+[bench] s10 unverified legacy=completed  success=false 11838ms tools=system.info
+[bench] t01 completed  legacy=completed  success=true 4115ms tools=math.evaluate
+[bench] t02 failed     legacy=failed     success=false 3390ms tools=-
+[bench] t03 completed  legacy=completed  success=true 2666ms tools=math.evaluate
+[bench] t04 failed     legacy=failed     success=false 6938ms tools=-
+[bench] t05 failed     legacy=failed     success=false 3164ms tools=-
+[bench] p01 failed     legacy=failed     success=false 1353ms tools=math.evaluate
+[bench] p02 unverified legacy=completed  success=false 5588ms tools=system.time
+[bench] p03 partial    legacy=partial    success=false 10074ms tools=system.time
+[bench] p04 failed     legacy=failed     success=false 7472ms tools=-
+[bench] p05 unverified legacy=completed  success=true 9692ms tools=system.time
+[bench] m01 unverified legacy=completed  success=false 11357ms tools=system.time
+[bench] m02 completed  legacy=completed  success=true 4129ms tools=math.evaluate+system.info
+[bench] m03 failed     legacy=failed     success=false 7303ms tools=-
+[bench] m04 failed     legacy=failed     success=false 6786ms tools=-
+[bench] m05 unverified legacy=completed  success=false 11488ms tools=system.info
+[bench] m06 unverified legacy=completed  success=false 21563ms tools=system.info
+[bench] u01 unverified legacy=completed  success=false 3977ms tools=system.info
+[bench] u02 unverified legacy=completed  success=false 5808ms tools=system.info
+[bench] u03 failed     legacy=failed     success=false 5111ms tools=-
+[bench] u04 failed     legacy=failed     success=false 7385ms tools=-
+[bench] u05 unverified legacy=completed  success=false 14881ms tools=system.info
+[bench] u06 unverified legacy=completed  success=false 6806ms tools=system.info
+[bench] f01 failed     legacy=failed     success=false 1816ms tools=system.info
+[bench] f02 unverified legacy=completed  success=false 11412ms tools=system.time
+[bench] f03 failed     legacy=failed     success=false 4169ms tools=-
+[bench] f04 failed     legacy=failed     success=false 2474ms tools=-
+[bench] wrote research\benchmark\results\qwen2.5-0.5b-instruct-q4_k_m_vulkan_full.json
+[bench] qwen2.5-0.5b-instruct-q4_k_m_vulkan_baseline: 36 tasks
+[bench] ready in 2363 ms on vulkan (pid 24828)
+[bench] s01 partial    legacy=completed  success=false 2538ms tools=system.time
+[bench] s02 completed  legacy=completed  success=true 2870ms tools=system.time
+[bench] s03 failed     legacy=failed     success=false 16425ms tools=-
+[bench] s04 partial    legacy=completed  success=false 5073ms tools=math.evaluate
+[bench] s05 failed     legacy=failed     success=false 3520ms tools=-
+[bench] s06 failed     legacy=failed     success=false 4065ms tools=-
+[bench] s07 completed  legacy=completed  success=true 2518ms tools=system.info
+[bench] s08 completed  legacy=completed  success=true 3376ms tools=system.info
+[bench] s09 completed  legacy=completed  success=true 2966ms tools=workspace.list_dir
+[bench] s10 unverified legacy=completed  success=false 7375ms tools=system.info
+[bench] t01 completed  legacy=completed  success=true 4077ms tools=math.evaluate
+[bench] t02 partial    legacy=completed  success=false 3836ms tools=math.evaluate
+[bench] t03 completed  legacy=completed  success=true 2918ms tools=math.evaluate
+[bench] t04 completed  legacy=completed  success=true 7861ms tools=system.time
+[bench] t05 unverified legacy=completed  success=false 5338ms tools=system.info
+[bench] p01 failed     legacy=failed     success=false 1926ms tools=math.evaluate
+[bench] p02 unverified legacy=completed  success=false 6579ms tools=system.time
+[bench] p03 unverified legacy=completed  success=false 4131ms tools=system.time
+[bench] p04 completed  legacy=completed  success=true 10800ms tools=system.time
+[bench] p05 unverified legacy=completed  success=true 12681ms tools=system.time
+[bench] m01 unverified legacy=completed  success=false 6609ms tools=system.time
+[bench] m02 completed  legacy=completed  success=true 5241ms tools=math.evaluate+system.info
+[bench] m03 unverified legacy=completed  success=false 8644ms tools=system.time
+[bench] m04 partial    legacy=completed  success=false 8029ms tools=math.evaluate+system.time+workspace.list_dir
+[bench] m05 unverified legacy=completed  success=false 3684ms tools=system.info
+[bench] m06 unverified legacy=completed  success=false 13114ms tools=system.info
+[bench] u01 unverified legacy=completed  success=false 5214ms tools=system.info
+[bench] u02 unverified legacy=completed  success=false 6873ms tools=system.info
+[bench] u03 unverified legacy=completed  success=false 7203ms tools=system.info
+[bench] u04 unverified legacy=completed  success=false 11620ms tools=system.info+system.time
+[bench] u05 unverified legacy=completed  success=false 18086ms tools=system.info
+[bench] u06 unverified legacy=completed  success=false 4611ms tools=system.info
+[bench] f01 failed     legacy=failed     success=false 2693ms tools=system.info
+[bench] f02 unverified legacy=completed  success=false 7305ms tools=system.time
+[bench] f03 failed     legacy=failed     success=false 6176ms tools=math.evaluate
+[bench] f04 failed     legacy=failed     success=false 3971ms tools=system.time
+[bench] wrote research\benchmark\results\qwen2.5-0.5b-instruct-q4_k_m_vulkan_baseline.json
+[bench] qwen2.5-1.5b-instruct-q4_k_m_vulkan_full: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2249 MB available, model needs ~1634 MB (estimate), leaving 615 MB < required headroom 2000 MB
+[bench] qwen2.5-1.5b-instruct-q4_k_m_vulkan_baseline: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2272 MB available, model needs ~1634 MB (estimate), leaving 638 MB < required headroom 2000 MB
+[bench] qwen2.5-0.5b-instruct-q4_k_m_cpu_full: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2272 MB available, model needs ~973 MB (estimate), leaving 1299 MB < required headroom 2000 MB
+[bench] qwen2.5-1.5b-instruct-q4_k_m_cpu_full: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2185 MB available, model needs ~1634 MB (estimate), leaving 551 MB < required headroom 2000 MB
+[bench] qwen2.5-0.5b-instruct-q4_k_m_vulkan_full_unstructured: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2116 MB available, model needs ~973 MB (estimate), leaving 1143 MB < required headroom 2000 MB
+[bench] qwen2.5-1.5b-instruct-q4_k_m_vulkan_full_unstructured: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2141 MB available, model needs ~1634 MB (estimate), leaving 507 MB < required headroom 2000 MB
+[bench] qwen2.5-3b-instruct-q4_k_m_vulkan_full: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 2189 MB available, model needs ~2608 MB (estimate), leaving -419 MB < required headroom 2000 MB
+[bench] qwen2.5-1.5b-instruct-q4_k_m_vulkan_full_rep2: 36 tasks
+[bench] NOT ADMITTED: LocalInferenceError: Local model failed: Insufficient physical memory: 1980 MB available, model needs ~1634 MB (estimate), leaving 345 MB < required headroom 2000 MB
+MATRIX DONE

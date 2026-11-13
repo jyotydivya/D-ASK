@@ -13,11 +13,11 @@ namespace DAsk.Daemon.Tests;
 
 /// <summary>Plugins: the daemon validates a plugin folder itself, shows the approval card, and records exact hashes.</summary>
 [Collection("AgentHost")]
-public class PluginServiceTests
+public partial class PluginServiceTests
 {
     private const string Owner = "hud-session-owner";
 
-    private sealed class Rig : IDisposable
+    internal sealed class Rig : IDisposable
     {
         public readonly ActionPolicyEngine Policy;
         public readonly PluginService Service;
@@ -39,9 +39,9 @@ public class PluginServiceTests
         }
 
         /// <summary>Copies the repository's sample plugin (plugins-samples/text_tools) into this rig's plugins folder.</summary>
-        public string CopySample(string id = "text_tools")
+        public string CopySample(string id = "text_tools", string source = "text_tools")
         {
-            var src = Path.Combine(FindRepoRoot(), "plugins-samples", "text_tools");
+            var src = Path.Combine(FindRepoRoot(), "plugins-samples", source);
             var dst = Path.Combine(Plugins, id);
             Directory.CreateDirectory(dst);
             foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)));
@@ -62,6 +62,22 @@ public class PluginServiceTests
                 ParametersSha256 = r.ParametersSha256, ActionDigest = r.ActionDigest, Approved = approve, DecisionSource = "UserExplicitConfirmation" }, Owner, () => false, () => 1));
             return (await call, r);
         }
+
+        /// <summary>Calls any approval-gated plugin tool and answers its card (approve or deny). Returns the result and the card.</summary>
+        public async Task<(DesktopCallResult res, ActionApprovalRequest? req)> Ask(string tool, object args, bool approve = true, Action? before = null)
+        {
+            lock (Delivered) Delivered.Clear();
+            var call = Call(tool, args);
+            ActionApprovalRequest? r = null;
+            for (var until = DateTime.UtcNow.AddSeconds(3); r == null && DateTime.UtcNow < until && !call.IsCompleted; await Task.Delay(5)) lock (Delivered) r = Delivered.LastOrDefault();
+            if (r == null) return (await call, null);   // refused before any card
+            before?.Invoke();
+            Assert.True(Policy.SubmitApprovalDecision(new ActionApprovalResponse { ApprovalId = r.ApprovalId, ActionId = r.ActionId, ActionType = r.ActionType,
+                ParametersSha256 = r.ParametersSha256, ActionDigest = r.ActionDigest, Approved = approve, DecisionSource = "UserExplicitConfirmation" }, Owner, () => false, () => 1));
+            return (await call, r);
+        }
+
+        public JsonElement Entry() { using var d = JsonDocument.Parse(File.ReadAllText(Approved)); return d.RootElement[0].Clone(); }
 
         public void Dispose() { SqliteConnection.ClearAllPools(); try { File.Delete(_db); } catch { } try { Directory.Delete(Root, true); } catch { } }
     }

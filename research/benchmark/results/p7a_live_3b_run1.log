@@ -1,0 +1,52 @@
+[live] A    unverified  48195 ms  workspace.list_dir{"path":"."} + workspace.list_dir{"path":"."} + filesystem.search{"extension":"pdf","path":"."}
+[live] B    partial     40333 ms  filesystem.search{"query":"report","sort":"modified"} + filesystem.metadata{"path":"s1/output/filename"} + filesystem.metadata{"path":"docs/reports/2026-q3-report.md"}
+[live] C    partial     31596 ms  workspace.list_dir{"path":"."} + workspace.list_dir{"path":"reports/"} + filesystem.read{"path":"reports/README.md","heading":"Introduction"}
+[live] D    completed   18804 ms  filesystem.find_text{"query":"architecture","path":"docs","maxResults":100}
+[live] E    refused     10635 ms  -
+[live] C2   completed    8997 ms  filesystem.read{"path":"docs/reports/2026-q3-report.md","heading":"introduction"}
+[live] E2   partial     37993 ms  filesystem.read{"path":"docs/reports/2026-q3-report.md"} + math.evaluate{"expression":"`# Q3 Report\n\n## 1. Introduction\nThis quarter the team rebuilt the architecture.\nIt now runs fully offline.\n\n## 2. Results\nLatency fell by half.\nSTILL REQUIRED: the coherent overview of the file's\n\n`"}
+[live] M    completed   17700 ms  filesystem.metadata{"path":"docs/reports/2026-q3-report.md"}
+[live] R1   completed   17706 ms  math.evaluate{"expression":"(17+25)*2"}
+[live] R2   completed   14874 ms  system.time{}
+[live] R3   completed   14221 ms  system.info{}
+[live] R4   partial     20797 ms  filesystem.search{"query":" ","extension":"docx","path":"docs","recursive":false,"sort":"modified","maxResults":200}
+
+[invariants]
+  PASS: A: completed only with independent verification
+  PASS: B: completed only with independent verification
+  PASS: C: completed only with independent verification
+  PASS: D: completed only with independent verification
+  PASS: E: completed only with independent verification
+  PASS: C2: completed only with independent verification
+  PASS: E2: completed only with independent verification
+  PASS: M: completed only with independent verification
+  PASS: R1: completed only with independent verification
+  PASS: R2: completed only with independent verification
+  PASS: R3: completed only with independent verification
+  PASS: R4: completed only with independent verification
+  PASS: A: a completed answer lists exactly the real PDFs
+  PASS: B: a completed answer puts the newest report first, with its metadata
+  PASS: C: 'this report' names no file, so it can never be reported completed
+  PASS: D: a completed answer has the real file and line
+  PASS: E/E2: a summary is never reported as verified
+  PASS: C2: a completed read shows the section's real text and lines
+  PASS: no answer contains the .env file's content
+
+[product requests the real model must handle]
+  FAIL: A completes with the real model | "unverified"
+  FAIL: B completes with the real model | "partial"
+  PASS: C2 completes with the real model
+  PASS: D completes with the real model
+  PASS: R1 (math) still completes
+
+[cancellation during real inference and a long content search]
+[live] X    cancelled    1516 ms  -
+  PASS: a cancelled task ends as cancelled, promptly
+
+[network]
+  PASS: this process attempted no non-loopback connection
+  PASS: llama-server has no non-loopback TCP connection
+
+model qwen2.5-3b-instruct-q4_k_m (vulkan); llama-server 2409 MB; this process 92 MB
+
+25 passed, 2 failed

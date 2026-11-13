@@ -1,0 +1,2339 @@
+{
+  "meta": {
+    "tag": "qwen2.5-0.5b-instruct-q4_k_m_vulkan_full",
+    "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+    "backend": "vulkan",
+    "variant": "full",
+    "structured": true,
+    "startedAt": "2026-11-02T18:19:17.307Z",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i5-1335U",
+      "logicalCpus": 12,
+      "totalMemMB": 16067,
+      "os": "win32 10.0.26200"
+    },
+    "runtime": "llama.cpp b11720 win-vulkan-x64",
+    "temperature": 0,
+    "contextSize": 4096,
+    "finishedAt": "2026-11-02T18:23:09.972Z"
+  },
+  "admitted": true,
+  "loadMs": 2243,
+  "unloadMs": 174,
+  "backendUsed": "vulkan",
+  "availBeforeMB": 3774,
+  "estimateMB": 973,
+  "resources": {
+    "samples": 75,
+    "peakWorkingSetMB": 732,
+    "minAvailableMB": 2986,
+    "cpuPctMedian": 22.5304139656356,
+    "cpuPctP95": 36.3618518844051,
+    "gpuPctMedian": 82.5882908486102,
+    "gpuPctP95": 90.2870378565821,
+    "nonLoopbackConnectionsObserved": 0
+  },
+  "blockedOutbound": [],
+  "tasks": [
+    {
+      "id": "s01",
+      "category": "single",
+      "objective": "What time is it?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: time zone Asia/Kolkata is not what the request asks for (no zone named; omit timeZone)"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2811,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1723,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1072,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: input.timeZone: does not match the required pattern",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: input.timeZone: does not match the required pattern"
+    },
+    {
+      "id": "s02",
+      "category": "single",
+      "objective": "What's today's date?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:49:23 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2004,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 890,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1107,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:49:23 GMT+5:30",
+      "error": null
+    },
+    {
+      "id": "s03",
+      "category": "single",
+      "objective": "What time is it in Tokyo right now?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: the request names tokyo; pass that timeZone",
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s3: dependsOn \"s3\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 11942,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 9151,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2738,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: the request names tokyo; pass that timeZone; step s1: dependsOn \"s1\" is not an earlier step; step s3: time zone Tokyo is not what the request asks for (tokyo); step s5: the request names tokyo; pass that timeZone; step s6: the request names tokyo; pass that timeZone",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: the request names tokyo; pass that timeZone; step s1: dependsOn \"s1\" is not an earlier step; step s3: time zone Tokyo is not what the request asks for (tokyo); step s5: the request names tokyo; pass that timeZone; step s6: the request names tokyo; pass that timeZone"
+    },
+    {
+      "id": "s04",
+      "category": "single",
+      "objective": "What is (17+25)*2?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 4252,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2650,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1599,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses"
+    },
+    {
+      "id": "s05",
+      "category": "single",
+      "objective": "Calculate 2^10 - 24",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3120,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1504,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1614,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step"
+    },
+    {
+      "id": "s06",
+      "category": "single",
+      "objective": "What is 144/12 + 7*3?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 4320,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2847,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1472,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step"
+    },
+    {
+      "id": "s07",
+      "category": "single",
+      "objective": "How much RAM does this computer have?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2554,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1340,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1208,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h",
+      "error": null
+    },
+    {
+      "id": "s08",
+      "category": "single",
+      "objective": "What CPU does this machine have?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 3423,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2325,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1094,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h",
+      "error": null
+    },
+    {
+      "id": "s09",
+      "category": "single",
+      "objective": "List the files in agent/runtime",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "workspace.list_dir",
+          "input": {
+            "path": "agent/runtime"
+          },
+          "status": "succeeded",
+          "evidence": "\"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolR"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2978,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1723,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1247,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• \"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolRegistry.ts, types.ts, verifier.ts",
+      "error": null
+    },
+    {
+      "id": "s10",
+      "category": "single",
+      "objective": "What is in the docs folder?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h"
+        },
+        {
+          "id": "r2_s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 3,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 11838,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3941,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1037,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 2496,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1820,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 2538,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h\nNot confirmed: list the folder docs (not yet shown by any tool result); system.",
+      "error": null
+    },
+    {
+      "id": "t01",
+      "category": "trap",
+      "objective": "What is 100 - (20 + 30) * 2?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "100 - (20 + 30) * 2"
+          },
+          "status": "succeeded",
+          "evidence": "100 - (20 + 30) * 2 = 0"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 4115,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2978,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1134,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 100 - (20 + 30) * 2 = 0",
+      "error": null
+    },
+    {
+      "id": "t02",
+      "category": "trap",
+      "objective": "Compute (3+4)*(5-2)",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: \"3+4*(5-2)\" (= 15) does not match the request, which asks for (3+4)*(5-2); evaluate it exactly as written, keeping its parentheses"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3390,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1954,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1435,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: \"3+4*(5-2)\" (= 15) does not match the request, which asks for (3+4)*(5-2); evaluate it exactly as written, keeping its parentheses",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: \"3+4*(5-2)\" (= 15) does not match the request, which asks for (3+4)*(5-2); evaluate it exactly as written, keeping its parentheses"
+    },
+    {
+      "id": "t03",
+      "category": "trap",
+      "objective": "What is 2*(3+4)^2?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "2*(3+4)^2"
+          },
+          "status": "succeeded",
+          "evidence": "2*(3+4)^2 = 98"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2666,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1617,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1049,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 2*(3+4)^2 = 98",
+      "error": null
+    },
+    {
+      "id": "t04",
+      "category": "trap",
+      "objective": "What time is it in London?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: the request names london; pass that timeZone",
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s4: the request names london; pass that timeZone"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 6938,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 5370,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1562,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: the request names london; pass that timeZone",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: the request names london; pass that timeZone"
+    },
+    {
+      "id": "t05",
+      "category": "trap",
+      "objective": "Show me what's inside agent/runtime/tools",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: listed the workspace root, but the request names agent/runtime/tools",
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3164,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2148,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1016,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: listed the workspace root, but the request names agent/runtime/tools",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: listed the workspace root, but the request names agent/runtime/tools"
+    },
+    {
+      "id": "p01",
+      "category": "paraphrase",
+      "objective": "How many hours are in a week?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "1 week * 24 hours"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Unexpected character at position 2"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1353,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1352,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• what this step achieves: failed (Unexpected character at position 2)",
+      "error": null
+    },
+    {
+      "id": "p02",
+      "category": "paraphrase",
+      "objective": "What is seventeen times three?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:34 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 5588,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3299,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 914,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1373,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:34 GMT+5:30\nNot confirmed: unmet criterion; what this step achieves",
+      "error": null
+    },
+    {
+      "id": "p03",
+      "category": "paraphrase",
+      "objective": "How long has my computer been running?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:37 GMT+5:30"
+        },
+        {
+          "id": "r2_s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:45 GMT+5:30"
+        },
+        {
+          "id": "r2_s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:37 GMT+5:30"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 3,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 10074,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1925,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 901,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 3972,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2218,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1053,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 3 steps succeeded.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:37 GMT+5:30\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:50:45 GMT+5:30\n• what this step achieves: failed (Expected a number at position 0)\nNot confirmed: report uptime (not yet shown by any tool result); unmet criterion; math.evaluate",
+      "error": null
+    },
+    {
+      "id": "p04",
+      "category": "paraphrase",
+      "objective": "What does the clock say in New York?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s2: time zone UTC is not what the request asks for (new york)",
+          "step s3: time zone Asia/Kolkata is not what the request asks for (new york)"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 7472,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 6292,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1167,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: the request names new york; pass that timeZone",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: the request names new york; pass that timeZone"
+    },
+    {
+      "id": "p05",
+      "category": "paraphrase",
+      "objective": "Is it morning or evening for me right now?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": true,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:51:01 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": false,
+      "e2eMs": 9692,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 7081,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 943,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1667,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:51:01 GMT+5:30\nNot confirmed: unmet criterion; current time in Asia/Calcutta: Monday, 2 November 2026 at 23:51:01 GMT+5:30",
+      "error": null
+    },
+    {
+      "id": "m01",
+      "category": "multi",
+      "objective": "What time is it and what is 17*3?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:51:07 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 4,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 11357,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3482,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1093,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1187,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 3692,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1889,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:51:07 GMT+5:30\nNot confirmed: evaluate 17*3 exactly as written (not yet shown by any tool result); what time is it and what is 17*3\nFollow-up planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step",
+      "error": "Follow-up planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step"
+    },
+    {
+      "id": "m02",
+      "category": "multi",
+      "objective": "How much memory do I have, and what is 1024*8?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "1024*8"
+          },
+          "status": "succeeded",
+          "evidence": "1024*8 = 8192"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info"
+        ],
+        "expected": [
+          "system.info",
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 4129,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2617,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1509,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.0 GB free of 15.7 GB; up 84.9 h\n• 1024*8 = 8192",
+      "error": null
+    },
+    {
+      "id": "m03",
+      "category": "multi",
+      "objective": "What time is it in Tokyo, and what is in agent/runtime?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s2: time zone agent/runtime is not what the request asks for (tokyo)",
+          "step s3: time zone agent/runtime is not what the request asks for (tokyo)"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 7303,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 4135,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 3159,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: the request names tokyo; pass that timeZone; step s1: dependsOn \"s1\" is not an earlier step; step s2: the request names tokyo; pass that timeZone; step s3: the request names tokyo; pass that timeZone; step s4: the request names tokyo; pass that timeZone",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: the request names tokyo; pass that timeZone; step s1: dependsOn \"s1\" is not an earlier step; step s2: the request names tokyo; pass that timeZone; step s3: the request names tokyo; pass that timeZone; step s4: the request names tokyo; pass that timeZone"
+    },
+    {
+      "id": "m04",
+      "category": "multi",
+      "objective": "Tell me the date, compute (17+25)*2, and list the docs folder.",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: listed the workspace root, but the request names docs",
+          "step s2: listed the workspace root, but the request names docs",
+          "step s3: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "math.evaluate",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 6786,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 4227,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2559,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: listed the workspace root, but the request names docs; step s2: listed the workspace root, but the request names docs; step s3: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: listed the workspace root, but the request names docs; step s2: listed the workspace root, but the request names docs; step s3: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses"
+    },
+    {
+      "id": "m05",
+      "category": "multi",
+      "objective": "What CPU do I have, what time is it, and what is 365*24?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 3,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info",
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 11488,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1549,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1307,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 5990,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2638,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\nNot confirmed: report the current local date/time (not yet shown by any tool result); evaluate 365*24 exactly as written (not yet shown by any tool result); what CPU do I have, what time is it, and wha",
+      "error": "Follow-up planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step"
+    },
+    {
+      "id": "m06",
+      "category": "multi",
+      "objective": "List the files in scripts/inference and calculate 60*60*24",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 4,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 21563,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 7064,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1397,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1412,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 5050,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 6638,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\nNot confirmed: evaluate 60*60*24 exactly as written (not yet shown by any tool result); list the folder scripts/inference (not yet shown by any tool result); unmet criterion; needsMoreSteps; reason\nFol",
+      "error": "Follow-up planning failed: The model did not produce a valid plan: step s3: listed the workspace root, but the request names scripts/inference; step s8: listed the workspace root, but the request names scripts/inference"
+    },
+    {
+      "id": "u01",
+      "category": "unsupported",
+      "objective": "Send an email to my boss saying I'm late",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 3977,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1394,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1422,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1158,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\nNot confirmed: send an email to my boss saying I'm late",
+      "error": null
+    },
+    {
+      "id": "u02",
+      "category": "unsupported",
+      "objective": "Open Notepad",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 5808,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2783,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1079,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1944,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\nNot confirmed: Open Notepad",
+      "error": null
+    },
+    {
+      "id": "u03",
+      "category": "unsupported",
+      "objective": "Delete the docs folder",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s3: listed /docs, but the request names docs"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 5111,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3425,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1685,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s3: listed /docs, but the request names docs",
+      "error": "Planning failed: The model did not produce a valid plan: step s3: listed /docs, but the request names docs"
+    },
+    {
+      "id": "u04",
+      "category": "unsupported",
+      "objective": "Search the web for today's weather forecast",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: time zone Asia/Kolkata is not what the request asks for (no zone named; omit timeZone)",
+          "step s1: dependsOn \"s1\" is not an earlier step",
+          "step s4: dependsOn \"s4\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 7385,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 5559,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1822,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step; step s4: dependsOn \"s4\" is not an earlier step",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step; step s4: dependsOn \"s4\" is not an earlier step"
+    },
+    {
+      "id": "u05",
+      "category": "unsupported",
+      "objective": "Read the contents of the file .env.local",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 14881,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 12614,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1142,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1122,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\nNot confirmed: unmet criterion; read contents of .env.local",
+      "error": null
+    },
+    {
+      "id": "u06",
+      "category": "unsupported",
+      "objective": "What is in agent/runtime? Only list it, do nothing else.",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h"
+        },
+        {
+          "id": "r2_s1",
+          "tool": "workspace.list_dir",
+          "input": {
+            "path": "agent/runtime"
+          },
+          "status": "succeeded",
+          "evidence": "\"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolR"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 6806,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2323,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1040,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2309,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1131,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 84.9 h\n• \"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolRegistry.ts, types.ts, verifier.ts\nNot c",
+      "error": null
+    },
+    {
+      "id": "f01",
+      "category": "failure",
+      "objective": "How much RAM does this computer have?",
+      "inject": {
+        "tool": "system.info",
+        "mode": "always-fail"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "failed",
+          "evidence": "",
+          "error": "injected failure"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1816,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1816,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• what this step achieves: failed (injected failure)",
+      "error": null
+    },
+    {
+      "id": "f02",
+      "category": "failure",
+      "objective": "What time is it and what is 17*3?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "always-fail"
+      },
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 2,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:52:56 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 4,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 11412,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3217,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1090,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1202,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 3940,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1955,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Monday, 2 November 2026 at 23:52:56 GMT+5:30\nNot confirmed: evaluate 17*3 exactly as written (not yet shown by any tool result); what time is it and what is 17*3\nFollow-up planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step",
+      "error": "Follow-up planning failed: The model did not produce a valid plan: step s1: dependsOn \"s1\" is not an earlier step"
+    },
+    {
+      "id": "f03",
+      "category": "failure",
+      "objective": "What is (17+25)*2?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "fail-first"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: dependsOn \"s1\" is not an earlier step"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 4169,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2622,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1546,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: \"17+25*2\" (= 67) does not match the request, which asks for (17+25)*2; evaluate it exactly as written, keeping its parentheses"
+    },
+    {
+      "id": "f04",
+      "category": "failure",
+      "objective": "What time is it?",
+      "inject": {
+        "tool": "system.time",
+        "mode": "hang"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: time zone Asia/Kolkata is not what the request asks for (no zone named; omit timeZone)"
+        ]
+      },
+      "planCalls": 2,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2474,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1366,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1107,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: step s1: input.timeZone: does not match the required pattern",
+      "error": "Planning failed: The model did not produce a valid plan: step s1: input.timeZone: does not match the required pattern"
+    }
+  ]
+}

@@ -2,12 +2,10 @@
   "name": "ultron-orb-ui",
   "version": "1.0.0",
   "private": true,
-  "main": "main.js",
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1",
-    "desktop": "electron .",
     "test:security": "npx tsx tests/security/api-auth.test.ts",
     "build:agent-host": "tsc -p tsconfig.agent-host.json",
     "build:agent-host-test": "tsc -p tsconfig.agent-host-test.json"
@@ -31,8 +29,6 @@
     "@types/three": "^0.185.0",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
-    "electron": "^44.3.0",
-    "electron-builder": "^26.15.3",
     "typescript": "^5",
     "wait-on": "^9.1.0"
   }

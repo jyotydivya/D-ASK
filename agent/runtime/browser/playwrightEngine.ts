@@ -52,6 +52,37 @@ export interface PlaywrightEngineOptions {
   evidenceDir?: string;
 }
 
+/**
+ * Playwright from the repository, or playwright-core as shipped in the package (it has no dependencies). Loaded lazily.
+ * Either way the browser itself is found by launchChromium below.
+ */
+function loadChromium(): typeof import("playwright").chromium {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return (require("playwright") as typeof import("playwright")).chromium;
+  } catch (e) {
+    if ((e as { code?: string }).code !== "MODULE_NOT_FOUND") throw e;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return (require("playwright-core") as typeof import("playwright")).chromium;
+  }
+}
+
+/**
+ * Playwright's own Chromium when it is installed (development machines); otherwise the Microsoft Edge or Chrome that Windows already has,
+ * so the packaged application needs no browser download. The same locked-down arguments, routing and policy apply to either browser.
+ */
+async function launchChromium<T>(chromium: ReturnType<typeof loadChromium>, start: (channel?: "msedge" | "chrome") => Promise<T>): Promise<T> {
+  try { return await start(); }
+  catch (first) {
+    if (!/Executable doesn't exist/i.test(String((first as Error)?.message ?? first))) throw first;
+    void chromium;
+    for (const channel of ["msedge", "chrome"] as const) {
+      try { return await start(channel); } catch { /* try the next installed browser */ }
+    }
+    throw new Error("No browser is available: Playwright's Chromium is not installed and neither Microsoft Edge nor Google Chrome could be started.");
+  }
+}
+
 const CHROMIUM_ARGS = [
   "--host-resolver-rules=MAP * ~NOTFOUND",
   "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-domain-reliability",
@@ -120,16 +151,15 @@ export class GuardedPage {
     const first = checkUrl(url, named);
     if (!first.allowed) throw new BrowserPolicyError(first.reason);
     // Loaded lazily: the agent host never loads Playwright unless browsing is enabled and used.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { chromium } = require("playwright") as typeof import("playwright");
+    const chromium = loadChromium();
     const ctxOpts = { acceptDownloads: false, serviceWorkers: "block" as const, javaScriptEnabled: true, permissions: [] as string[], bypassCSP: false };
     let browser: Browser | null = null;
     let context: BrowserContext;
     if (profileDir) {
       mkdirSync(profileDir, { recursive: true });
-      context = await chromium.launchPersistentContext(profileDir, { headless: true, args: CHROMIUM_ARGS, ...ctxOpts });
+      context = await launchChromium(chromium, (channel) => chromium.launchPersistentContext(profileDir, { headless: true, args: CHROMIUM_ARGS, ...(channel ? { channel } : {}), ...ctxOpts }));
     } else {
-      browser = await chromium.launch({ headless: true, args: CHROMIUM_ARGS });
+      browser = await launchChromium(chromium, (channel) => chromium.launch({ headless: true, args: CHROMIUM_ARGS, ...(channel ? { channel } : {}) }));
       context = await browser.newContext(ctxOpts);
     }
     const page = context.pages()[0] ?? await context.newPage();
@@ -217,7 +247,8 @@ export class GuardedPage {
   // ── element identity ──
 
   private candidates(kind: ElementKind, name: string): Locator[] {
-    const re = new RegExp(`^\\s*${escapeRe(name.trim())}\\s*$`, "i");
+    // Exact accessible name (case-insensitive), allowing the one punctuation mark forms put after a label: "Customer name:" is "Customer name".
+    const re = new RegExp(`^\\s*${escapeRe(name.trim())}\\s*:?\\s*$`, "i");
     return KIND_ROLES[kind].map((role) => this.page.getByRole(role, { name: re }).filter({ visible: true }));
   }
 

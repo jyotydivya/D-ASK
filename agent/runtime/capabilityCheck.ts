@@ -26,10 +26,10 @@ export interface CapabilityAssessment {
   facets: string[];
 }
 
-const words = (s: string) => new Set(s.trim().split(/\s+/));
+export const words = (s: string) => new Set(s.trim().split(/\s+/));
 
 /** Topics no read-only local tool can serve. Refused wherever they appear, unless a fired tool explains them. */
-const UNSUPPORTED_TOPICS = words(`
+export const UNSUPPORTED_TOPICS = words(`
   email emails mail gmail inbox sms whatsapp
   web internet online website websites webpage url browser google bing youtube wikipedia
   weather forecast news headlines stock stocks bitcoin
@@ -42,7 +42,7 @@ const UNSUPPORTED_TOPICS = words(`
  * Actions the current tools cannot perform. Many are also ordinary nouns ("the call
  * stack", "a text file"), so they only count at the start of a clause, in command position.
  */
-const UNSUPPORTED_ACTIONS = words(`
+export const UNSUPPORTED_ACTIONS = words(`
   send email mail message text call phone dial
   open launch run start close quit exit kill stop
   delete remove erase wipe rename move copy paste cut install uninstall update upgrade
@@ -57,7 +57,7 @@ const UNSUPPORTED_ACTIONS = words(`
 /** Words that may precede a command without changing that it is a command. */
 const LEAD_IN = /^(?:(?:please|kindly|also|then|now|just|hey|ok|okay|d-?ask|can|could|would|will|you|i|want|need|like|to|and|so|first|next|finally|go|ahead|help|me)\b[\s,]*)*/i;
 
-function clauseStarts(objective: string): string[] {
+export function clauseStarts(objective: string): string[] {
   return objective
     .toLowerCase()
     .replace(/’/g, "'")

@@ -11,7 +11,7 @@ import { DEFAULT_GRANTS } from "../../agent/runtime/defaults";
 import { createHostRegistry as createDefaultRegistry } from "../../agent/runtime/hostRegistry";
 import { clarificationFor, groundCall } from "../../agent/runtime/grounding";
 import { MemoryRefusedError, MemoryStore, TaskScratch, ftsQuery, secretIn } from "../../agent/runtime/memory/memoryStore";
-import { forgetSubject, isRecallRequest, kindOf, rememberedContent } from "../../agent/runtime/tools/memory";
+import { createMemoryTools, forgetMemoryId, forgetSubject, isListMemories, isRecallRequest, kindOf, rememberedContent } from "../../agent/runtime/tools/memory";
 import { createPlanningMemory } from "../../agent/runtime/memory/planningContext";
 import type { LanguageModel, StructuredRequest, ToolPermission } from "../../agent/runtime/types";
 
@@ -149,6 +149,34 @@ async function main() {
     const short = await runWith("printer");
     check(/second floor/.test(short.prompt), "P9 a one-word request still matches when that word is shared");
     ps.close();
+  }
+  console.log("\n[L] memory management (HUD panel): list and forget one entry by its short id");
+  {
+    const ms = new MemoryStore(path.join(dir, "manage.db"));
+    const a = ms.remember({ kind: "preference", content: "my favourite editor is Neovim", source: "user" }).entry;
+    const b = ms.remember({ kind: "fact", content: "the printer is on the second floor", source: "user" }).entry;
+    const tools = createMemoryTools(ms);
+    const list = tools.find((t) => t.name === "memory.list")!; const byId = tools.find((t) => t.name === "memory.forget_id")!;
+    const ctx = { taskId: "t", signal: new AbortController().signal } as any;
+    check(isListMemories("List my saved memories.") && isListMemories("What do you remember?") && isListMemories("What do you remember about me?") && !isListMemories("What do you remember about the printer?"), "L1 list grammar; a recall question about a subject is still a recall");
+    check(!isRecallRequest("What do you remember about me?") && isRecallRequest("What do you remember about the printer?"), "L2 'about me' is a list, a named subject is a recall");
+    const out = await list.execute({}, ctx);
+    check(out.ok && out.evidence.includes(`[${a.id.slice(0, 8)}] my favourite editor is Neovim (preference)`) && out.evidence.includes(`[${b.id.slice(0, 8)}]`) && out.output.count === 2, "L3 the list shows each memory with its short id and kind", out.evidence);
+    check(forgetMemoryId(`Forget memory ${a.id.slice(0, 8)}`) === a.id.slice(0, 8) && forgetSubject(`Forget memory ${a.id.slice(0, 8)}`) === null && forgetMemoryId("Forget memory abc") === null && forgetMemoryId("Forget my editor") === null, "L4 forget-by-id grammar is exact and is not the subject-based forget");
+    const del = await byId.execute({ id: a.id.slice(0, 8) }, ctx);
+    check(del.ok && del.output.deleted === true && ms.get(a.id) === null && ms.get(b.id) !== null && /Neovim/.test(del.evidence), "L5 exactly that one memory is deleted (the other stays)", del);
+    const none = await byId.execute({ id: "deadbeef" }, ctx);
+    check(none.ok && none.output.deleted === false && /No saved memory/.test(none.evidence) && ms.count() === 1, "L6 an unknown id deletes nothing and says so");
+    const empty = new MemoryStore(path.join(dir, "empty.db"));
+    check((await createMemoryTools(empty).find((t) => t.name === "memory.list")!.execute({}, ctx)).evidence === "I have no saved memories.", "L7 an empty memory says so");
+    // through the real runtime: the id comes from the user's request, never from the model
+    const rt = new AgentRuntime({ model: new Scripted([plan("memory.forget_id", { id: "00000000" })]), registry: createDefaultRegistry(ROOT, { memory: ms }), granted: GRANTS });
+    const r = await rt.run({ taskId: "tl1", objective: `Forget memory ${b.id.slice(0, 8)}` });
+    check(r.outcome !== "completed" && ms.get(b.id) !== null, "L8 a model that names a different id is refused: nothing is deleted", r.outcome);
+    const rt2 = new AgentRuntime({ model: new Scripted([plan("memory.forget_id", { id: b.id.slice(0, 8) })]), registry: createDefaultRegistry(ROOT, { memory: ms }), granted: GRANTS });
+    const r2 = await rt2.run({ taskId: "tl2", objective: `Forget memory ${b.id.slice(0, 8)}` });
+    check(r2.outcome === "completed" && ms.get(b.id) === null, "L9 the id the user typed completes through the runtime, verified", r2.outcome);
+    ms.close(); empty.close();
   }
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

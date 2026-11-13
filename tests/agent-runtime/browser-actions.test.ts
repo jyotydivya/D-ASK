@@ -96,6 +96,7 @@ async function main() {
     if (q.url === "/about") return s.end("<!doctype html><title>About</title><h1>About this fixture</h1>");
     s.end(`<!doctype html><title>Fixture form</title><body><h1>Newsletter</h1>
       <label for=email>Email</label><input id=email name=email>
+      <label for=nick>Customer nickname:</label><input id=nick name=nick>
       <label for=acc>Access</label><input id=acc name=acc type=password>
       <button id=sub onclick="document.getElementById('out').textContent='Thanks, '+document.getElementById('email').value+'!'">Subscribe</button>
       <button>Save</button><button>Save</button><button disabled>Locked</button>
@@ -110,6 +111,13 @@ async function main() {
     new AgentRuntime({ model: m, registry: createDefaultRegistry(ROOT, { browser: engine, browserSessions: sessions, desktop: d }), granted: GRANTS }).run({ taskId, objective });
   const form = `On ${base}/form, type "me@example.com" into the Email field, then click the Subscribe button`;
   try {
+    {
+      // A label written with a trailing colon ("Customer nickname:") is the same exact name as "Customer nickname" (found with a public test form).
+      const d = new Daemon();
+      const r = await runReq(d, new Scripted([plan([fill("Customer nickname", "Al")])], [SAT]), `On ${base}/form, type "Al" into the Customer nickname field`, "live-colon");
+      check(r.outcome === "completed" && d.calls.length === 1 && d.calls[0]?.args.kind === "fill" && d.calls[0]?.args.text === "Al" && d.calls[0]?.args.element.role === "textbox",
+        "L0 a field whose label ends in a colon is found by its name without the colon (exact name otherwise; still unique)", { o: r.outcome, e: r.response });
+    }
     {
       const d = new Daemon();
       let thanks = "";

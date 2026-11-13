@@ -65,11 +65,13 @@ export interface DesktopReply {
 export const CALL_ID = /^c[0-9]{1,9}$/;
 const DESKTOP_TOOL = /^desktop\.[a-z_]{1,40}$/;
 /** Browser stage 2: the daemon's approval authority for browser actions is offered on the same v2 channel (exact name). */
-const OTHER_OFFERED_TOOLS: ReadonlySet<string> = new Set(["browser.request_action", "files.organize", "files.undo_organize", "notes.create",
+const OTHER_OFFERED_TOOLS: ReadonlySet<string> = new Set(["browser.request_action", "files.organize", "files.undo_organize", "files.copy", "files.rename", "files.undo_copy_rename", "notes.create",
   "workflows.save", "workflows.list", "workflows.get", "workflows.delete", "workflows.schedule", "workflows.unschedule",
-  "plugins.list", "plugins.approve", "plugins.revoke"]);
+  "plugins.list", "plugins.approve", "plugins.revoke", "plugins.grant", "plugins.revoke_permission", "plugins.disable", "plugins.enable"]);
 // desktop.read_text matches DESKTOP_TOOL (desktop.*) already.
-const MAX_OFFERED_TOOLS = 24;
+// The full product profile offers every capability at once (about 35 names after copy/rename were added; found when the host refused to start in
+// the real HUD with everything enabled). Names stay exact (allowlist above); only the count bound grows.
+const MAX_OFFERED_TOOLS = 64;
 
 /** Validates the optional `desktop` offer in hello. Strict: unknown fields, other protocols or odd names are refused. */
 function parseDesktopOffer(v: unknown, id: string): DesktopOffer {

@@ -1,72 +1,100 @@
-# dependencies
+# ── Dependencies & Package Managers ───────────────────────────────────────────
 /node_modules
 .pnpm-store
+.nuget/
 
-# next.js
+# ── Next.js & Frontend Build Outputs ──────────────────────────────────────────
 /.next/
 /out/
-
-# production
 /build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# env files
-.env*
-!.env.example
-
-# typescript
+/dist/
 *.tsbuildinfo
 next-env.d.ts
 
-# ── .NET build artifacts ──────────────────────────────────────────────────────
+# ── .NET Build Artifacts ──────────────────────────────────────────────────────
 **/bin/
 **/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 
-# ── Rust build artifacts ─────────────────────────────────────────────────────
-src/hud-native/target/
+# ── Rust Build Artifacts ──────────────────────────────────────────────────────
+**/target/
 
-# ── NuGet package cache (local redirect in nuget.config) ─────────────────────
-.nuget/
+# ── Python & Virtual Environments ─────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
 
-# ── xwin cross-compiler SDK and download cache ───────────────────────────────
+# ── Cross-Compiler & Local SDKs ───────────────────────────────────────────────
 .xwin-sdk/
 .xwin-cache/
-
-# ── .NET user-level SDK (local install under project root) ───────────────────
 .dotnet_home/
 
-# ── Local ML model weights ───────────────────────────────────────────────────
+# ── Local ML Models & Inference Runtimes ──────────────────────────────────────
 models/*.gguf
-
-# ── Pinned local inference runtime (installed by scripts/inference/fetch-llama-server.mjs) ──
+models/*.bin
+models/*.onnx
+models/*.pt
 local-inference/
 
-# ── Scratch sub-project build outputs (keep source, ignore compiled output) ──
+# ── Local SQLite & Runtime Databases ──────────────────────────────────────────
+*.db-wal
+*.db-shm
+memory.db
+knowledge.db
+
+# ── Test & Benchmark Ephemera ─────────────────────────────────────────────────
+playwright-report/
+test-results/
+coverage/
+.nyc_output/
+results/*.out.txt
+results/*.log
+results/**/*.out.txt
+
+# ── Scratch Sub-Project Outputs & Ephemera ───────────────────────────────────
 scratch/Benchmark/bin/
 scratch/Benchmark/obj/
 scratch/TestComUia/bin/
 scratch/TestComUia/obj/
 scratch/UiaTest/bin/
 scratch/UiaTest/obj/
-
-# ── Scratch ephemera: logs, screenshots, one-shot patch scripts ──────────────
 scratch/*.log
 scratch/*.png
+scratch/*.out.txt
+scratch/dbg_*.ts
 scratch/fix_*.js
 scratch/update_*.js
 scratch/Benchmark/*.dll
 scratch/Benchmark/*.runtimeconfig.json
 
-# ── Env file with secrets (also caught by .env* above, made explicit) ─────────
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env*
+!.env.example
 .env.local
+*.pem
 
-# Compiled agent host (npm run build:agent-host)
-/dist/
+# ── Logs & Debugging ──────────────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── IDEs, OS & Miscellaneous Ephemera ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*~
+*.bak
+*.orig
+*.before-*
+.idea/

@@ -131,4 +131,12 @@ export const ASSESSMENT_OUTPUT_SCHEMA: ModelOutputSchema = Object.freeze({
 });
 
 /** Output token caps per purpose (configurable through LlamaServerModel options). */
-export const DEFAULT_MAX_TOKENS = Object.freeze({ plan: 768, assess: 256 });
+export const DEFAULT_MAX_TOKENS = Object.freeze({ plan: 768, assess: 256, answer: 220 });
+
+/** A short spoken-style answer to an informational question (conversation.ts). */
+export const ANSWER_OUTPUT_SCHEMA: ModelOutputSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["answer"],
+  properties: { answer: { type: "string", minLength: 1, maxLength: 600 } },
+});

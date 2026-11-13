@@ -42,11 +42,14 @@ $N = [ordered]@{
 }
 
 function Restore-HudFront {
-    if ([HudInput]::GetForegroundWindow() -eq $script:hwnd) { return }
-    if ((Get-HudMode $script:hwnd) -eq 'interactive') { Send-HudToggleHotkey; try { [void](Wait-HudMode $script:hwnd 'ambient' 3000) } catch { } }
-    Enter-HudInteractive $script:hwnd
-    Assert-HudForeground $script:hwnd
-    Start-Sleep -Milliseconds 1200
+    # Immediately before each request: establish AND verify the HUD as the foreground window (bounded hotkey cycles in
+    # which the HUD activates itself), recording who held the foreground whenever it was not the HUD. Never forces input
+    # elsewhere: on failure it throws, and every keystroke is still guarded by Assert-HudForeground / the typing guard.
+    if ((Get-HudMode $script:hwnd) -ne 'interactive') { Enter-HudInteractive $script:hwnd }
+    $f = Confirm-HudForeground $script:hwnd 3
+    Add-Content -Encoding utf8 -Path (Join-Path $OutDir 'foreground-log.txt') -Value "$((Get-Date).ToString('o')) ok=$($f.ok) attempts=$($f.attempts) owners=[$($f.owners -join ' | ')]$(if (-not $f.ok) { " reason=$($f.reason)" })"
+    if (-not $f.ok) { throw "The HUD is not the foreground window; refusing to send input ($($f.reason))." }
+    if ($f.attempts -gt 0) { Start-Sleep -Milliseconds 1200 }
     [void](Find-HudElement $script:hwnd -AutomationId 'ultron-command' -TimeoutMs 8000)
 }
 # One request; the result block of THIS task (the HUD also shows earlier tasks' history) and the number of cards it opened.

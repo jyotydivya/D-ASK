@@ -145,6 +145,26 @@ async function build() {
   const stray = walk(path.join(OUT, "dist", "agent-host")).filter((f) => /[\\/]tests[\\/]/.test(f));
   if (stray.length) fail(`Test files in the host output: ${stray.map(rel).join(", ")}. Rebuild with npm run build:agent-host in a clean dist/agent-host.`);
 
+  // Local memory (SQLite): the host loads better-sqlite3 from <package>/node_modules. Only what Windows x64 needs is shipped: the N-API prebuilt binary
+  // (stable across Node versions), the JavaScript, and the licence. It is covered by the manifest below, so a changed copy stops the host like any other host file.
+  const sqliteSrc = path.join(ROOT, "node_modules", "better-sqlite3");
+  const sqliteOut = path.join(OUT, "node_modules", "better-sqlite3");
+  if (!fs.existsSync(path.join(sqliteSrc, "prebuilds", "win32-x64.node"))) fail("better-sqlite3 win32-x64 prebuilt binary is missing; run npm install (local memory cannot be packaged without it)");
+  fs.rmSync(sqliteOut, { recursive: true, force: true });
+  fs.mkdirSync(path.join(sqliteOut, "prebuilds"), { recursive: true });
+  for (const f of ["package.json", "LICENSE"]) fs.copyFileSync(path.join(sqliteSrc, f), path.join(sqliteOut, f));
+  copyDir(path.join(sqliteSrc, "lib"), path.join(sqliteOut, "lib"));
+  fs.copyFileSync(path.join(sqliteSrc, "prebuilds", "win32-x64.node"), path.join(sqliteOut, "prebuilds", "win32-x64.node"));
+  // Fail the build unless the PACKAGED Node can open a database with the shipped copy (ABI and FTS5 checked here, not assumed).
+  // (run after the Node runtime is in place; see below)
+
+  // Browser automation: playwright-core (pure JavaScript, no dependencies, no browser inside) so the packaged host can drive the Microsoft Edge that
+  // Windows already has (see agent/runtime/browser/playwrightEngine.ts launchChromium). Covered by the manifest like every other host file.
+  const pwSrc = path.join(ROOT, "node_modules", "playwright-core");
+  if (!fs.existsSync(path.join(pwSrc, "package.json"))) fail("playwright-core is missing; run npm install (browser automation cannot be packaged without it)");
+  fs.rmSync(path.join(OUT, "node_modules", "playwright-core"), { recursive: true, force: true });
+  copyDir(pwSrc, path.join(OUT, "node_modules", "playwright-core"));
+
   // HUD and frontend.
   fs.mkdirSync(path.dirname(path.join(OUT, HUD_REL)), { recursive: true });
   fs.copyFileSync(path.join(ROOT, HUD_REL), path.join(OUT, HUD_REL));
@@ -165,6 +185,13 @@ async function build() {
     const source = path.join(ROOT, modelPath);
     if (fs.existsSync(source)) linkOrCopy(source, path.join(OUT, modelPath));
     else log(`model not present, not packaged: ${modelPath}`);
+  }
+  // Local embedding model for the knowledge index (bge-small-en-v1.5 q8_0, MIT, ~37 MB). The host checks its pinned SHA-256
+  // (agent/runtime/knowledge/embedder.ts, itself covered by the manifest) before every start; without it, knowledge search is keyword-only.
+  {
+    const emb = "models/bge-small-en-v1.5-q8_0.gguf";
+    if (fs.existsSync(path.join(ROOT, emb))) { linkOrCopy(path.join(ROOT, emb), path.join(OUT, emb)); log("embedding model packaged"); }
+    else log(`embedding model not present, not packaged (knowledge search will be keyword-only): ${emb}`);
   }
 
   // Plugin sandbox (the host runs plugin code only through these two files): shipped beside the host and hash-covered.
@@ -190,11 +217,11 @@ async function build() {
   for (const f of ["Install-D-ASK.ps1", "Uninstall-D-ASK.ps1"]) fs.copyFileSync(path.join(ROOT, "scripts/package", f), path.join(OUT, f));
 
   // Electron is excluded from the native package: nothing of it may be shipped.
-  const electron = walk(OUT).map(rel).filter((r) => /(^|\/)(electron|electron-builder)(\/|\.exe$)|^main\.js$/i.test(r) && !r.startsWith("public/"));
+  const electron = walk(OUT).map(rel).filter((r) => /(^|\/)(electron|electron-builder)(\/|\.exe$)|^main\.js$/i.test(r) && !r.startsWith("public/") && !r.startsWith("node_modules/playwright-core/")); // playwright-core ships a JavaScript automation adapter NAMED "electron"; it is not Electron (no runtime, no app)
   if (electron.length) fail(`Electron files in the package: ${electron.slice(0, 5).join(", ")}`);
 
   // The manifest: the Node runtime and every file the host can load (including the plugin sandbox).
-  const covered = [path.join(OUT, NODE_REL), ...walk(path.join(OUT, "dist", "agent-host")), ...walk(path.join(OUT, sandboxRel))];
+  const covered = [path.join(OUT, NODE_REL), ...walk(path.join(OUT, "dist", "agent-host")), ...walk(path.join(OUT, sandboxRel)), ...walk(path.join(OUT, "node_modules", "better-sqlite3")), ...walk(path.join(OUT, "node_modules", "playwright-core"))];
   const manifest = {
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -222,18 +249,68 @@ async function build() {
   };
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 
-  fs.writeFileSync(path.join(OUT, "Start-D-ASK.cmd"), [
+  const daemonRel = DAEMON_DIR.replaceAll("/", "\\");
+  const hudRel = HUD_REL.replaceAll("/", "\\");
+  // Wait (up to 30 s) until the daemon really is listening, instead of a fixed pause: a cold first start can take longer than 3 s, and the HUD would
+  // otherwise honestly report "the daemon is not connected" for a first request. If the wait ends without the pipe, the HUD still starts and reconnects.
+  const waitForPipe = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"for ($i = 0; $i -lt 60; $i++) { if (Test-Path '\\\\.\\pipe\\d-ask-ipc-v1') { exit 0 }; Start-Sleep -Milliseconds 500 }; exit 1\"";
+  const launcher = (profile) => [
     "@echo off",
     "rem Starts the daemon, then the HUD. The daemon starts the agent host on the first task.",
     "setlocal",
     "cd /d \"%~dp0\"",
     "if not exist \"%LOCALAPPDATA%\\D-ASK\" mkdir \"%LOCALAPPDATA%\\D-ASK\"",
     "set DASK_HUD_LOG=%LOCALAPPDATA%\\D-ASK\\hud.log",
-    `start "" /d "%~dp0${DAEMON_DIR.replaceAll("/", "\\")}" /min "%~dp0${DAEMON_DIR.replaceAll("/", "\\")}\\DAsk.Daemon.exe"`,
-    "timeout /t 3 /nobreak >nul",
-    `start "" /d "%~dp0." "%~dp0${HUD_REL.replaceAll("/", "\\")}"`,
+    ...(profile ? [
+      "rem Product profile: every capability is OFFERED to the agent (see features.default.cmd). Approvals, the safety latch and Emergency Stop still apply to every action.",
+      "rem Your own %LOCALAPPDATA%\\D-ASK\\features.cmd, if present, replaces the profile. Start-D-ASK-Safe.cmd starts with none of them.",
+      "if exist \"%LOCALAPPDATA%\\D-ASK\\features.cmd\" (call \"%LOCALAPPDATA%\\D-ASK\\features.cmd\") else (call \"%~dp0features.default.cmd\")",
+    ] : [
+      "rem Safe mode: core assistant only (questions, time, system info, arithmetic, read-only files). No feature switches are loaded.",
+    ]),
+    `start "" /d "%~dp0${daemonRel}" /min "%~dp0${daemonRel}\\DAsk.Daemon.exe"`,
+    waitForPipe,
+    `start "" /d "%~dp0." "%~dp0${hudRel}"`,
     "",
-  ].join("\r\n"));
+  ].join("\r\n");
+  fs.writeFileSync(path.join(OUT, "Start-D-ASK.cmd"), launcher(true));
+  fs.writeFileSync(path.join(OUT, "Start-D-ASK-Safe.cmd"), launcher(false));
+
+  // The full product profile. The folder D-ASK may organise and keep notes in is one the user can see: Documents\\D-ASK.
+  const profileLines = [
+    "rem D-ASK product profile: all ten capabilities are offered. These switches only OFFER tools to the agent.",
+    "rem Every protected action (typing, clicking, organising files, browser fill/click, scheduling, plugin permissions) still needs your approval card;",
+    "rem the safety latch and Emergency Stop (Ctrl+Shift+F12) apply to all of them. Copy this file to %LOCALAPPDATA%\\D-ASK\\features.cmd to change it.",
+    "if not exist \"%USERPROFILE%\\Documents\\D-ASK\" mkdir \"%USERPROFILE%\\Documents\\D-ASK\"",
+    "set DASK_AgentHost__Notes=true",
+    "set DASK_AgentHost__Workflows=true",
+    "set DASK_AgentHost__FileOrganize=true",
+    "set DASK_AgentHost__FileOrganizeRoots__0=%USERPROFILE%\\Documents\\D-ASK",
+    "set DASK_AgentHost__Plugins=true",
+    "set DASK_AgentHost__DesktopOcr=true",
+    "set DASK_AgentHost__BrowserRead=true",
+    "set DASK_AgentHost__BrowserActions=true",
+    "set DASK_AgentHost__Memory=true",
+    "set DASK_AgentHost__DesktopMouseInput=true",
+    "set DASK_AgentHost__DesktopKeyboardInput=true",
+    "set DASK_AgentHost__DesktopAppLaunch=true",
+    "rem Knowledge (local RAG): folders under Documents may be indexed when you ask (\"index <folder> as <name>\"). Indexing only reads;",
+    "rem the index lives in %LOCALAPPDATA%\\D-ASK\\knowledge.db and research reports in Documents\\D-ASK\\Research. Add more folders separated by ;",
+    "set DASK_KNOWLEDGE_ROOTS=%USERPROFILE%\\Documents",
+    "",
+  ].join("\r\n");
+  fs.writeFileSync(path.join(OUT, "features.default.cmd"), profileLines);
+  fs.writeFileSync(path.join(OUT, "features.example.cmd"), profileLines.replace("D-ASK product profile: all ten capabilities are offered.", "Example feature switches (this is the same list the product profile uses). Delete the lines you do not want."));
+
+  // The packaged Node must open a database with the shipped better-sqlite3 and have FTS5 (what MemoryStore needs): checked on the real package.
+  {
+    const probe = path.join(os.tmpdir(), `dask-sqlite-probe-${process.pid}.cjs`);
+    fs.writeFileSync(probe, "const D=require(process.argv[2]);const d=new D(':memory:');d.exec('create virtual table t using fts5(a)');d.prepare('insert into t values (?)').run('x');process.stdout.write(String(d.prepare('select count(*) c from t where t match ?').get('x').c));");
+    const r = spawnSync(path.join(OUT, NODE_REL), [probe, path.join(OUT, "node_modules", "better-sqlite3")], { encoding: "utf8" });
+    fs.rmSync(probe, { force: true });
+    if (r.status !== 0 || r.stdout.trim() !== "1") fail(`the packaged Node cannot use the shipped better-sqlite3 (FTS5 query): ${(r.stderr || r.stdout).slice(0, 300)}`);
+    log("packaged Node opened a SQLite database with the shipped better-sqlite3 (FTS5 ok)");
+  }
 
   log(`package written to ${OUT}`);
   log(`manifest SHA-256 ${manifestHash} (${manifest.files.length} files)`);

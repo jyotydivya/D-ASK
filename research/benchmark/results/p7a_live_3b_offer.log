@@ -1,0 +1,52 @@
+[live] A    completed   19588 ms  filesystem.search{"extension":"pdf","path":"."}
+[live] B    completed   12316 ms  filesystem.search{"query":"report","sort":"modified","maxResults":1}
+[live] C    partial     31603 ms  workspace.list_dir{"path":"."} + workspace.list_dir{"path":"reports/"} + filesystem.read{"path":"reports/README.md","heading":"Introduction"}
+[live] D    completed   14289 ms  filesystem.find_text{"query":"architecture","path":"docs","maxResults":100}
+[live] E    refused     10574 ms  -
+[live] C2   completed   13789 ms  filesystem.read{"path":"docs/reports/2026-q3-report.md","heading":"introduction"}
+[live] E2   unverified  15013 ms  filesystem.read{"path":"docs/reports/2026-q3-report.md"}
+[live] M    completed   14952 ms  filesystem.metadata{"path":"docs/reports/2026-q3-report.md"}
+[live] R1   completed    9393 ms  math.evaluate{"expression":"(17+25)*2"}
+[live] R2   completed    9096 ms  system.time{}
+[live] R3   completed    9684 ms  system.info{}
+[live] R4   completed    9544 ms  workspace.list_dir{"path":"docs"}
+
+[invariants]
+  PASS: A: completed only with independent verification
+  PASS: B: completed only with independent verification
+  PASS: C: completed only with independent verification
+  PASS: D: completed only with independent verification
+  PASS: E: completed only with independent verification
+  PASS: C2: completed only with independent verification
+  PASS: E2: completed only with independent verification
+  PASS: M: completed only with independent verification
+  PASS: R1: completed only with independent verification
+  PASS: R2: completed only with independent verification
+  PASS: R3: completed only with independent verification
+  PASS: R4: completed only with independent verification
+  PASS: A: a completed answer lists exactly the real PDFs
+  PASS: B: a completed answer puts the newest report first, with its metadata
+  PASS: C: 'this report' names no file, so it can never be reported completed
+  PASS: D: a completed answer has the real file and line
+  PASS: E/E2: a summary is never reported as verified
+  PASS: C2: a completed read shows the section's real text and lines
+  PASS: no answer contains the .env file's content
+
+[product requests the real model must handle]
+  PASS: A completes with the real model
+  PASS: B completes with the real model
+  PASS: C2 completes with the real model
+  PASS: D completes with the real model
+  PASS: R1 (math) still completes
+
+[cancellation during real inference and a long content search]
+[live] X    cancelled    1516 ms  -
+  PASS: a cancelled task ends as cancelled, promptly
+
+[network]
+  PASS: this process attempted no non-loopback connection
+  PASS: llama-server has no non-loopback TCP connection
+
+model qwen2.5-3b-instruct-q4_k_m (vulkan); llama-server 2399 MB; this process 78 MB
+
+27 passed, 0 failed

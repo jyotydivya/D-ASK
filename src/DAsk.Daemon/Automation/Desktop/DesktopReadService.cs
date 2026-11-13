@@ -278,6 +278,43 @@ public sealed class DesktopReadService : IDesktopReadService
     /// <summary>The window's identity re-read from the OS now, or null if it is gone.</summary>
     public WindowIdentity? ReadNow(long hwnd) => _windows.Read(hwnd);
 
+    /// <summary>A fresh OS enumeration with the same exclusions as every other caller (D-ASK's own windows, other sessions).</summary>
+    public IReadOnlyList<WindowIdentity> SnapshotNow() => Observe().Windows;
+
+    /// <summary>
+    /// Read-only postcondition check: whether the window's UI Automation tree currently shows an element named exactly
+    /// <paramref name="text"/> (case-insensitive). Password fields are never read. False when the tree cannot be read.
+    /// </summary>
+    public async Task<bool> WindowShowsAsync(long hwnd, string text, CancellationToken ct) => (await WindowShowsDetailAsync(hwnd, text, ct)).Shows;
+
+    /// <summary>As <see cref="WindowShowsAsync"/>, with what UI Automation returned (status and element count), for the evidence.</summary>
+    public async Task<(bool Shows, string Detail)> WindowShowsDetailAsync(long hwnd, string text, CancellationToken ct)
+    {
+        try
+        {
+            // A page heading can sit deeper than a window summary needs: read deeper here (still bounded in depth, count and time).
+            var inspection = await _uia.InspectTreeAsync(new IntPtr(hwnd), Math.Max(_options.UiaMaxDepth, 14), Math.Max(_options.UiaMaxElements, 800), Math.Max(_options.UiaTimeoutMs, 4000), ct);
+            bool shows = inspection.Status is "ok" or "partial" &&
+                   inspection.Nodes.Any(n => !n.IsPassword && !n.IsOffscreen && string.Equals(n.Name?.Trim(), text, StringComparison.OrdinalIgnoreCase));
+            return (shows, $"UI Automation {inspection.Status}, {inspection.Nodes.Count} element(s){(inspection.Truncated ? ", truncated" : "")}");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { return (false, $"UI Automation failed ({ex.GetType().Name})"); }
+    }
+
+    /// <summary>
+    /// A window THIS daemon opened for the task (AppLaunchRequestService), if it is still the very same window (handle, process id
+    /// and process creation time) and still matches the selector. Null otherwise: the caller then resolves the selector normally.
+    /// </summary>
+    public WindowIdentity? ResolveLaunched(long hwnd, int processId, long creationFileTime, string? process, string? titleContains)
+    {
+        var w = _windows.Read(hwnd);
+        if (w == null || w.ProcessId != processId || w.ProcessCreationFileTime != creationFileTime || !w.Visible || Sensitive(w)) return null;
+        if (process != null && !ProcessMatches(w, process)) return null;
+        if (titleContains != null && !w.Title.Contains(titleContains, StringComparison.OrdinalIgnoreCase)) return null;
+        return w;
+    }
+
     // ── desktop.inspect_window ──
 
     private async Task<DesktopCallResult> InspectAsync(JsonElement args, CancellationToken ct)

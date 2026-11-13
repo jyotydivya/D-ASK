@@ -24,6 +24,7 @@ interface AgentStatusPanelProps {
 
 const OUTCOME_COLORS: Record<string, string> = {
   completed: "#39ff14",
+  answered: "#00d4ff",
   unverified: "#fbbf24",
   partial: "#fbbf24",
   refused: "#a8b4c0",
@@ -361,7 +362,14 @@ export function AgentStatusPanel({
           >
             RESULT — {result.outcome}
           </div>
-          {result.independentlyVerified !== undefined && result.independentlyVerified !== null && (
+          {result.outcome === "answered" && (
+            <div data-testid="agent-answered" style={{ fontSize: "9px", letterSpacing: "1px", marginBottom: "4px", color: "#00d4ff" }}>
+              {result.grounded
+                ? "ANSWERED FROM YOUR INDEXED DOCUMENTS · CITATIONS CHECKED BY D-ASK · UNCITED SENTENCES ARE MARKED"
+                : "ANSWERED BY THE LOCAL MODEL · NOT CHECKED AGAINST A SOURCE"}
+            </div>
+          )}
+          {result.outcome !== "answered" && result.independentlyVerified !== undefined && result.independentlyVerified !== null && (
             <div
               data-testid="agent-verification"
               style={{ fontSize: "9px", letterSpacing: "1px", marginBottom: "4px", color: result.independentlyVerified ? "#39ff14" : "#fbbf24" }}

@@ -34,11 +34,13 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
     private readonly IDesktopInputPlatform _platform;
     private readonly GuardedInputOptions _options;
     private readonly ILogger? _logger;
+    private readonly LaunchedWindowRegistry? _launched;
 
     public GuardedInputRequestService(DesktopReadService reader, IUiAutomationService uia, ActionPolicyEngine policy, Func<bool> isStopped,
         Func<ulong> generation, IEvidenceRecorder? evidence, Func<string, bool>? isSessionLive, IDesktopInputPlatform platform,
-        GuardedInputOptions? options = null, ILogger? logger = null)
+        GuardedInputOptions? options = null, ILogger? logger = null, LaunchedWindowRegistry? launched = null)
     {
+        _launched = launched;
         _reader = reader; _uia = uia; _policy = policy; _isStopped = isStopped; _generation = generation; _evidence = evidence;
         _isSessionLive = isSessionLive; _platform = platform; _options = options ?? new GuardedInputOptions(); _logger = logger;
     }
@@ -121,7 +123,13 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         if (string.IsNullOrWhiteSpace(ctx.OwnerSessionId)) return DesktopCallResult.Fail("no_owner", "The task has no owning HUD session, so nobody can approve this.");
         if (_isStopped()) return DesktopCallResult.Fail("emergency_stopped", "Emergency Stop is active; no action can be requested.");
 
-        if (_reader.ResolveTarget(r.Process, r.TitleContains, "acted on", out var target) is { } notResolved) return notResolved;
+        // A window this daemon opened for THIS task (desktop.launch_app) is the target when it still is the same window and matches the
+        // selector; otherwise the selector is resolved from the OS as always (ambiguity and missing windows are refused as before).
+        WindowIdentity? target = _launched?.For(ctx.TaskId) is { } lw
+            ? _reader.ResolveLaunched(lw.Hwnd, lw.ProcessId, lw.ProcessCreationFileTime, r.Process, r.TitleContains) : null;
+        // A window D-ASK itself opened for this task may retitle itself as its content changes (Notepad: "*HELLO - Notepad"). Only for typing.
+        bool titleMayFollowContent = target != null && r.Tool == GuardedInputTools.TypeText;
+        if (target == null && _reader.ResolveTarget(r.Process, r.TitleContains, "acted on", out target) is { } notResolved) return notResolved;
         if (WindowIdentityRules.Incomplete(target!) is { } why)
             return DesktopCallResult.Fail("identity_uncertain", $"The window's identity cannot be established ({why}); nothing can be requested for it.");
         if (_options.DeniedImageNames.Contains(target!.ImageName))
@@ -183,6 +191,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             ["execution"] = Performed,
         };
         if (r.Tool == GuardedInputTools.ClickElement) parameters["point"] = $"{cx},{cy}";
+        if (titleMayFollowContent) parameters[TitleFollowsContentKey] = "This window was opened by D-ASK for this request; its title may change as it fills with the typed text (the part after the last ' - ' must stay the same). Window identity is still checked before every key.";
         if (r.Text != null) { parameters["text"] = r.Text; parameters["textLength"] = r.Text.Length.ToString(); }
         if (r.Chord != null) parameters["keys"] = r.Chord.Canonical;
 
@@ -253,12 +262,27 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         return await ExecuteApprovedAsync(request, ctx, r, target, control, insp2, decidedMs, ct);
     }
 
-    /// <summary>Safety contracts §3.4: full identity, plus an unchanged title for input tools (D-3).</summary>
-    private InputRefusal? WindowCheck(WindowIdentity target)
+    public const string TitleFollowsContentKey = "titleNote";
+
+    /// <summary>
+    /// The title of a window that holds a document is "[*]<document> - <application>": typing changes the document part (and adds the
+    /// unsaved marker) while the application part stays. True only when both titles end in the same non-trivial " - <application>".
+    /// </summary>
+    public static bool SameApplicationSuffix(string before, string after)
+    {
+        int a = before.LastIndexOf(" - ", StringComparison.Ordinal), b = after.LastIndexOf(" - ", StringComparison.Ordinal);
+        if (a < 0 || b < 0) return false;
+        var sa = before[(a + 3)..]; var sb = after[(b + 3)..];
+        return sa.Length >= 3 && string.Equals(sa, sb, StringComparison.Ordinal);
+    }
+
+    /// <summary>Safety contracts §3.4: full identity, plus an unchanged title for input tools (D-3), except for a window D-ASK opened for this task (see <see cref="TitleFollowsContentKey"/>).</summary>
+    private InputRefusal? WindowCheck(WindowIdentity target, bool titleMayFollowContent = false)
     {
         var now = _reader.ReadNow(target.Hwnd);
         if (WindowIdentityRules.Mismatch(target, now) is { } m) return new(now == null ? "target_disappeared" : "target_changed", $"the window changed ({m})");
-        if (!string.Equals(now!.Title, target.Title, StringComparison.Ordinal)) return new("target_changed", "the window's title changed");
+        if (!string.Equals(now!.Title, target.Title, StringComparison.Ordinal) && !(titleMayFollowContent && SameApplicationSuffix(target.Title, now.Title)))
+            return new("target_changed", "the window's title changed");
         if (now.Minimized) return new("target_unusable", "the window is minimized");
         return null;
     }
@@ -271,7 +295,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         if (!_isSessionLive!(request.SessionId)) return new("hud_unavailable", "The HUD that approved this is no longer live.");
         if (monitor.Interruption is { } who) return new("user_interrupted", $"Stopped because {who}.");
         if (_platform.ForegroundRoot() != target.Hwnd) return new("foreground_changed", "The target window is no longer in front.");
-        if (WindowCheck(target) is { } w) return new(w.Code, $"Just before the input, {w.Message}.");
+        if (WindowCheck(target, request.ActionParameters.ContainsKey(TitleFollowsContentKey)) is { } w) return new(w.Code, $"Just before the input, {w.Message}.");
         return null;
     }
 
@@ -430,7 +454,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         if (_generation() != request.StopGeneration) return new("emergency_stopped", "An Emergency Stop happened after the approval, so it no longer applies.");
         if (!_isSessionLive!(request.SessionId)) return new("hud_unavailable", "The HUD that approved this is no longer live.");
         if (monitor.Interruption is { } who) return new("user_interrupted", $"Stopped because {who}.");
-        return WindowCheck(target) is { } w ? new(w.Code, $"Just before the input, {w.Message}.") : null;
+        return WindowCheck(target, request.ActionParameters.ContainsKey(TitleFollowsContentKey)) is { } w ? new(w.Code, $"Just before the input, {w.Message}.") : null;
     }
 
     private object Details(ActionApprovalRequest r, DesktopActionContext ctx, Request q, ControlIdentity c, WindowIdentity t) => new

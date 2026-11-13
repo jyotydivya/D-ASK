@@ -425,7 +425,8 @@ async function main(): Promise<void> {
     const names = (o: string) => p.toolsFor(o, DEFAULT_GRANTS).map((t) => t.name).sort().join(",");
     const V3 = "math.evaluate,system.info,system.time,workspace.list_dir";
     check(names("How many hours are in a week?") === V3, "A1 an unrecognised paraphrase is offered the four Phase 4 tools, not the file tools", names("How many hours are in a week?"));
-    check(names("What is seventeen times three?") === V3, "A2 paraphrased arithmetic is offered the four Phase 4 tools", names("What is seventeen times three?"));
+    // Superseded contract (spoken numbers, 2026-11-12): number words ARE the request's own arithmetic now, so the request is claimed by math.evaluate alone.
+    check(names("What is seventeen times three?") === "math.evaluate", "A2 spoken-number arithmetic is claimed by math.evaluate (no longer an unrecognised paraphrase)", names("What is seventeen times three?"));
     check(names("What does the folder hold?").includes("filesystem.search"), "A3 an unrecognised request with file wording still gets the file tools that can run");
     check(!names("What does the folder hold?").includes("filesystem.read"), "A4 a read is not offered when no file is named (its path would be forbidden)");
     const tz = argumentDomainsFor(r8, "What does the clock say in New York?")["system.time"]?.timeZone;
@@ -540,7 +541,23 @@ async function main(): Promise<void> {
     check(json.outcome === "completed" && /top-level key\(s\): name, api_key, openrouter/.test(json.response) && !json.response.includes(SECRET_KEY) && !json.response.includes("abcd1234efgh5678"),
       "S3 a JSON file: its keys, never secret values", json.response);
     const pdfS = await runS("Summarize docs/manual.pdf", { path: "docs/manual.pdf" });
-    check(pdfS.outcome !== "completed" && /only text files can be summarised/.test(pdfS.response), "S4 a PDF is refused honestly (no text extraction)", pdfS.response);
+    check(pdfS.outcome !== "completed" && /no extractable text/.test(pdfS.response), "S4 a PDF without extractable text (e.g. a scan) is refused honestly", pdfS.response);
+    // S4b (2026-11-14): a PDF with text is summarised by the offline PDF extractor; the quoted sentences are checked against the PDF itself.
+    const body = "BT /F1 12 Tf 72 720 Td (The evaluation deadline is 16 November 2026.) Tj 0 -16 Td (Each team submits one report with its results.) Tj 0 -16 Td (Late reports are reviewed after the deadline.) Tj ET";
+    const textPdf = `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length ${body.length} >> stream
+${body}
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+trailer << /Root 1 0 R >>
+%%EOF
+`;
+    await W("docs/schedule.pdf", textPdf);
+    const pdfT = await runS("Summarize docs/schedule.pdf", { path: "docs/schedule.pdf" });
+    check(pdfT.outcome === "completed" && /16 November 2026/.test(pdfT.response) && /Key sentences \(quoted from the file\)/.test(pdfT.response), "S4b a PDF with text is summarised, quoting sentences verified against the PDF", pdfT.response);
     const other = await runS("Summarize docs/guide.md", { path: "docs/architecture.md" });
     check(other.outcome !== "completed" && !other.response.includes("three layers"), "S5 the model cannot summarise a file the request did not name", other.response);
     const env = await runS("Summarize .env", { path: ".env" });
@@ -555,6 +572,15 @@ async function main(): Promise<void> {
     const res = await tool.execute({ path: "docs/architecture.md" }, { taskId: "x", stepId: "x", signal: new AbortController().signal } as any);
     const forged = { ...res, output: { ...res.output!, keySentences: [{ line: 3, text: "The architecture has four layers." }] } };
     check(res.ok && tool.check!({ path: "docs/architecture.md" }, res).ok && !tool.check!({ path: "docs/architecture.md" }, forged).ok, "S8 the postcondition re-reads the file: a quote that is not in it fails");
+    // S8b (real PDF, 2026-11-14): a sentence deep inside a long paragraph (PDF text often has no blank line for a page) is still verified;
+    // a forged sentence in the same paragraph still fails.
+    const NL = String.fromCharCode(10);
+    await W("docs/long.txt", "Intro line." + NL + NL + Array.from({ length: 60 }, (_, i) => `Filler words for line ${i} of the long paragraph`).join(NL) + ". The deadline is fixed at noon on Friday." + NL);
+    const longRes = await tool.execute({ path: "docs/long.txt", maxSentences: 5 }, { taskId: "x", stepId: "x", signal: new AbortController().signal } as any);
+    const deep = (longRes.output?.keySentences ?? []).find((k: any) => /deadline is fixed/.test(k.text));
+    const forgedDeep = { ...longRes, output: { ...longRes.output!, keySentences: [{ line: deep?.line ?? 3, text: "The deadline was moved to Monday." }] } };
+    check(longRes.ok && !!deep && tool.check!({ path: "docs/long.txt" }, longRes).ok && !tool.check!({ path: "docs/long.txt" }, forgedDeep).ok,
+      "S8b a quote deep in a long paragraph verifies; a forged one there does not", { deep, ok: longRes.ok });
     const unnamed = clarificationFor(createDefaultRegistry(PROJ), "Summarize the report using its actual contents");
     check(unnamed !== null && /^Which report do you mean\?/.test(unnamed), "S9 an unnamed file is asked about, not chosen");
 

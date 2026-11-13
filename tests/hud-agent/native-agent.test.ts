@@ -29,6 +29,8 @@ function harness() {
     finished: [] as { taskId: string | null; result: NativeTaskResult }[],
     cancelling: [] as string[],
     cancelFailed: [] as string[],
+    external: [] as { taskId: string; result: NativeTaskResult }[],
+    recovered: [] as { taskId: string; result: NativeTaskResult | null }[],
   };
   const client = new NativeAgentClient(
     {
@@ -40,6 +42,8 @@ function harness() {
     },
     {
       onAccepted: (t) => log.accepted.push(t),
+      onExternalFinished: (t, r) => log.external.push({ taskId: t, result: r }),
+      onRecovered: (t, r) => log.recovered.push({ taskId: t, result: r }),
       onEvent: (_t, e) => log.events.push(e),
       onFinished: (taskId, result) => log.finished.push({ taskId, result }),
       onCancelling: (t) => log.cancelling.push(t),
@@ -126,6 +130,25 @@ console.log("correlation and ordering");
   h.client.handleMessage(progress("t1", 1, { type: "phase", phase: "planning" }));
   h.client.handleMessage(finished("t1"));
   check(h.log.events.length === 0 && h.log.finished.length === 0, "messages for a task this client did not start are ignored");
+}
+{
+  // A scheduled run: the daemon starts a task this HUD never submitted. Its FINAL result is reported once, only when the HUD is idle.
+  const h = harness();
+  h.client.handleMessage(progress("ts1", 1, { type: "phase", phase: "planning" }));
+  check(h.log.external.length === 0, "scheduled run: progress alone is not reported");
+  h.client.handleMessage(finished("ts1"));
+  h.client.handleMessage(finished("ts1"));
+  check(h.log.external.length === 1 && h.log.external[0]!.taskId === "ts1" && h.log.finished.length === 0 && !h.client.isBusy, "scheduled run: the final result is reported exactly once and does not make the HUD busy", h.log.external.length);
+}
+{
+  const h = harness();
+  h.client.submit("x");
+  h.client.handleMessage(accepted("req1", "t1"));
+  h.client.handleMessage(finished("t2"));
+  check(h.log.external.length === 0 && h.client.activeTaskId === "t1", "scheduled run: never reported while the user's own task is active");
+  h.client.handleMessage(finished("t1"));
+  h.client.handleMessage(finished("t1"));
+  check(h.log.finished.length === 1 && h.log.external.length === 0, "a repeated result for the user's own finished task is not shown as a scheduled run");
 }
 {
   const h = harness();
@@ -279,6 +302,23 @@ console.log("source checks");
   const stopButton = orb.slice(orb.indexOf("isEmergencyStopped ? handleResumeExecution"), orb.indexOf("isEmergencyStopped ? handleResumeExecution") + 400);
   check(/pointerEvents:\s*"auto"/.test(stopButton), "the STOP button takes clicks even though its header has pointer-events: none");
   check(/payload\?\.success === false/.test(orb), "a refused resume does not clear the HUD's stopped state");
+}
+
+console.log("history recovery after a HUD restart");
+{
+  const h = harness();
+  h.client.recover("t-old-1");
+  check(h.posted.length === 1 && h.posted[0].type === "AgentTaskStatus" && JSON.stringify(Object.keys(h.posted[0].payload).sort()) === '["request_id","task_id"]' && h.posted[0].payload.task_id === "t-old-1", "recover posts only a request id and the task id", h.posted[0]);
+  h.client.recover("../bad id");
+  check(h.posted.length === 1, "an invalid task id is never sent");
+  h.client.handleMessage({ type: "AgentTaskStatusResponse", replyToId: "req1", payload: { found: true, taskId: "t-old-1", state: "finished", result: { taskId: "t-old-1", outcome: "completed", response: "Saved the note." } } });
+  check(h.log.recovered[0]?.taskId === "t-old-1" && h.log.recovered[0]?.result?.response === "Saved the note." && h.log.finished.length === 0 && h.log.external.length === 0, "a recovered result fills in history only; it is never a new or external task", h.log);
+  h.client.handleMessage({ type: "AgentTaskStatusResponse", replyToId: "req2", payload: { found: true, taskId: "t-run", state: "running", result: null } });
+  h.client.handleMessage({ type: "AgentTaskStatusResponse", replyToId: "req3", payload: { found: false, taskId: "t-gone", rejectionCode: "daemon_unavailable" } });
+  check(h.log.recovered[1]?.result === null && h.log.recovered[2]?.result === null, "a running or unknown task recovers nothing");
+  check(!h.client.isBusy, "recovery never makes the HUD busy");
+  const orbSrc = fs.readFileSync(path.join(process.cwd(), "components", "JarvisOrb.tsx"), "utf8");
+  check(/onAccepted: \(taskId\) => setHistory/.test(orbSrc) && /RECOVERED AFTER RESTART/.test(orbSrc) && /e\.taskId === taskId && e\.response === RESULT_UNKNOWN/.test(orbSrc), "the HUD records the task id on acceptance and fills in only the matching 'result unknown' entry");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

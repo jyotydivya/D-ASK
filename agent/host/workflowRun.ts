@@ -7,11 +7,12 @@ import type { AgentRuntime } from "../runtime/runtime";
 import type { DesktopBridge } from "../runtime/tools/desktop";
 import type { RunOutcome, RuntimeEvent } from "../runtime/types";
 import { toTaskResult, type TaskResult } from "./host";   // used at call time only (host imports this module)
+import { parseChain, prefixEvents, runChain, withPrefix } from "./compose";
 
 const STOPS: ReadonlySet<RunOutcome> = new Set(["failed", "refused", "cancelled", "partial"]);
 
 export async function runWorkflow(name: string, deps: { runtime: Pick<AgentRuntime, "run">; desktop?: DesktopBridge }, taskId: string, signal: AbortSignal,
-  emit: (e: RuntimeEvent) => void): Promise<TaskResult> {
+  emit: (e: RuntimeEvent) => void, previous: { objective: string; result: TaskResult } | null = null): Promise<TaskResult> {
   const done = (outcome: RunOutcome, response: string, extra: Partial<TaskResult> = {}): TaskResult =>
     ({ taskId, outcome, response, iterations: 0, toolCalls: 0, error: null, steps: [], verification: null, ...extra });
   const bridge = deps.desktop;
@@ -27,8 +28,12 @@ export async function runWorkflow(name: string, deps: { runtime: Pick<AgentRunti
   let stoppedAt = -1;
   for (let i = 0; i < steps.length; i++) {
     if (signal.aborted) { stoppedAt = i; break; }
-    const report = await deps.runtime.run({ taskId, objective: steps[i]!, signal, sink: { emit } });
-    const r = toTaskResult(report);
+    // A step may pass a result on: "<request>, then save it as a note called T", or "save that as a note called T" / "remember that"
+    // using the PREVIOUS step's result (compose.ts). Every part is still an ordinary request through the same runtime and approvals.
+    const runOne = async (o: string, prefix: string) => withPrefix(toTaskResult(await deps.runtime.run({ taskId, objective: o, signal, sink: { emit: prefix ? prefixEvents(emit, prefix) : emit } }), o), prefix);
+    const chain = parseChain(steps[i]!);
+    const r = chain ? await runChain(chain, { taskId, previous, signal, run: runOne }) : await runOne(steps[i]!, "");
+    previous = { objective: steps[i]!, result: r };
     results.push(r);
     if (STOPS.has(r.outcome)) { stoppedAt = i + 1; break; }
   }

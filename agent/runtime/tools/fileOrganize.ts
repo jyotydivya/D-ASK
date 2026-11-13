@@ -152,6 +152,118 @@ const undoCheck: ToolRequestCheck<Record<string, never>, any> = {
   vocabulary: () => VOCAB,
 };
 
+// ── Copy / rename (one file per request; the daemon validates, shows the card, journals, verifies) ─────────────────
+
+const PATH_RE = String.raw`(?:"([A-Za-z]:\\[^"]+)"|“([A-Za-z]:\\[^”]+)”|([A-Za-z]:\\\S+))`;
+const NAME_RE = String.raw`(?:"([^"\\/:*?<>|]{1,120})"|([^\s"\\/:*?<>|]{1,120}))`;
+const COPY_RE = new RegExp(String.raw`^\s*(?:please\s+)?(?:copy|duplicate|make\s+a\s+copy\s+of)\s+(?:the\s+file\s+)?${PATH_RE}(?:\s+(?:to|into)\s+(?:the\s+folder\s+)?${PATH_RE})?(?:\s+(?:as|called|named)\s+${NAME_RE})?\s*[.!]?\s*$`, "i");
+const RENAME_RE = new RegExp(String.raw`^\s*(?:please\s+)?rename\s+(?:the\s+file\s+)?${PATH_RE}\s+(?:to|as)\s+${NAME_RE}\s*[.!]?\s*$`, "i");
+const UNDO_CR = /^\s*(?:please\s+)?(?:undo|revert|reverse)\s+(?:the\s+|my\s+)?(?:last\s+|previous\s+)?(?:file\s+|folder\s+)?(copy|rename|renaming|move)\s*[.!]?\s*$/i;
+// "Move D:\a\report.pdf to D:\b" / "move the folder D:\a\Project to D:\b and call it Project 2025": ONE file or folder, two absolute paths.
+const MOVE_RE = new RegExp(String.raw`^\s*(?:please\s+)?move\s+(?:the\s+(?:file|folder)\s+)?${PATH_RE}\s+(?:to|into)\s+(?:the\s+folder\s+)?${PATH_RE}(?:\s+(?:and\s+(?:call|name)\s+it|as|named|called)\s+${NAME_RE})?\s*[.!]?\s*$`, "i");
+const pick = (m: RegExpExecArray, i: number) => (m[i] ?? m[i + 1] ?? m[i + 2])?.trim().replace(/[\\.]+$/, "") || null;
+
+export interface CopyArgs { path: string; toFolder?: string; newName?: string }
+export interface RenameArgs { path: string; newName: string }
+export function requestedCopy(o: string): CopyArgs | null {
+  const m = COPY_RE.exec(o);
+  if (!m) return null;
+  const path = pick(m, 1)!, toFolder = pick(m, 4), newName = (m[7] ?? m[8])?.trim() || null;
+  if (newName && (!SAFE_NAME.test(newName) || RESERVED.test(newName))) return null;
+  return { path, ...(toFolder ? { toFolder } : {}), ...(newName ? { newName } : {}) };
+}
+export function requestedRename(o: string): RenameArgs | null {
+  const m = RENAME_RE.exec(o);
+  if (!m) return null;
+  const newName = (m[4] ?? m[5])?.trim();
+  if (!newName || !SAFE_NAME.test(newName) || RESERVED.test(newName) || /[. ]$/.test(newName)) return null;
+  return { path: pick(m, 1)!, newName };
+}
+export const isUndoCopyRename = (o: string) => UNDO_CR.test(o);
+export interface MoveArgs { path: string; toFolder: string; newName?: string }
+export function requestedMove(o: string): MoveArgs | null {
+  const m = MOVE_RE.exec(o);
+  if (!m) return null;
+  const path = pick(m, 1), toFolder = pick(m, 4), newName = (m[7] ?? m[8])?.trim() || null;
+  if (!path || !toFolder) return null;
+  if (newName && (!SAFE_NAME.test(newName) || RESERVED.test(newName))) return null;
+  return { path, toFolder, ...(newName ? { newName } : {}) };
+}
+
+const CR_VOCAB = ["copy", "duplicate", "make", "a", "of", "the", "file", "to", "into", "folder", "as", "called", "named", "rename", "please", "undo", "revert", "reverse", "last", "previous", "my", "renaming"];
+const words = (s: string) => s.split(/[\\/:._ "-]+/).filter(Boolean).map((w) => w.toLowerCase());
+
+const copyCheck: ToolRequestCheck<CopyArgs, any> = {
+  argumentDomains(o): Record<string, ArgumentDomain> {
+    const r = requestedCopy(o);
+    if (!r) return { path: { kind: "forbidden", reason: "the request does not ask to copy a named file" } };
+    return {
+      path: { kind: "enum", values: [r.path], optional: false, compare: "path" },
+      toFolder: r.toFolder ? { kind: "enum", values: [r.toFolder], optional: false, compare: "path" } : { kind: "forbidden", reason: "no destination folder named: the copy stays in the same folder" },
+      newName: r.newName ? { kind: "enum", values: [r.newName], optional: false } : { kind: "forbidden", reason: "no new name given" },
+    };
+  },
+  relevant: (o) => requestedCopy(o) !== null,
+  claims: (o) => requestedCopy(o) !== null,
+  facets: (o) => { const r = requestedCopy(o); return r ? [{ id: `copy:${pnorm(r.path)}`, tool: "filesystem.copy", description: `copy ${r.path}${r.toFolder ? ` to ${r.toFolder}` : ""}`, data: r }] : []; },
+  ground(input, o) {
+    const r = requestedCopy(o);
+    if (!r) return ungrounded("the request does not ask to copy a file");
+    if (pnorm(input.path) !== pnorm(r.path) || pnorm(input.toFolder ?? "") !== pnorm(r.toFolder ?? "") || (input.newName ?? "") !== (r.newName ?? "")) return contradicted("copy exactly the file, folder and name the request gives");
+    return grounded("file, destination and name are taken from the request");
+  },
+  satisfies: (_f, _i, out) => out.ok && out.output?.executed === true && out.output?.verified === true,
+  vocabulary: (o) => { const r = requestedCopy(o); return [...CR_VOCAB, ...(r ? [...words(r.path), ...words(r.toFolder ?? ""), ...words(r.newName ?? "")] : [])]; },
+};
+const renameCheck: ToolRequestCheck<RenameArgs, any> = {
+  argumentDomains(o): Record<string, ArgumentDomain> {
+    const r = requestedRename(o);
+    if (!r) return { path: { kind: "forbidden", reason: "the request does not ask to rename a named file" } };
+    return { path: { kind: "enum", values: [r.path], optional: false, compare: "path" }, newName: { kind: "enum", values: [r.newName], optional: false } };
+  },
+  relevant: (o) => requestedRename(o) !== null,
+  claims: (o) => requestedRename(o) !== null,
+  facets: (o) => { const r = requestedRename(o); return r ? [{ id: `rename:${pnorm(r.path)}`, tool: "filesystem.rename", description: `rename ${r.path} to ${r.newName}`, data: r }] : []; },
+  ground(input, o) {
+    const r = requestedRename(o);
+    if (!r) return ungrounded("the request does not ask to rename a file");
+    return pnorm(input.path) === pnorm(r.path) && input.newName === r.newName ? grounded("file and new name are taken from the request") : contradicted(`rename exactly ${r.path} to ${r.newName}`);
+  },
+  satisfies: (_f, _i, out) => out.ok && out.output?.executed === true && out.output?.verified === true,
+  vocabulary: (o) => { const r = requestedRename(o); return [...CR_VOCAB, ...(r ? [...words(r.path), ...words(r.newName)] : [])]; },
+};
+const moveCheck: ToolRequestCheck<MoveArgs, any> = {
+  argumentDomains(o): Record<string, ArgumentDomain> {
+    const r = requestedMove(o);
+    if (!r) return { path: { kind: "forbidden", reason: "the request does not ask to move a named file or folder" } };
+    return {
+      path: { kind: "enum", values: [r.path], optional: false, compare: "path" },
+      toFolder: { kind: "enum", values: [r.toFolder], optional: false, compare: "path" },
+      newName: r.newName ? { kind: "enum", values: [r.newName], optional: false } : { kind: "forbidden", reason: "no new name given" },
+    };
+  },
+  relevant: (o) => requestedMove(o) !== null,
+  claims: (o) => requestedMove(o) !== null,
+  facets: (o) => { const r = requestedMove(o); return r ? [{ id: `move:${pnorm(r.path)}`, tool: "filesystem.move", description: `move ${r.path} to ${r.toFolder}`, data: r }] : []; },
+  ground(input, o) {
+    const r = requestedMove(o);
+    if (!r) return ungrounded("the request does not ask to move a file or folder");
+    if (pnorm(input.path) !== pnorm(r.path) || pnorm(input.toFolder) !== pnorm(r.toFolder) || (input.newName ?? "") !== (r.newName ?? "")) return contradicted("move exactly the item, to the folder, with the name the request gives");
+    return grounded("item, destination and name are taken from the request");
+  },
+  satisfies: (_f, _i, out) => out.ok && out.output?.executed === true && out.output?.verified === true,
+  vocabulary: (o) => { const r = requestedMove(o); return [...CR_VOCAB, "move", "folder", "and", "call", "name", "it", ...(r ? [...words(r.path), ...words(r.toFolder), ...words(r.newName ?? "")] : [])]; },
+};
+const undoCrCheck: ToolRequestCheck<Record<string, never>, any> = {
+  argumentDomains: () => ({}),
+  relevant: isUndoCopyRename,
+  claims: isUndoCopyRename,
+  facets: (o) => (isUndoCopyRename(o) ? [{ id: "undo-copy-rename", tool: "filesystem.undo_copy_rename", description: "undo the last copy or rename", data: null }] : []),
+  ground: (_i, o) => (isUndoCopyRename(o) ? grounded("the request asks to undo the last copy or rename") : ungrounded("the request does not ask for this")),
+  satisfies: (_f, _i, out) => out.ok && out.output?.executed === true && out.output?.verified === true,
+  vocabulary: () => CR_VOCAB,
+};
+
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 const fail = (error: string, output?: unknown) => ({ ok: false as const, error, evidence: "", ...(output !== undefined ? { output } : {}) });
@@ -221,5 +333,34 @@ export function createOrganizeTools(access: FileAccess, bridge?: DesktopBridge):
     check: (_i, o) => (o.output?.executed === true && o.output?.verified === true ? { ok: true } : { ok: false, reason: "not moved back and verified" }),
     requestCheck: undoCheck,
   };
-  return [preview, organize, undo];
+  const daemonStep = (tool: string, daemonTool: string, description: string, check: ToolRequestCheck<any, any>, schema: ToolSpec["inputSchema"],
+    done: (res: any) => string): ToolSpec<any, any> => ({
+    name: tool, description, inputSchema: schema, permissions: ["request:desktop_action"], risk: "medium", requiresApproval: false, timeoutMs: 150_000,
+    async execute(input, ctx) {
+      const { reply, error } = await call(bridge, daemonTool, input, ctx);
+      if (!reply) return fail(error!);
+      if (reply.status !== "ok") return fail(reply.error?.message ?? "The request was not approved. Nothing was changed.");
+      const res = reply.result ?? {};
+      if (!(res.executed === true && res.verified === true)) return fail(`Not confirmed${res.stopped ? ` (${res.stopped})` : ""}.`, res);
+      return { ok: true, output: res, evidence: done(res) };
+    },
+    check: (_i, o) => (o.output?.executed === true && o.output?.verified === true ? { ok: true } : { ok: false, reason: "not performed and verified" }),
+    requestCheck: check,
+  });
+  const copy = daemonStep("filesystem.copy", "files.copy",
+    "Ask the user (in the HUD) to approve copying ONE file they named (full path) into a folder they named (or the same folder), optionally with a new name. Never overwrites; a taken name gets ' (copy)'.",
+    copyCheck, { type: "object", properties: { path: { type: "string", minLength: 4, maxLength: 400 }, toFolder: { type: "string", minLength: 3, maxLength: 400 }, newName: { type: "string", minLength: 1, maxLength: 120 } }, required: ["path"] },
+    (r) => `Copied ${r.source} to ${r.destination}${r.renamedBecauseTaken ? " (the name was taken, so the copy got a free name)" : ""}; verified byte for byte (SHA-256 ${String(r.sha256).slice(0, 12)}…). Done; it can be undone later on request.`);
+  const rename = daemonStep("filesystem.rename", "files.rename",
+    "Ask the user (in the HUD) to approve renaming ONE file they named (full path) to the new name they gave, in the same folder. Never overwrites.",
+    renameCheck, { type: "object", properties: { path: { type: "string", minLength: 4, maxLength: 400 }, newName: { type: "string", minLength: 1, maxLength: 120 } }, required: ["path", "newName"] },
+    (r) => `Renamed ${r.from} to ${r.to} in ${r.folder}; verified. Done; it can be undone later on request.`);
+  const undoCr = daemonStep("filesystem.undo_copy_rename", "files.undo_copy_rename",
+    "Ask the user (in the HUD) to approve undoing the most recent copy (removing that unchanged copy) or rename (renaming it back).",
+    undoCrCheck, { type: "object", properties: {} }, (r) => `Undid the last ${r.kind}: ${r.path}; verified.`);
+  const move = daemonStep("filesystem.move", "files.move",
+    "Ask the user (in the HUD) to approve moving ONE file or ONE folder they named (full path) into another folder they named, optionally with a new name. Never overwrites: a taken name is reported, not replaced.",
+    moveCheck, { type: "object", properties: { path: { type: "string", minLength: 4, maxLength: 400 }, toFolder: { type: "string", minLength: 3, maxLength: 400 }, newName: { type: "string", minLength: 1, maxLength: 120 } }, required: ["path", "toFolder"] },
+    (r) => `Moved ${r.kind === "folder" ? `the folder (${r.files} file(s))` : "the file"} ${r.source} to ${r.destination}; verified (${r.kind === "folder" ? "every file's SHA-256" : "SHA-256"}, and the source is gone). Done; it can be undone on request ("undo the last move").`);
+  return [preview, organize, undo, copy, rename, undoCr, move];
 }

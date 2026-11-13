@@ -16,6 +16,24 @@ import type { ArgumentDomain, GroundingVerdict, ToolRequestCheck, ToolSpec } fro
 import { contentWords } from "../grounding";
 import { TEXT_EXTENSIONS, decodeText, extensionOf, kindOf, redactSecrets, relativeInside, splitLines, walk } from "./fileAccess";
 import { findSection, headingAt, type FileAccess } from "./filesystem";
+import { extractPdfText } from "../knowledge/pdf";
+
+/**
+ * The text of a file to summarise: a PDF's text through the offline PDF extractor (pages in order), anything else decoded as text.
+ * Used by execute AND by the independent check, so a quoted sentence is verified against the same file content.
+ */
+function fileText(ext: string, buf: Buffer): { ok: true; text: string } | { ok: false; reason: string } {
+  if (ext === "pdf") {
+    try {
+      const pdf = extractPdfText(buf);
+      if (pdf.encrypted) return { ok: false, reason: "the PDF is encrypted" };
+      const text = pdf.pages.join(String.fromCharCode(10, 10));
+      return text.trim().length ? { ok: true, text } : { ok: false, reason: "the PDF has no extractable text (it may be a scan)" };
+    } catch (e) { return { ok: false, reason: `the PDF could not be read (${e instanceof Error ? e.message : String(e)})` }; }
+  }
+  const d = decodeText(buf);
+  return d.ok ? { ok: true, text: d.text } : { ok: false, reason: d.reason };
+}
 import { SUMMARIZE, isTextSearch, requestedFiles, requestedFolders, requestedSection } from "./filesystemChecks";
 
 export interface SummarizeInput { path: string; maxSentences?: number; heading?: string }
@@ -137,12 +155,12 @@ export function createSummarizeTool(access: FileAccess): ToolSpec<SummarizeInput
         return { ok: true, output, evidence };
       }
       const ext = extensionOf(r.canonical);
-      if (!TEXT_EXTENSIONS.has(ext)) return fail(`${r.rel} is a ${kindOf(r.canonical, false)} file${ext ? ` (.${ext})` : ""}; only text files can be summarised`);
+      if (!TEXT_EXTENSIONS.has(ext) && ext !== "pdf") return fail(`${r.rel} is a ${kindOf(r.canonical, false)} file${ext ? ` (.${ext})` : ""}; only text files and PDFs can be summarised`);
       if (r.stats.size > access.limits.maxReadFileBytes) return fail(`${r.rel} is too large to summarise (${sizeText(r.stats.size)})`);
       let buf: Buffer;
       try { buf = await fs.readFile(r.canonical, { signal: ctx.signal }); } catch { return fail(ctx.signal.aborted ? "Cancelled" : `Cannot read ${r.rel}`); }
-      const decoded = decodeText(buf);
-      if (!decoded.ok) return fail(`${r.rel} is not a readable text file (${decoded.reason})`);
+      const decoded = fileText(ext, buf);
+      if (!decoded.ok) return fail(`${r.rel} cannot be summarised (${decoded.reason})`);
       const red = redactSecrets(decoded.text);
       const lines = splitLines(red.text);
       const base = { path: r.rel, canonicalPath: r.canonical, totalLines: lines.length, redactions: red.count };
@@ -195,13 +213,17 @@ export function createSummarizeTool(access: FileAccess): ToolSpec<SummarizeInput
       }
       let lines: string[];
       try {
-        const d = decodeText(readFileSync(o.canonicalPath));
+        const d = fileText(extensionOf(o.canonicalPath), readFileSync(o.canonicalPath));
         if (!d.ok) return { ok: false, reason: "the file can no longer be decoded" };
         lines = splitLines(redactSecrets(d.text).text);
       } catch { return { ok: false, reason: `${o.path} can no longer be read` }; }
       for (const s of o.keySentences ?? []) {
-        // The sentence starts in its paragraph at or after its line; the paragraph spans at most a few lines.
-        const window = norm(lines.slice(Math.max(s.line - 1, 0), s.line + 15).map((l) => l.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")).join(" "));
+        // The sentence is in the paragraph that starts at its line (sentencesOf labels each sentence with its paragraph's first line):
+        // search that whole paragraph, up to the next blank line. A PDF's text often has no blank line for a whole page, so a fixed
+        // window of a few lines missed real quotes (found on a real paper, 2026-11-14). Bounded, and still that paragraph only.
+        let end = Math.max(s.line - 1, 0);
+        while (end < lines.length && end - s.line < 5000 && (end === s.line - 1 || lines[end]!.trim() !== "")) end++;
+        const window = norm(lines.slice(Math.max(s.line - 1, 0), end).map((l) => l.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")).join(" "));
         if (!window.includes(s.text)) return { ok: false, reason: `line ${s.line} does not contain the quoted sentence` };
       }
       return { ok: true };

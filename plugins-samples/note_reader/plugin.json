@@ -1,0 +1,14 @@
+{
+  "id": "note_reader",
+  "name": "Note reader",
+  "version": "1.0.0",
+  "description": "Shows the first lines of a text file and looks up your saved notes. Needs the files.read and memory.read permissions, which you grant one by one.",
+  "entry": "index.js",
+  "permissions": ["compute", "files.read", "memory.read"],
+  "tools": [
+    { "name": "file_head", "description": "Show the first lines of a text file the user names (needs the files.read permission).", "keywords": ["first lines of", "head of the file"],
+      "inputSchema": { "type": "object", "properties": { "path": { "type": "string", "maxLength": 300 }, "lines": { "type": "integer" } }, "required": ["path"] } },
+    { "name": "my_notes", "description": "Look up the notes the user saved with 'remember' (needs the memory.read permission).", "keywords": ["my saved notes", "my remembered notes"],
+      "inputSchema": { "type": "object", "properties": { "query": { "type": "string", "maxLength": 200 } }, "required": ["query"] } }
+  ]
+}

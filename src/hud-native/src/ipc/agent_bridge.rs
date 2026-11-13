@@ -14,6 +14,9 @@ pub const SUBMIT_REQUEST: &str = "AgentTaskSubmitRequest";
 pub const CANCEL_REQUEST: &str = "AgentTaskCancelRequest";
 pub const SUBMIT_RESPONSE: &str = "AgentTaskSubmitResponse";
 pub const CANCEL_RESPONSE: &str = "AgentTaskCancelResponse";
+/// Recovery after a HUD restart: the FINISHED result of a task the frontend recorded the id of.
+pub const STATUS_REQUEST: &str = "AgentTaskStatusRequest";
+pub const STATUS_RESPONSE: &str = "AgentTaskStatusResponse";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -25,6 +28,14 @@ pub struct AgentSubmitPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentCancelPayload {
+    pub request_id: String,
+    pub task_id: String,
+}
+
+/// Only a task id: the daemon answers with a FINISHED result (or "not found"); nothing can be started or changed this way.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentStatusPayload {
     pub request_id: String,
     pub task_id: String,
 }
@@ -43,7 +54,7 @@ pub struct AgentFrontendMessage {
 pub fn is_forwarded_type(msg_type: &str) -> bool {
     matches!(
         msg_type,
-        SUBMIT_RESPONSE | CANCEL_RESPONSE | "AgentTaskProgressNotification" | "AgentTaskResultNotification"
+        SUBMIT_RESPONSE | CANCEL_RESPONSE | STATUS_RESPONSE | "AgentTaskProgressNotification" | "AgentTaskResultNotification"
     )
 }
 
@@ -58,6 +69,11 @@ fn submit_rejection(request_id: &str, code: &str, message: &str) -> AgentFronten
         reply_to_id: Some(request_id.to_string()),
         payload: serde_json::json!({ "accepted": false, "taskId": null, "rejectionCode": code, "errorMessage": message }),
     }
+}
+
+/// The acceptance voice gate (crate::voice_gate) refused this submission before the daemon; the page shows it as a rejection.
+pub fn gate_rejection(request_id: &str, why: &str) -> AgentFrontendMessage {
+    submit_rejection(request_id, "voice_gate_blocked", &format!("Acceptance voice gate: not submitted ({why})."))
 }
 
 fn cancel_rejection(request_id: &str, task_id: &str, code: &str) -> AgentFrontendMessage {
@@ -112,6 +128,22 @@ pub fn build_cancel(p: &AgentCancelPayload, connected: bool) -> Result<IpcEnvelo
         .map_err(|_| cancel_rejection(&p.request_id, &p.task_id, "invalid_request"))
 }
 
+/// A status (recovery) request: read-only; valid ids only; no daemon, no request.
+pub fn build_status(p: &AgentStatusPayload, connected: bool) -> Result<IpcEnvelope, AgentFrontendMessage> {
+    let not_found = |code: &str| AgentFrontendMessage {
+        msg_type: STATUS_RESPONSE.to_string(),
+        reply_to_id: Some(p.request_id.clone()),
+        payload: serde_json::json!({ "found": false, "taskId": p.task_id, "rejectionCode": code }),
+    };
+    if !valid_id(&p.request_id) || !valid_id(&p.task_id) {
+        return Err(not_found("invalid_request"));
+    }
+    if !connected {
+        return Err(not_found("daemon_unavailable"));
+    }
+    make_envelope(STATUS_REQUEST, &serde_json::json!({ "taskId": p.task_id }), &p.request_id).map_err(|_| not_found("invalid_request"))
+}
+
 /// The reply when the outgoing queue would not take a request that already passed the checks above.
 pub fn queue_rejection(envelope: &IpcEnvelope) -> Option<AgentFrontendMessage> {
     stale_rejection(envelope)
@@ -152,6 +184,19 @@ mod tests {
 
     fn code(m: &AgentFrontendMessage) -> &str {
         m.payload["rejectionCode"].as_str().unwrap()
+    }
+
+    #[test]
+    fn status_request_carries_only_a_valid_task_id_and_is_refused_offline() {
+        let p = AgentStatusPayload { request_id: "s1".into(), task_id: "t0123abc".into() };
+        let env = build_status(&p, true).unwrap();
+        assert_eq!(env.msg_type, STATUS_REQUEST);
+        assert_eq!(env.payload, serde_json::json!({ "taskId": "t0123abc" }));
+        assert!(build_status(&p, false).is_err());
+        assert!(build_status(&AgentStatusPayload { request_id: "s1".into(), task_id: "../x".into() }, true).is_err());
+        let extra = r#"{"type":"AgentTaskStatus","payload":{"request_id":"r1","task_id":"t1","objective":"x"}}"#;
+        assert!(serde_json::from_str::<WebBridgeMessage>(extra).is_err());
+        assert!(is_forwarded_type(STATUS_RESPONSE));
     }
 
     #[test]

@@ -213,6 +213,13 @@ console.log("\n[P1/P2] Input approval cards");
   check("error" in parseApprovalRequest(inputReq("Plugin.Install", { ...pCommon, toolCount: "1" })) && "error" in parseApprovalRequest(inputReq("Plugin.Install", { ...pCommon, permissions: "network" })),
     "PL2 tool count mismatch or any permission other than compute -> no decision offered");
 
+  const gCommon = { plugin: "Note reader (note_reader) 1.0.0", permission: "files.read", allows: "read text files inside the folders D-ASK is allowed to read (never secret files, never anywhere else)",
+    currently: "granted now: compute", enforcement: "D-ASK's agent host checks this permission every time the plugin tries to use it; the plugin's own code cannot bypass the check.", manifest: "manifest SHA-256 ab", reversible: "Yes" };
+  const pg = parseApprovalRequest(inputReq("Plugin.GrantPermission", gCommon));
+  check("view" in pg && pg.view.actionLabel === "Give a plugin one extra permission" && /note_reader.*files\.read permission.*never secret files.*take it away again/.test(pg.view.inputSummary ?? ""), "PL3 permission card: plugin, the ONE permission and what it allows", pg);
+  check("error" in parseApprovalRequest(inputReq("Plugin.GrantPermission", { ...gCommon, permission: "network" })) && "error" in parseApprovalRequest(inputReq("Plugin.GrantPermission", { ...gCommon, permission: "compute" }))
+    && "error" in parseApprovalRequest(inputReq("Plugin.GrantPermission", { ...gCommon, allows: "" })), "PL4 an unknown permission (network, compute) or a missing explanation -> no decision offered");
+
   // Notes: the card names the exact file and shows the exact text; title, file, folder and length must agree.
   const noteText = 'She said "yes" — Friday.';
   const nCommon = { title: "Meeting", file: "C:\\Users\\me\\Documents\\D-ASK Notes\\Meeting.txt", folder: "C:\\Users\\me\\Documents\\D-ASK Notes",
@@ -225,6 +232,17 @@ console.log("\n[P1/P2] Input approval cards");
     "N2 text length mismatch or missing title -> no decision offered");
   check("error" in parseApprovalRequest(inputReq("Files.CreateNote", { ...nCommon, file: "C:\\Windows\\Meeting.txt" })) && "error" in parseApprovalRequest(inputReq("Files.CreateNote", { ...nCommon, file: "C:\\Users\\me\\Documents\\D-ASK Notes\\Other.txt" })),
     "N3 a file outside the folder, or not named after the title -> no decision offered");
+
+  // App.Launch: opening one application (desktop.launch_app). The card shows the exact application and file; any disagreement offers no decision.
+  const aCommon = { operation: "Open Notepad", application: "notepad.exe", executable: "C:\\Windows\\System32\\notepad.exe", arguments: "none",
+    result: "A new Notepad window opens…", reversible: "Yes: close the window.", execution: "Performed once, right after your approval…" };
+  const al = parseApprovalRequest(inputReq("App.Launch", aCommon));
+  check("view" in al && al.view.actionLabel === "Open an application" && /Open notepad\.exe \(C:\\Windows\\System32\\notepad\.exe\) once, with no arguments/.test(al.view.inputSummary ?? ""),
+    "AL1 app-launch card: the exact application and executable are shown", al);
+  check("error" in parseApprovalRequest(inputReq("App.Launch", { ...aCommon, arguments: "C:\\secret.txt" })) && "error" in parseApprovalRequest(inputReq("App.Launch", { ...aCommon, executable: "C:\\Windows\\System32\\cmd.exe" })),
+    "AL2 arguments, or an executable that is not the named application -> no decision offered");
+  check("error" in parseApprovalRequest(inputReq("App.Launch", { ...aCommon, operation: "Run something" })) && "error" in parseApprovalRequest(inputReq("App.Launch", { ...aCommon, application: "" })),
+    "AL3 an operation that is not 'Open …', or a missing application -> no decision offered");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

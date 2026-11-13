@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using DAsk.Daemon.Automation.Observation;
 using DAsk.Daemon.Research;
 using DAsk.Protocol.IPC.Messages.ComputerUse;
 using Microsoft.Extensions.Logging;
@@ -68,10 +69,37 @@ public class ActionPolicyEngine
     /// <summary>(target session, notification): an approval changed state, or a decision was refused.</summary>
     public event EventHandler<(string SessionId, ApprovalStateNotification Notification)>? ApprovalStateChanged;
 
-    public ActionPolicyEngine(ILogger<ActionPolicyEngine> logger, IEvidenceRecorder? evidenceRecorder = null)
+    // Phase 4B-2A: the OS view of windows, used to re-verify a window-bound approval's target at the moment it is consumed.
+    // Without it, a window-bound approval can never be consumed (fail closed).
+    private readonly IWindowSource? _windows;
+
+    public ActionPolicyEngine(ILogger<ActionPolicyEngine> logger, IEvidenceRecorder? evidenceRecorder = null, IWindowSource? windowSource = null)
     {
         _logger = logger;
         _evidenceRecorder = evidenceRecorder;
+        _windows = windowSource;
+    }
+
+    /// <summary>
+    /// Phase 4B-2A: re-reads a window-bound approval's target from the OS and requires it to be the very window that was
+    /// approved: it still exists, and its handle still belongs to the approved process instance (pid, creation time, image).
+    /// Returns null when it is, otherwise why not. Never trusts the caller's description of the target.
+    /// </summary>
+    private string? LiveTargetProblem(GrantedApprovalRecord granted)
+    {
+        if (_windows == null) return "the target window cannot be re-verified (no window source); a window-bound approval is never consumed unverified";
+        WindowIdentity? live;
+        try { live = _windows.Read(granted.TargetHwnd); }
+        catch (Exception ex) { return $"the target window could not be read ({ex.GetType().Name})"; }
+        if (live == null) return "the approved window no longer exists";
+        if (live.Hwnd != granted.TargetHwnd) return "the OS returned a different window handle";
+        if (live.ProcessId != granted.TargetProcessId) return "the approved window handle now belongs to a different process (handle reused)";
+        if (granted.TargetProcessCreationTime is not { } approvedStart || live.ProcessCreationFileTime == 0 ||
+            DateTime.FromFileTimeUtc(live.ProcessCreationFileTime) != approvedStart.UtcDateTime)
+            return "the approved process instance was replaced (process id reused)";
+        if (!string.Equals(live.ImageName, granted.TargetProcessName, StringComparison.OrdinalIgnoreCase))
+            return "the approved window now belongs to a different program";
+        return null;
     }
 
     /// <summary>
@@ -288,9 +316,39 @@ public class ActionPolicyEngine
 
         // File organisation: moving named files of one folder into its subfolders (and undoing that). Never auto-allowed.
         if (normalizedType.Equals(DesktopActionTypes.FilesOrganize, StringComparison.Ordinal) ||
-            normalizedType.Equals(DesktopActionTypes.FilesUndoOrganize, StringComparison.Ordinal))
+            normalizedType.Equals(DesktopActionTypes.FilesUndoOrganize, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.FilesCopy, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.FilesRename, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.FilesUndoCopyRename, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.FilesMove, StringComparison.Ordinal))
         {
             return (false, ActionRiskLevel.Elevated, "Moving files requires explicit user approval of the exact list of moves.");
+        }
+
+        // Opening an application: only from the daemon's fixed list, no arguments. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.AppLaunch, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Opening an application requires explicit user approval of the exact application.");
+        }
+
+        // Creating a NEW Word document / Excel workbook with exactly the approved content (OfficeDocumentService). Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.OfficeCreateDocument, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.OfficeCreateWorkbook, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Creating a document requires explicit user approval of the exact file and content.");
+        }
+
+        // Building or testing ONE project with the command the daemon chose (it runs the project's own code). Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.DevRunTask, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Building or testing a project runs its own code and requires explicit user approval.");
+        }
+
+        // Opening one page of Windows Settings from the daemon's fixed table: it shows settings, it changes none. Low risk:
+        // allowed without an approval card, but still gated by Emergency Stop and HUD liveness, and audited before it happens.
+        if (normalizedType.Equals(DesktopActionTypes.OpenSettingsPage, StringComparison.Ordinal))
+        {
+            return (true, ActionRiskLevel.LowRisk, "Opening a Windows Settings page changes nothing by itself.");
         }
 
         // Workflows: scheduling future runs of a saved workflow. Never auto-allowed.
@@ -303,6 +361,12 @@ public class ActionPolicyEngine
         if (normalizedType.Equals(DesktopActionTypes.PluginInstall, StringComparison.Ordinal))
         {
             return (false, ActionRiskLevel.Elevated, "Installing a plugin requires explicit user approval of its tools and files.");
+        }
+
+        // Plugins: granting ONE additional permission to an installed plugin. Never auto-allowed.
+        if (normalizedType.Equals(DesktopActionTypes.PluginGrant, StringComparison.Ordinal))
+        {
+            return (false, ActionRiskLevel.Elevated, "Granting a plugin permission requires explicit user approval of the plugin and the permission.");
         }
 
         // Notes: creating ONE new text file (never overwriting) in the configured notes folder. Never auto-allowed.
@@ -361,6 +425,23 @@ public class ActionPolicyEngine
         {
             _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: {Reason}.", request.ApprovalId, unrepresentable);
             return Refused(request, "IntegrityMismatch", $"The operation cannot be represented clearly ({unrepresentable}); approval refused.");
+        }
+
+        // Phase 4B-2A: an approval id is issued once. An id that is already pending, granted or consumed is never registered
+        // again, so no new decision can replace or revive an existing record.
+        // (Consumption separately refuses ids shorter than 8 characters.)
+        if (string.IsNullOrWhiteSpace(request.ApprovalId) ||
+            _grantedApprovals.ContainsKey(request.ApprovalId) || _consumedApprovals.ContainsKey(request.ApprovalId))
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: the id is missing or was already issued.", request.ApprovalId);
+            return Refused(request, "IntegrityMismatch", "The approval id is missing or was already issued; approval refused.");
+        }
+        // Negative handles or process ids are never valid. (A window-bound approval with an incomplete process identity can be
+        // shown, but it can never be consumed: the live check at consumption requires the full identity and fails closed.)
+        if (request.TargetHwnd < 0 || request.TargetProcessId < 0)
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Refusing to register approval {ApprovalId}: negative target handle or process id.", request.ApprovalId);
+            return Refused(request, "IntegrityMismatch", "The target window handle or process id is invalid; approval refused.");
         }
 
         if (!TryComputeCanonicalHash(request.ActionParameters, out string paramsHash))
@@ -703,7 +784,13 @@ public class ActionPolicyEngine
                 ExpiresAtUtc = cached.Request.ExpiresAtUtc
             };
 
-            _grantedApprovals[granted.ApprovalId] = granted;
+            // Phase 4B-2A: a granted record is created once and never replaced.
+            if (_consumedApprovals.ContainsKey(granted.ApprovalId) || !_grantedApprovals.TryAdd(granted.ApprovalId, granted))
+            {
+                _logger.LogError("[PolicyEngine SECURITY] Approval {ApprovalId} already has a granted or consumed record; this decision authorizes nothing.", granted.ApprovalId);
+                var duplicate = response with { Approved = false, DecisionSource = "IntegrityMismatch", RejectionReason = "This approval id already has a record; it cannot be granted again." };
+                return Finalize(cached, duplicate, ApprovalStates.Rejected, duplicate.RejectionReason);
+            }
 
             _logger.LogInformation(
                 "[PolicyEngine] AUTHORIZED: Granted approval record stored for {ApprovalId} (Action={ActionId}, Gen={Gen})",
@@ -852,6 +939,9 @@ public class ActionPolicyEngine
         if (DateTimeOffset.UtcNow > granted.ExpiresAtUtc)
         {
             _logger.LogError("[PolicyEngine SECURITY] Expired token: Token {ApprovalId} expired at {Expiry}!", approvalId, granted.ExpiresAtUtc);
+            // Phase 4B-2A: an expired grant is retired for good (it can never become valid again or be retried).
+            if (_grantedApprovals.TryRemove(new KeyValuePair<string, GrantedApprovalRecord>(approvalId, granted)))
+                _consumedApprovals.TryAdd(approvalId, DateTimeOffset.UtcNow);
             return (false, "Security validation failed: Approval token has expired.");
         }
 
@@ -881,37 +971,41 @@ public class ActionPolicyEngine
             return (false, $"Security validation failed: Parameter SHA-256 hash mismatch! Granted='{granted.ParametersSha256}', Presented='{computedHash}'.");
         }
 
-        // 11. Verify target HWND
-        if (granted.TargetHwnd != 0 && targetHwnd != 0 && granted.TargetHwnd != targetHwnd)
+        // 11-14. Phase 4B-2A: the presented target must be EXACTLY the approved one. There is no wildcard: a zero HWND/PID,
+        // a missing creation time or an empty process name no longer skips a check (it used to, on either side).
+        if (granted.TargetHwnd != targetHwnd)
         {
             _logger.LogError("[PolicyEngine SECURITY] Target HWND mismatch on token {ApprovalId}: Granted={Exp}, Attempted={Got}!",
                 approvalId, granted.TargetHwnd, targetHwnd);
             return (false, $"Security validation failed: Target HWND mismatch. Expected {granted.TargetHwnd}, Got {targetHwnd}.");
         }
-
-        // 12. Verify target PID
-        if (granted.TargetProcessId != 0 && targetProcessId != 0 && granted.TargetProcessId != targetProcessId)
+        if (granted.TargetProcessId != targetProcessId)
         {
             _logger.LogError("[PolicyEngine SECURITY] Target PID mismatch on token {ApprovalId}: Granted={Exp}, Attempted={Got}!",
                 approvalId, granted.TargetProcessId, targetProcessId);
             return (false, $"Security validation failed: Target Process ID mismatch. Expected {granted.TargetProcessId}, Got {targetProcessId}.");
         }
-
-        // 13. Verify process instance identity (creation time)
-        if (granted.TargetProcessCreationTime.HasValue && targetProcessCreationTime.HasValue &&
-            granted.TargetProcessCreationTime.Value != targetProcessCreationTime.Value)
+        if (granted.TargetProcessCreationTime != targetProcessCreationTime)
         {
             _logger.LogError("[PolicyEngine SECURITY] Process instance mismatch on token {ApprovalId}! Reused HWND with different process instance.", approvalId);
             return (false, "Security validation failed: Target process instance creation time mismatch (reused HWND with different process instance).");
         }
-
-        // 14. Verify target process name
-        if (!string.IsNullOrEmpty(granted.TargetProcessName) && !string.IsNullOrEmpty(targetProcessName) &&
-            !string.Equals(granted.TargetProcessName, targetProcessName, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(granted.TargetProcessName ?? string.Empty, targetProcessName ?? string.Empty, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogError("[PolicyEngine SECURITY] Process name mismatch on token {ApprovalId}: Granted='{Exp}', Attempted='{Got}'!",
                 approvalId, granted.TargetProcessName, targetProcessName);
             return (false, $"Security validation failed: Target process name mismatch. Expected '{granted.TargetProcessName}', Got '{targetProcessName}'.");
+        }
+
+        // 14a. Phase 4B-2A: a window-bound approval is re-verified against the OS now, never against the caller's description.
+        if (granted.TargetHwnd != 0 && LiveTargetProblem(granted) is { } liveProblem)
+        {
+            _logger.LogError("[PolicyEngine SECURITY] Live target verification failed for token {ApprovalId}: {Problem}", approvalId, liveProblem);
+            // The approved window is gone or now belongs to another process instance: this approval can never become valid
+            // again, so it is retired for good (burnt), exactly like an expired one.
+            if (_grantedApprovals.TryRemove(new KeyValuePair<string, GrantedApprovalRecord>(approvalId, granted)))
+                _consumedApprovals.TryAdd(approvalId, DateTimeOffset.UtcNow);
+            return (false, $"Security validation failed: {liveProblem}.");
         }
 
         // 15. Atomically consume the approval exactly once
@@ -1073,7 +1167,25 @@ public static class DesktopActionTypes
     public const string BrowserFill = "Browser.Fill";
     public const string FilesOrganize = "Files.Organize";
     public const string FilesUndoOrganize = "Files.UndoOrganize";
+    /// <summary>Copying ONE file inside the allowed folders (never overwriting). Never auto-allowed.</summary>
+    public const string FilesCopy = "Files.Copy";
+    /// <summary>Renaming ONE file in its own folder (never overwriting). Never auto-allowed.</summary>
+    public const string FilesRename = "Files.Rename";
+    /// <summary>Undoing the most recent copy (removing that unchanged copy) or rename (renaming it back). Never auto-allowed.</summary>
+    public const string FilesUndoCopyRename = "Files.UndoCopyRename";
+    /// <summary>Moving ONE file or ONE folder to another allowed folder (never overwriting; undoable). Never auto-allowed.</summary>
+    public const string FilesMove = "Files.Move";
+    /// <summary>Building or testing ONE project in an allowed folder with the daemon's fixed command (DevTaskService). Never auto-allowed.</summary>
+    public const string DevRunTask = "Dev.RunTask";
     public const string WorkflowSchedule = "Workflow.Schedule";
     public const string PluginInstall = "Plugin.Install";
+    public const string PluginGrant = "Plugin.GrantPermission";
     public const string FilesCreateNote = "Files.CreateNote";
+    /// <summary>Opening one application from the daemon's fixed list of known applications (AppLaunchRequestService). Never auto-allowed.</summary>
+    public const string AppLaunch = "App.Launch";
+    /// <summary>Opening one Windows Settings page from the daemon's fixed table (SettingsPages). Low risk: shows settings, changes none.</summary>
+    public const string OpenSettingsPage = "App.OpenSettingsPage";
+    /// <summary>Creating ONE new Word document / Excel workbook in the user's Documents folder with exactly the approved content. Never auto-allowed.</summary>
+    public const string OfficeCreateDocument = "Office.CreateDocument";
+    public const string OfficeCreateWorkbook = "Office.CreateWorkbook";
 }

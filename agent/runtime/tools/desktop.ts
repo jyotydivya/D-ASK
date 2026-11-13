@@ -97,6 +97,11 @@ const ACTUATION_IMPERATIVE =
   /^\s*(please\s+|can you\s+|could you\s+)?(click|double[- ]click|right[- ]click|tap|press|type|enter|fill( in)?|close|minimi[sz]e|maximi[sz]e|restore|focus|activate|switch to|bring|launch|start|run|kill|terminate|quit|drag|scroll|select|resize|move|toggle|tick|untick)\b/i;
 const ACTUATION_ANYWHERE = /\b(click|double[- ]click|right[- ]click|scroll (up|down)|type (into|in)|drag)\b/i;
 export function actuationRefusal(o: string, inputOffered: (tool: string) => boolean = () => true): string | null {
+  // "Open Notepad [and type …]" is an approval request (desktop.launch_app, then the guarded typing), not refused here, but ONLY
+  // when the daemon offers the tools it needs. Otherwise it falls through to the refusal below, exactly as before.
+  const session = appSession(o);
+  if (session && inputOffered("desktop.launch_app") && (session.text === null || inputOffered("desktop.type_text"))) return null;
+  if (session) return "I can't open applications or type into them in this installation (the daemon does not offer it), so I haven't done anything.";
   // P1/P2: one element-bound click, text entry or allowed key chord is an approval request, not refused here, but ONLY
   // when the daemon offers that input tool. With input switched off it is refused exactly as before (no model call).
   const steps = requestedInputActions(o);
@@ -542,6 +547,54 @@ export function canonicalChord(raw: string): string | null {
 /** The daemon's per-task input budget (AgentHostDesktopCalls.MaxInputRequestsPerTask): each step is approved separately. */
 export const MAX_INPUT_STEPS = 6;
 
+// ── "Open Notepad [and type …]": one application session (desktop.launch_app, then desktop.type_text) ──
+
+/** What the daemon exposes for Notepad on Windows 11 (observed): a focused Document control named "Text editor" that takes the Value pattern. */
+const APP_EDITOR = { controlType: "Document", name: "Text editor" } as const;
+/**
+ * The applications D-ASK can open: EXACTLY the daemon's fixed list (KnownApps in AppLaunchRequestService.cs), with the window process the
+ * daemon confirms. Only Notepad can also be typed into (its editor control was observed end to end); the others are open-only.
+ */
+export const LAUNCHABLE = {
+  notepad: { name: "Notepad", process: "notepad.exe", words: "notepad", typing: true },
+  calculator: { name: "Calculator", process: "ApplicationFrameHost.exe", words: "calculator|calc", typing: false },
+  charmap: { name: "Character Map", process: "charmap.exe", words: String.raw`character\s+map|charmap`, typing: false },
+} as const;
+export type AppKey = keyof typeof LAUNCHABLE;
+export interface AppSession { app: AppKey; process: string; text: string | null }
+const OPEN_APPS = (Object.keys(LAUNCHABLE) as AppKey[]).map((k) => [k, new RegExp(
+  String.raw`^\s*(?:please\s+|can you\s+|could you\s+)?(?:open|launch|start|run)\s+(?:up\s+)?(?:the\s+|a\s+)?(?:${LAUNCHABLE[k].words})(?:\s+(?:app|application|window))?\b([\s\S]*)$`, "i")] as const);
+const THEN_TYPE = /^\s*(?:[,;]\s*)?(?:and\s+)?(?:then\s+)?(?:type|write|enter)\s+([\s\S]+)$/i;
+const IN_IT = /\s+(?:in|into)\s+(?:it|notepad|the\s+(?:editor|window|document|text\s+area))\s*$/i;
+/** Another action after the text: the text would run on into it, so the whole request is refused rather than guessed. */
+const TEXT_RUNS_ON = /\b(?:then|afterwards|after that)\b|\band\s+(?:save|close|print|send|delete|open|press|click|type|write|enter|launch|minimi[sz]e|maximi[sz]e)\b/i;
+
+/**
+ * The request as an application session, or null. Quoted text is used exactly; unquoted text is everything after "type" up to
+ * the end of the sentence, and the request is refused (null) when that text could be running on into another instruction.
+ * The text is shown in full on the approval card before anything is typed.
+ */
+export function appSession(o: string): AppSession | null {
+  let m: RegExpExecArray | null = null; let key: AppKey | null = null;
+  for (const [k, re] of OPEN_APPS) { m = re.exec(o); if (m) { key = k; break; } }
+  if (!m || !key) return null;
+  const rest = m[1]!.trim();
+  if (rest === "" || /^[.!?]+$/.test(rest)) return { app: key, process: LAUNCHABLE[key].process, text: null };
+  if (!LAUNCHABLE[key].typing) return null;   // "open Calculator and type …": no typing target is defined for it
+  const t = THEN_TYPE.exec(rest);
+  if (!t) return null;
+  const body = t[1]!.trim();
+  let text: string | null = null;
+  const q = /^["“'‘]([\s\S]{1,200}?)["”'’](?:\s+(?:in|into)\s+(?:it|notepad|the\s+(?:editor|window|document|text\s+area)))?\s*[.!?]?\s*$/.exec(body);
+  if (q) text = q[1]!;
+  else if (!/^["“'‘]/.test(body)) {
+    const plain = body.replace(/[.!?]+\s*$/, "").replace(IN_IT, "").trim();
+    if (plain.length >= 1 && plain.length <= 200 && !/["“”]/.test(plain) && !TEXT_RUNS_ON.test(plain)) text = plain;
+  }
+  if (text === null || text.length === 0 || [...text].some((c) => c.charCodeAt(0) < 32)) return null;
+  return { app: "notepad", process: "notepad.exe", text };
+}
+
 const INPUT_VERB = "(?:click|type|enter|write|press)";
 /** Step separators, only where the next word starts another input step: ", then", " and then", " then", " and", ";". */
 const STEP_SPLIT = new RegExp(`(?:\\s*,\\s*(?:and\\s+)?(?:then\\s+)?|\\s*;\\s*(?:then\\s+)?|\\s+(?:and\\s+)?then\\s+|\\s+and\\s+)(?=${INPUT_VERB}\\b)`, "gi");
@@ -584,6 +637,9 @@ function parseInputStep(seg: string, previous: InputActionRequest | null): Input
  * previous one was performed AND verified (createInputTool), never out of order and never retried.
  */
 export function requestedInputActions(o: string): InputActionRequest[] {
+  // "Open Notepad and type X": the typing step is bound to Notepad's own editor (the window the launch opened).
+  const session = appSession(o);
+  if (session) return session.text === null ? [] : [{ tool: "desktop.type_text", text: session.text, keys: null, target: APP_EDITOR.name, controlType: APP_EDITOR.controlType }];
   if (INPUT_FORBIDDEN.test(o)) return [];
   if ((o.match(WINDOW_CLAUSE) ?? []).length > 1) return []; // one window per request
   const masked = mask(o);
@@ -641,6 +697,8 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       return d;
     },
     relevant: (o) => mine(o),
+    // "Open Notepad and type X": the typing step belongs to this tool together with the launch (see createLaunchAppTool.claims).
+    claims: (o) => tool === "desktop.type_text" && appSession(o)?.text != null && mine(o) && offered(bridge, "desktop.launch_app"),
     clarify: (o) => (mine(o) && !requestedProcess(o) && !requestedTitle(o)
       ? "Which window do you mean? Quote its title (\"… in the window titled '…'\") or name the application. I won't pick a window for you."
       : null),
@@ -650,14 +708,17 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       const t = requestedTitle(objective);
       if (!p && !t) return [];
       const steps = stepsOf(objective);
+      // In an application session the launch is step 0 of the same ordered sequence: the typing counts only AFTER the launch.
+      const lead = appSession(objective) ? 1 : 0;
+      const total = steps.length + lead;
       const out: RequestFacet[] = [];
       steps.forEach((a, i) => {
         if (a.tool !== tool) return;
         const data = { target: a.target, controlType: a.controlType, text: a.text, keys: a.keys };
-        out.push(steps.length === 1
+        out.push(total === 1
           ? { id: `desktop:input:${tool}:${p ?? "*"}:${t ?? "*"}`, tool, description: `${verbOf(a)} the ${a.target} control`, data }
-          : { id: `desktop:input:${i + 1}of${steps.length}:${tool}:${p ?? "*"}:${t ?? "*"}`, tool, description: `input ${i + 1} of ${steps.length}: ${verbOf(a)} the ${a.target} control`,
-              data, sequence: { key: "input-steps", index: i, of: steps.length } });
+          : { id: `desktop:input:${i + lead + 1}of${total}:${tool}:${p ?? "*"}:${t ?? "*"}`, tool, description: `input ${i + lead + 1} of ${total}: ${verbOf(a)} the ${a.target} control`,
+              data, sequence: { key: "input-steps", index: i + lead, of: total } });
       });
       return out;
     },
@@ -683,7 +744,7 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
     identicalStepsAllowed: (input, objective) => stepsOf(objective).filter((a) => isStep(tool, input as InputArgs, a)).length,
     stepFor(facet, objective) {
       if (facet.tool !== tool || !facet.sequence || !mine(objective)) return null;
-      const a = stepsOf(objective)[facet.sequence.index];
+      const a = stepsOf(objective)[facet.sequence.index - (appSession(objective) ? 1 : 0)];
       const p = requestedProcess(objective);
       const t = requestedTitle(objective);
       if (!a || a.tool !== tool || (!p && !t)) return null;
@@ -742,6 +803,9 @@ function createInputTool(bridge: DesktopBridge, tool: InputActionRequest["tool"]
     requiresApproval: false,
     timeoutMs: 60_000,
     async execute(input, ctx) {
+      // An application session starts by opening the application: nothing is typed into a window this task did not open and confirm.
+      if (ctx.objective !== undefined && appSession(ctx.objective) && !launchedTasks.has(ctx.taskId))
+        return { ok: false, error: "This request begins by opening Notepad; nothing is typed until it has been opened and confirmed in this task. Nothing was sent.", evidence: "" };
       const prog = inputProgress.get(ctx.taskId) ?? { next: 0, halted: false, asked: 0 };
       inputProgress.set(ctx.taskId, prog);
       const steps = ctx.objective !== undefined ? requestedInputActions(ctx.objective) : [];
@@ -793,6 +857,184 @@ function createInputTool(bridge: DesktopBridge, tool: InputActionRequest["tool"]
   };
 }
 
+// ── "Open <any installed application>": the NAME the user said, resolved by the daemon (never a path, file or command) ──
+
+const OPEN_ANY = /^\s*(?:please\s+|can you\s+|could you\s+)?(?:open|launch)\s+(?:up\s+)?(?:the\s+|a\s+|an\s+)?([\p{L}\p{N}][\p{L}\p{N} +#&'.-]{0,59}?)(?:\s+(?:app|application|program))?\s*[.!?]?\s*$/iu;
+/** Things that are not application names (they belong to other tools), and compound requests (refused rather than guessed). */
+const NOT_AN_APP = [
+  /^(?:my|your|this|that|it|folder|folders|directory|page|web\s*page|website|site|url|link|note|notes|workflow|workflows|document|documents|tab|new\s+tab)\b/i,
+  /^files?\b(?!\s+explorer)/i,
+  /^windows?$/i,
+  /\b(?:and|then|settings|workflow|folder)\b/i,
+  /\.[a-z0-9]{1,5}$/i,
+  /[\\/:"]/,
+];
+/** The application name in "open <name>", or null. The daemon resolves it to exactly one installed application (or asks which). */
+export function openAppRequest(o: string): string | null {
+  const m = OPEN_ANY.exec(o);
+  if (!m) return null;
+  const name = m[1]!.trim();
+  if (!name || NOT_AN_APP.some((re) => re.test(name))) return null;
+  return name;
+}
+
+// ── "Open Chrome and search for X" / "open the folder D:\x in VS Code": an application WITH what to open in it ──
+
+export interface OpenTargetRequest { app: string; search?: string; folder?: string }
+const SEARCH_IN = /^\s*(?:please\s+)?(?:open|launch)\s+(?:the\s+)?([\p{L}][\p{L} ]{1,29}?)\s+and\s+search\s+(?:the\s+web\s+)?(?:for\s+)?(?:["“]([^"”]{1,200})["”]|([^"”]{1,200}?))\s*[.!?]?\s*$/iu;
+const FOLDER_IN = /^\s*(?:please\s+)?open\s+(?:the\s+|my\s+)?(?:folder|project|directory)\s+["“]?([A-Za-z]:\\[^"”\r\n]{0,200}?)["”]?\s+in\s+(?:the\s+)?([\p{L}][\p{L} ]{1,29}?)\s*[.!]?\s*$/iu;
+const APP_ON_FOLDER = /^\s*(?:please\s+)?open\s+([\p{L}][\p{L} ]{1,29}?)\s+(?:with|on|in|at)\s+(?:the\s+|my\s+)?(?:folder|project|directory)\s+["“]?([A-Za-z]:\\[^"”\r\n]{0,200}?)["”]?\s*[.!]?\s*$/iu;
+/** An application plus a web search or an existing-folder path, exactly as the request says them (the daemon validates both). */
+export function openTargetRequest(o: string): OpenTargetRequest | null {
+  let m = SEARCH_IN.exec(o);
+  if (m) { const q = (m[2] ?? m[3] ?? "").trim(); return q ? { app: m[1]!.trim(), search: q } : null; }
+  m = FOLDER_IN.exec(o);
+  if (m) return { app: m[2]!.trim(), folder: m[1]!.trim() };
+  m = APP_ON_FOLDER.exec(o);
+  if (m) return { app: m[1]!.trim(), folder: m[2]!.trim() };
+  return null;
+}
+
+// ── "Open Windows Settings [and navigate to] Display" / "open display settings" ──
+
+const SETTINGS_A = /^\s*(?:please\s+)?(?:open|show|launch)\s+(?:the\s+|my\s+)?(?:windows\s+)?settings(?:\s+app)?(?:\s*(?:,|and)?\s*(?:then\s+)?(?:navigate|go|switch|take\s+me)\s+to\s+(?:the\s+)?([\p{L} &-]{2,40}?)(?:\s+(?:page|section|settings))?)?\s*[.!]?\s*$/iu;
+const SETTINGS_B = /^\s*(?:please\s+)?(?:open|show)\s+(?:the\s+|my\s+)?(?:windows\s+)?([\p{L} &-]{2,40}?)\s+settings(?:\s+page)?\s*[.!]?\s*$/iu;
+/** The Settings page the request names ("" = the Settings home page), or null. The daemon accepts only its fixed table of pages. */
+export function settingsRequest(o: string): string | null {
+  const a = SETTINGS_A.exec(o);
+  if (a) return (a[1] ?? "").trim().toLowerCase();
+  const b = SETTINGS_B.exec(o);
+  return b ? b[1]!.trim().toLowerCase() : null;
+}
+
+const INSTALLED_APPS = /^\s*(?:please\s+)?(?:(?:list|show)(?:\s+me)?(?:\s+(?:all|my|the))*\s+installed\s+(?:apps|applications|programs)(?:\s+(?:named|called|matching)\s+([\p{L}\p{N} ]{1,40}))?|what\s+(?:apps|applications|programs)\s+(?:are|do\s+i\s+have)\s+installed)\s*[.!?]?\s*$/iu;
+export const installedAppsRequest = (o: string): { filter: string | null } | null => {
+  const m = INSTALLED_APPS.exec(o);
+  return m ? { filter: m[1]?.trim() || null } : null;
+};
+
+// ── desktop.launch_app (open one known application, after approval; success only on a NEW window) ──
+
+/** Tasks in which an application was opened AND confirmed (the daemon saw its new window): typing into it is allowed only then. */
+const launchedTasks = new Set<string>();
+const launchAsked = new Set<string>();
+
+type LaunchInput = { app: string; search?: string; folder?: string };
+function createLaunchAppTool(bridge: DesktopBridge): ToolSpec<LaunchInput, any> {
+  const fixedMine = (o: string) => {
+    const s = appSession(o);
+    return s !== null && offered(bridge, "desktop.launch_app") && (s.text === null || offered(bridge, "desktop.type_text"));
+  };
+  /** Any other installed application, by the name the user said: only when the daemon offers its catalog of installed applications. */
+  const catalog = () => offered(bridge, "desktop.launch_app") && offered(bridge, "desktop.list_apps");
+  /** An application WITH a web search or a folder to open in it ("open Chrome and search for ...", "open the folder D:\x in VS Code"). */
+  const targeted = (o: string): OpenTargetRequest | null => (catalog() ? openTargetRequest(o) : null);
+  const generic = (o: string): string | null =>
+    targeted(o) === null && appSession(o) === null && catalog() ? openAppRequest(o) : null;
+  const mine = (o: string) => fixedMine(o) || generic(o) !== null || targeted(o) !== null;
+  const appOf = (o: string): string => (fixedMine(o) ? appSession(o)!.app : targeted(o)?.app ?? generic(o)!);
+  /** Exactly what the request asks to open: the application name and, when given, its search or folder (all as the user said them). */
+  const want = (o: string): LaunchInput => targeted(o) ?? { app: appOf(o) };
+  const forbidden = (why: string) => ({ kind: "forbidden" as const, reason: why });
+  const check: ToolRequestCheck<LaunchInput, any> = {
+    argumentDomains: (o): Record<string, ArgumentDomain> => {
+      if (!mine(o)) return { app: forbidden("the request does not ask to open an application") };
+      const w = want(o);
+      return {
+        app: { kind: "enum", values: [w.app], optional: false },
+        search: w.search !== undefined ? { kind: "enum", values: [w.search], optional: false } : forbidden("the request asks for no web search"),
+        folder: w.folder !== undefined ? { kind: "enum", values: [w.folder], optional: false } : forbidden("the request names no folder"),
+      };
+    },
+    relevant: mine,
+    // The whole request ("open Notepad and type X") belongs to the launch and typing tools: no window listing or other tool may answer it.
+    claims: mine,
+    facets(o) {
+      if (!mine(o)) return [];
+      const t = targeted(o);
+      if (t !== null) return [{ id: `app:launch:${t.app.toLowerCase()}:${t.search !== undefined ? "search" : "folder"}`, tool: "desktop.launch_app",
+        description: t.search !== undefined ? `open ${t.app} and search for "${t.search}"` : `open ${t.folder} in ${t.app}`, data: { ...t } }];
+      const g = generic(o);
+      if (g !== null) return [{ id: `app:launch:${g.toLowerCase()}`, tool: "desktop.launch_app", description: `open ${g}`, data: { app: g } }];
+      const withText = appSession(o)!.text !== null;
+      const app = appSession(o)!.app;
+      return [{ id: `app:launch:${app}`, tool: "desktop.launch_app", description: `open ${LAUNCHABLE[app].name}`, data: { app },
+        ...(withText ? { sequence: { key: "input-steps", index: 0, of: 2 } } : {}) }];
+    },
+    ground: (input, o) => {
+      if (!mine(o)) return ungrounded("the request does not ask to open an application");
+      const w = want(o);
+      if (input.app !== w.app) return contradicted(`the request names ${w.app}`);
+      if ((input.search ?? undefined) !== w.search) return contradicted(w.search !== undefined ? `the request searches for "${w.search}"` : "the request asks for no web search");
+      if ((input.folder ?? undefined) !== w.folder) return contradicted(w.folder !== undefined ? `the request names the folder ${w.folder}` : "the request names no folder");
+      return grounded("the application (and what to open in it) are the ones the request names");
+    },
+    // Satisfied only when the daemon opened the application AND a fresh look at the desktop showed its window (showing the search/folder).
+    satisfies: (f, input, outcome) => {
+      const d = f.data as LaunchInput;
+      return outcome.ok && outcome.output?.launched === true && outcome.output?.verified === true && input.app === d.app &&
+        (input.search ?? undefined) === d.search && (input.folder ?? undefined) === d.folder;
+    },
+    stepFor: (f, o) => (f.tool === "desktop.launch_app" && mine(o) ? want(o) : null),
+    // The request dictates the order: the launch first (exactly one), then whatever else was planned, and the typing step the request
+    // spells out if the model left it out. The model's own values are kept for the steps it proposed (they are validated against the
+    // request like always); the steps added here carry only values taken from the request text.
+    arrangeSteps(steps, o) {
+      const g = generic(o) ?? targeted(o)?.app ?? null;
+      if (g !== null) {
+        // "open <name>" (with its search or folder) is exactly one launch: nothing else the model may have added belongs to it.
+        const launch = steps.find((x) => x.tool === "desktop.launch_app") ?? { id: "app_open", description: `open ${g}`, tool: "desktop.launch_app", input: want(o) };
+        return [{ ...launch, dependsOn: undefined }];
+      }
+      const s = appSession(o);
+      if (!s || !fixedMine(o)) return steps;
+      const launch = steps.find((x) => x.tool === "desktop.launch_app") ?? { id: "app_open", description: `open ${LAUNCHABLE[s.app].name}`, tool: "desktop.launch_app", input: { app: s.app } };
+      // The whole request is the session: only its launch and its typing belong in the plan (any other step the model added is dropped).
+      const rest = steps.filter((x) => x.tool === "desktop.type_text");
+      const needsType = s.text !== null && !rest.some((x) => x.tool === "desktop.type_text");
+      const typing = needsType
+        ? [{ id: "app_type", description: "type the text into Notepad", tool: "desktop.type_text", input: { process: "notepad.exe", controlType: APP_EDITOR.controlType, control: APP_EDITOR.name, text: s.text! } }] : [];
+      return [{ ...launch, dependsOn: undefined }, ...rest.map((x) => ({ ...x, dependsOn: undefined })), ...typing];
+    },
+    vocabulary: (o) => ["open", "launch", "start", "run", "up", "notepad", "calculator", "calc", "character", "map", "charmap", "app", "application", "program", "window", "type", "write", "enter", "in", "into", "it", "then", "and", "please", "the", "a", "an",
+      ...contentWords(generic(o) ?? ""), ...contentWords(targeted(o)?.app ?? ""), ...contentWords(targeted(o)?.search ?? ""), "search", "for", "web", "folder", "project", "directory", "with", "on", "at", "my"],
+  };
+  return {
+    name: "desktop.launch_app",
+    description: "Ask the user (in the HUD) to approve OPENING one installed application. app is exactly the application NAME the request says (e.g. \"Microsoft Word\", \"chrome\", \"notepad\"); never a path, file or command. The daemon resolves the name to one installed application, starts it once and confirms its window.",
+    inputSchema: { type: "object", properties: {
+      app: { type: "string", minLength: 1, maxLength: 80 },
+      search: { type: "string", minLength: 1, maxLength: 200, description: "only when the request asks to search the web in a browser: the words exactly as said" },
+      folder: { type: "string", minLength: 3, maxLength: 200, description: "only when the request names a folder to open (e.g. in VS Code): the path exactly as said" },
+    }, required: ["app"] },
+    permissions: ["request:desktop_action"],
+    risk: "medium",
+    requiresApproval: false,
+    timeoutMs: 75_000,
+    async execute(input, ctx) {
+      if (launchAsked.has(ctx.taskId)) return { ok: false, error: "Already asked to open an application in this task; not asking again.", evidence: "" };
+      launchAsked.add(ctx.taskId);
+      const { reply, error } = await callDaemon(bridge, "desktop.launch_app",
+        { app: input.app, ...(input.search !== undefined ? { search: input.search } : {}), ...(input.folder !== undefined ? { folder: input.folder } : {}) }, ctx, 70_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status === "cancelled") return { ok: false, error: "The request was cancelled. Nothing was opened.", evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "The request was not approved. Nothing was opened.", evidence: "" };
+      const r = reply.result ?? {};
+      if (r.launched === true && r.verified === true) {
+        launchedTasks.add(ctx.taskId);
+        return { ok: true, output: r, evidence: `Opened ${LAUNCHABLE[input.app as AppKey]?.name ?? r.app ?? input.app}: ${r.observed}. Verified by a fresh look at the desktop after the approved start.` };
+      }
+      return { ok: false, output: r, error: "The launch was not confirmed.", evidence: "" };
+    },
+    check(_input, outcome) {
+      const o = outcome.output;
+      return o && o.launched === true && o.verified === true ? { ok: true } : { ok: false, reason: "the launch was not confirmed by a new window" };
+    },
+    endTask(taskId) { launchedTasks.delete(taskId); launchAsked.delete(taskId); },
+    requestCheck: check,
+  };
+}
+
 // ── desktop.read_text (vision: offline OCR of one named window, read-only) ──
 
 function createReadTextTool(bridge: DesktopBridge): ToolSpec<{ process?: string; titleContains?: string }, any> {
@@ -826,11 +1068,225 @@ function createReadTextTool(bridge: DesktopBridge): ToolSpec<{ process?: string;
   };
 }
 
-export const createDesktopTools = (bridge: DesktopBridge) => [
+// ── desktop.open_settings (one Windows Settings page from the daemon's fixed table; low risk: no approval card, audited, gated) ──
+
+function createOpenSettingsTool(bridge: DesktopBridge): ToolSpec<{ page: string }, any> {
+  const mine = (o: string) => offered(bridge, "desktop.open_settings") && settingsRequest(o) !== null;
+  return {
+    name: "desktop.open_settings",
+    description: "Open Windows Settings at one page the request names (e.g. \"display\", \"sound\", \"bluetooth\"; \"\" for the Settings home page). Shows settings; changes none. The daemon confirms the page is on screen.",
+    inputSchema: { type: "object", properties: { page: { type: "string", maxLength: 40 } }, required: ["page"] },
+    permissions: ["request:desktop_action"],
+    risk: "low",
+    requiresApproval: false,
+    timeoutMs: 25_000,
+    async execute(input, ctx) {
+      const { reply, error } = await callDaemon(bridge, "desktop.open_settings", { page: input.page }, ctx, 22_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "Windows Settings was not opened.", evidence: "" };
+      const r = reply.result ?? {};
+      return r.opened === true && r.verified === true
+        ? { ok: true, output: r, evidence: `Opened Windows Settings at ${r.page}: ${r.observed}.` }
+        : { ok: false, output: r, error: "Opening Windows Settings was not confirmed.", evidence: "" };
+    },
+    check: (_i, outcome) => (outcome.output?.opened === true && outcome.output?.verified === true ? { ok: true } : { ok: false, reason: "the Settings page was not confirmed on screen" }),
+    requestCheck: {
+      argumentDomains: (o) => ({ page: mine(o) ? { kind: "enum", values: [settingsRequest(o)!], optional: false } : { kind: "forbidden", reason: "the request does not ask for Windows Settings" } }),
+      relevant: mine,
+      claims: mine,
+      facets: (o) => (mine(o) ? [{ id: `settings:${settingsRequest(o)}`, tool: "desktop.open_settings", description: `open Windows Settings${settingsRequest(o) ? ` at ${settingsRequest(o)}` : ""}`, data: { page: settingsRequest(o) } }] : []),
+      ground: (input, o) => (!mine(o) ? ungrounded("the request does not ask for Windows Settings")
+        : input.page === settingsRequest(o) ? grounded("the page is the one the request names") : contradicted(`the request names the page "${settingsRequest(o)}"`)),
+      satisfies: (f, input, outcome) => outcome.ok && outcome.output?.verified === true && input.page === (f.data as { page: string }).page,
+      stepFor: (f, o) => (f.tool === "desktop.open_settings" && mine(o) ? { page: settingsRequest(o)! } : null),
+      vocabulary: (o) => ["open", "show", "launch", "windows", "settings", "app", "and", "then", "navigate", "go", "switch", "take", "me", "to", "the", "my", "page", "section", "please",
+        ...contentWords(settingsRequest(o) ?? "")],
+    },
+  };
+}
+
+// ── office.create_word_document / office.create_excel_workbook (a NEW file in Documents with exactly the approved content) ──
+
+const DOC_NAME = String.raw`["“]?([\p{L}\p{N}][\p{L}\p{N} _().,'&-]{0,79}?)["”]?`;
+const WORD_REQ = new RegExp(String.raw`^\s*(?:please\s+)?(?:create|make|write)\s+(?:a\s+)?(?:new\s+)?(?:word\s+document|document\s+in\s+word)\s+(?:named|called|titled)\s+${DOC_NAME}\s+(?:with|containing)\s+(?:the\s+)?(?:heading\s+["“]([^"”]{1,200})["”]\s+and\s+(?:the\s+)?)?(?:text|paragraph)\s+["“]([^"”]{1,2000})["”]\s*[.!]?\s*$`, "iu");
+const EXCEL_REQ = new RegExp(String.raw`^\s*(?:please\s+)?(?:create|make)\s+(?:an?\s+)?(?:new\s+)?excel\s+(?:workbook|spreadsheet)\s+(?:named|called|titled)\s+${DOC_NAME}\s+with\s+(?:the\s+)?rows?\s*:?\s+(.{1,4000}?)\s*[.!]?\s*$`, "iu");
+export interface WordRequest { name: string; heading: boolean; paragraphs: string[] }
+export interface ExcelRequest { name: string; rows: string[][] }
+export function wordDocumentRequest(o: string): WordRequest | null {
+  const m = WORD_REQ.exec(o);
+  if (!m) return null;
+  return m[2] !== undefined ? { name: m[1]!.trim(), heading: true, paragraphs: [m[2]!.trim(), m[3]!.trim()] } : { name: m[1]!.trim(), heading: false, paragraphs: [m[3]!.trim()] };
+}
+/** Rows separated by ";", cells by "," — exactly as said ("Item, Cost; Laptop, 1200"). */
+export function excelWorkbookRequest(o: string): ExcelRequest | null {
+  const m = EXCEL_REQ.exec(o);
+  if (!m) return null;
+  const rows = m[2]!.split(";").map((r) => r.split(",").map((c) => c.trim())).filter((r) => r.some((c) => c.length > 0));
+  return rows.length ? { name: m[1]!.trim(), rows } : null;
+}
+
+function createOfficeTool(bridge: DesktopBridge, tool: "office.create_word_document" | "office.create_excel_workbook"): ToolSpec<any, any> {
+  const word = tool === "office.create_word_document";
+  const req = (o: string) => (offered(bridge, tool) ? (word ? wordDocumentRequest(o) : excelWorkbookRequest(o)) : null);
+  const mine = (o: string) => req(o) !== null;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  return {
+    name: tool,
+    description: word
+      ? "Create a NEW Word document in the user's Documents folder with exactly the paragraphs the request quotes (optionally a bold heading first). The user approves the exact file and text; the saved file is read back and checked."
+      : "Create a NEW Excel workbook in the user's Documents folder with exactly the rows the request gives (first row a bold header). The user approves the exact file and cells; the saved file is read back and checked.",
+    inputSchema: word
+      ? { type: "object", properties: { name: { type: "string", maxLength: 80 }, heading: { type: "boolean" }, paragraphs: { type: "array", items: { type: "string" }, maxItems: 50 } }, required: ["name", "paragraphs"] }
+      : { type: "object", properties: { name: { type: "string", maxLength: 80 }, rows: { type: "array", items: { type: "array", items: { type: "string" } }, maxItems: 200 } }, required: ["name", "rows"] },
+    permissions: ["request:desktop_action"],
+    risk: "medium",
+    requiresApproval: false,
+    timeoutMs: 200_000,
+    async execute(input, ctx) {
+      const { reply, error } = await callDaemon(bridge, tool, input, ctx, 195_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "Nothing was created.", evidence: "" };
+      const r = reply.result ?? {};
+      return r.created === true && r.verified === true
+        ? { ok: true, output: r, evidence: `Created ${r.file}: ${r.observed}.` }
+        : { ok: false, output: r, error: "The file was not confirmed.", evidence: "" };
+    },
+    check: (_i, outcome) => (outcome.output?.created === true && outcome.output?.verified === true ? { ok: true } : { ok: false, reason: "the saved file was not confirmed" }),
+    requestCheck: {
+      argumentDomains: (o): Record<string, ArgumentDomain> => {
+        const r = req(o);
+        if (!r) return { name: { kind: "forbidden", reason: `the request does not ask for a new ${word ? "Word document" : "Excel workbook"}` } };
+        return word
+          ? { name: { kind: "enum", values: [r.name], optional: false }, heading: { kind: "enum", values: [(r as WordRequest).heading] as any, optional: true } }
+          : { name: { kind: "enum", values: [r.name], optional: false } };
+      },
+      relevant: mine,
+      claims: mine,
+      facets: (o) => (mine(o) ? [{ id: `${tool}:${req(o)!.name}`, tool, description: `create ${req(o)!.name}${word ? ".docx" : ".xlsx"}`, data: req(o)! }] : []),
+      ground: (input, o) => {
+        const r = req(o);
+        if (!r) return ungrounded("the request does not ask for this document");
+        if (input.name !== r.name) return contradicted(`the request names the file "${r.name}"`);
+        if (word) {
+          const w = r as WordRequest;
+          return same(input.paragraphs, w.paragraphs) && (input.heading ?? false) === w.heading ? grounded("the text is exactly the request's") : contradicted("write exactly the quoted text");
+        }
+        return same(input.rows, (r as ExcelRequest).rows) ? grounded("the cells are exactly the request's") : contradicted("write exactly the rows the request gives");
+      },
+      satisfies: (f, input, outcome) => outcome.ok && outcome.output?.verified === true && input.name === (f.data as { name: string }).name,
+      stepFor: (f, o) => (f.tool === tool && mine(o) ? { ...req(o)! } : null),
+      vocabulary: (o) => ["create", "make", "write", "a", "an", "new", "word", "document", "excel", "workbook", "spreadsheet", "named", "called", "titled", "with", "containing",
+        "the", "heading", "and", "text", "paragraph", "row", "rows", "in", "please", ...contentWords(JSON.stringify(req(o) ?? ""))],
+    },
+  };
+}
+
+// ── dev.run_task: build or test ONE project folder the request names (the daemon picks the command; the user approves it) ──
+
+const DEV_TEST = /^\s*(?:please\s+)?(?:run\s+(?:the\s+)?tests?\s+(?:in|of|for)|test)\s+(?:the\s+)?(?:project\s+|folder\s+)?["“]?([A-Za-z]:\\[^"”\r\n]{0,200}?)["”]?\s*[.!]?\s*$/i;
+const DEV_BUILD = /^\s*(?:please\s+)?(?:build|compile)\s+(?:the\s+)?(?:project\s+|folder\s+|code\s+in\s+)?["“]?([A-Za-z]:\\[^"”\r\n]{0,200}?)["”]?\s*[.!]?\s*$/i;
+export function devTaskRequest(o: string): { folder: string; task: "build" | "test" } | null {
+  let m = DEV_TEST.exec(o);
+  if (m) return { folder: m[1]!.trim(), task: "test" };
+  m = DEV_BUILD.exec(o);
+  return m ? { folder: m[1]!.trim(), task: "build" } : null;
+}
+
+function createDevTaskTool(bridge: DesktopBridge): ToolSpec<{ folder: string; task: string }, any> {
+  const req = (o: string) => (offered(bridge, "dev.run_task") ? devTaskRequest(o) : null);
+  return {
+    name: "dev.run_task",
+    description: "Build, or run the tests of, ONE project folder the request names (full path). D-ASK recognises the project (.NET, npm, Cargo) and chooses the command; the user approves it in the HUD; the exit code, error lines and test summary are reported so a failure can be explained.",
+    inputSchema: { type: "object", properties: { folder: { type: "string", minLength: 3, maxLength: 260 }, task: { type: "string", enum: ["build", "test"] } }, required: ["folder", "task"] },
+    permissions: ["request:desktop_action"],
+    risk: "medium",
+    requiresApproval: false,
+    timeoutMs: 720_000,
+    async execute(input, ctx) {
+      const { reply, error } = await callDaemon(bridge, "dev.run_task", { folder: input.folder, task: input.task }, ctx, 715_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "Nothing was run.", evidence: "" };
+      const r = reply.result ?? {};
+      const lines = [`${r.command} in ${r.folder}: ${r.observed} (${Math.round((r.durationMs ?? 0) / 1000)} s).`,
+        r.summary?.length ? `Summary: ${r.summary.join(" | ")}` : "",
+        r.errors?.length ? `Errors found in the output:\n${r.errors.slice(0, 15).map((e: string) => `- ${e}`).join("\n")}` : ""].filter(Boolean).join("\n");
+      // A FAILED build/test is still a completed, verified run: the request asked to run it and report what happened.
+      return r.verified === true ? { ok: true, output: r, evidence: lines } : { ok: false, output: r, error: lines || "The run did not finish.", evidence: "" };
+    },
+    check: (_i, outcome) => (outcome.output?.executed === true && outcome.output?.verified === true ? { ok: true } : { ok: false, reason: "the run did not finish with an exit code" }),
+    requestCheck: {
+      argumentDomains: (o): Record<string, ArgumentDomain> => {
+        const r = req(o);
+        return r ? { folder: { kind: "enum", values: [r.folder], optional: false }, task: { kind: "enum", values: [r.task], optional: false } }
+                 : { folder: { kind: "forbidden", reason: "the request does not ask to build or test a named project folder" } };
+      },
+      relevant: (o) => req(o) !== null,
+      claims: (o) => req(o) !== null,
+      facets: (o) => { const r = req(o); return r ? [{ id: `dev:${r.task}:${r.folder.toLowerCase()}`, tool: "dev.run_task", description: `${r.task} ${r.folder}`, data: r }] : []; },
+      ground: (input, o) => {
+        const r = req(o);
+        if (!r) return ungrounded("the request does not ask to build or test a project");
+        return input.folder === r.folder && input.task === r.task ? grounded("the folder and the task are the request's") : contradicted(`${r.task} exactly ${r.folder}`);
+      },
+      satisfies: (f, input, outcome) => outcome.ok && outcome.output?.verified === true && input.folder === (f.data as { folder: string }).folder,
+      stepFor: (f, o) => (f.tool === "dev.run_task" && req(o) ? { ...req(o)! } : null),
+      vocabulary: (o) => ["run", "the", "test", "tests", "in", "of", "for", "build", "compile", "project", "folder", "code", "please", ...contentWords(req(o)?.folder ?? "")],
+    },
+  };
+}
+
+// ── desktop.list_apps (read-only: the applications Windows registers) ──
+
+function createListAppsTool(bridge: DesktopBridge): ToolSpec<{ filter?: string }, any> {
+  const mine = (o: string) => offered(bridge, "desktop.list_apps") && installedAppsRequest(o) !== null;
+  return {
+    name: "desktop.list_apps",
+    description: "List the applications installed on this computer (read-only), optionally only those whose name contains the words the request gives.",
+    inputSchema: { type: "object", properties: { filter: { type: "string", maxLength: 40 } } },
+    permissions: ["read:desktop"],
+    risk: "low",
+    requiresApproval: false,
+    timeoutMs: 15_000,
+    async execute(input, ctx) {
+      const { reply, error } = await callDaemon(bridge, "desktop.list_apps", input.filter ? { filter: input.filter } : {}, ctx, 12_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "The installed applications could not be listed.", evidence: "" };
+      const r = reply.result ?? {};
+      const names: string[] = (r.apps ?? []).map((a: { name: string }) => a.name);
+      return { ok: true, output: r, evidence: `${r.shown} of ${r.count} installed applications${input.filter ? ` matching "${input.filter}"` : ""}:\n${names.map((n) => `• ${n}`).join("\n")}` };
+    },
+    check: (_i, outcome) => (typeof outcome.output?.count === "number" ? { ok: true } : { ok: false, reason: "no list" }),
+    requestCheck: {
+      argumentDomains: (o) => {
+        const r = installedAppsRequest(o);
+        return { filter: r?.filter ? { kind: "enum", values: [r.filter], optional: false } : { kind: "forbidden", reason: "the request gives no filter" } };
+      },
+      relevant: mine,
+      claims: mine,
+      facets: (o) => (mine(o) ? [{ id: "apps:list", tool: "desktop.list_apps", description: "list the installed applications", data: { filter: installedAppsRequest(o)!.filter } }] : []),
+      ground: (input, o) => (!mine(o) ? ungrounded("not a request to list installed applications")
+        : (input.filter ?? null) === installedAppsRequest(o)!.filter ? grounded("the filter is the request's") : contradicted("use exactly the request's filter")),
+      satisfies: (_f, _i, outcome) => outcome.ok && typeof outcome.output?.count === "number",
+      stepFor: (f, o) => (f.tool === "desktop.list_apps" && mine(o) ? (installedAppsRequest(o)!.filter ? { filter: installedAppsRequest(o)!.filter! } : {}) : null),
+      vocabulary: (o) => ["list", "show", "me", "all", "my", "the", "installed", "apps", "applications", "programs", "what", "are", "do", "i", "have", "named", "called", "matching", "please",
+        ...contentWords(installedAppsRequest(o)?.filter ?? "")],
+    },
+  };
+}
+
+export const createDesktopTools = (bridge: DesktopBridge): ToolSpec<any, any>[] => [
   createListWindowsTool(bridge), createInspectWindowTool(bridge),
   createWindowActionTool(bridge, "desktop.focus_window"), createWindowActionTool(bridge, "desktop.set_window_state"),
   createInputTool(bridge, "desktop.click_element"), createInputTool(bridge, "desktop.type_text"), createInputTool(bridge, "desktop.press_keys"),
   // Vision (appended: the order of the earlier tools is unchanged).
   createReadTextTool(bridge),
+  // Application launch (appended: the order of the earlier tools is unchanged).
+  createLaunchAppTool(bridge),
+  // Universal application control (appended): Windows Settings pages, and the installed applications.
+  createOpenSettingsTool(bridge), createListAppsTool(bridge),
+  // Office (appended): a new Word document / Excel workbook with exactly the approved content.
+  createOfficeTool(bridge, "office.create_word_document"), createOfficeTool(bridge, "office.create_excel_workbook"),
+  // Developer tasks (appended): build or test one project folder.
+  createDevTaskTool(bridge),
 ];
 export type DesktopOutcome = ToolOutcome<unknown>;

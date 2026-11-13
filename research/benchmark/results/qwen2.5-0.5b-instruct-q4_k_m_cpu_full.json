@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "tag": "qwen2.5-0.5b-instruct-q4_k_m_cpu_full",
+    "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+    "backend": "cpu",
+    "variant": "full",
+    "structured": true,
+    "startedAt": "2026-11-02T18:27:24.319Z",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i5-1335U",
+      "logicalCpus": 12,
+      "totalMemMB": 16067,
+      "os": "win32 10.0.26200"
+    },
+    "runtime": "llama.cpp b11720 win-vulkan-x64",
+    "temperature": 0,
+    "contextSize": 4096
+  },
+  "admitted": false,
+  "reason": "LocalInferenceError: Local model failed: Insufficient physical memory: 2272 MB available, model needs ~973 MB (estimate), leaving 1299 MB < required headroom 2000 MB",
+  "admission": {
+    "ok": false,
+    "availableBytes": 2382458880,
+    "requiredBytes": 1020668768,
+    "minHeadroomBytes": 2097152000,
+    "projectedHeadroomBytes": 1361790112,
+    "reason": "Insufficient physical memory: 2272 MB available, model needs ~973 MB (estimate), leaving 1299 MB < required headroom 2000 MB"
+  },
+  "estimateMB": 973,
+  "availBeforeMB": 2298
+}

@@ -41,7 +41,7 @@ async function main() {
   console.log("\n[M] manifest rules (same as the daemon's)");
   const good = JSON.parse(sampleFiles["plugin.json"]!);
   check(validateManifest(good) === null, "M1 the sample manifest is valid");
-  check(/only permission/.test(validateManifest({ ...good, permissions: ["network"] }) ?? "") && /only permission/.test(validateManifest({ ...good, permissions: ["write:workspace"] }) ?? ""), "M2 any permission except compute is refused");
+  check(/permissions are chosen from/.test(validateManifest({ ...good, permissions: ["network"] }) ?? "") && /permissions are chosen from/.test(validateManifest({ ...good, permissions: ["write:workspace"] }) ?? ""), "M2 a permission outside the catalogue (network, write) is still refused (granular permissions: see plugin-permissions.test.ts)");
   check(validateManifest({ ...good, id: "Bad-Id" }) !== null && validateManifest({ ...good, entry: "../x.js" }) !== null && validateManifest({ ...good, tools: [] }) !== null, "M3 bad id / entry outside the folder / no tools refused");
 
   console.log("\n[S] sync from the approved list");

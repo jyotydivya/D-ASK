@@ -90,12 +90,41 @@ const ACTION_LABELS: Record<string, string> = {
   "Workflow.Schedule": "Run a saved workflow on a schedule",
   // Plugins: approving a plugin's code (compute only, sandboxed, re-checked before every run).
   "Plugin.Install": "Install a plugin (compute only, sandboxed)",
+  "Plugin.GrantPermission": "Give a plugin one extra permission",
   // Notes: the daemon writes ONE new text file in its notes folder (never overwriting), then reads it back.
   "Files.CreateNote": "Create a new note (text file)",
+  // Opening one application from the daemon's fixed list (no arguments); success is only a new window seen afterwards.
+  "App.Launch": "Open an application",
+  // One file at a time, inside the allowed folders, never overwriting; undo is approved separately.
+  "Files.Copy": "Copy a file",
+  "Files.Rename": "Rename a file",
+  "Files.UndoCopyRename": "Undo the last copy or rename",
 };
 
 const BROWSER_TYPES = new Set(["Browser.Click", "Browser.Fill"]);
 const FILE_TYPES = new Set(["Files.Organize", "Files.UndoOrganize"]);
+
+const COPY_RENAME_TYPES = new Set(["Files.Copy", "Files.Rename", "Files.UndoCopyRename"]);
+/** Copy / rename / undo: every path and name must be given exactly (and agree with each other), or no decision is offered. */
+export function copyRenameSummary(actionType: string, params: ApprovalParameter[]): { summary: string } | { error: string } {
+  const p = (n: string) => params.find((x) => x.name === n)?.value;
+  const abs = (s: string | undefined) => !!s && /^[A-Za-z]:\\/.test(s) && !s.includes("..");
+  const plain = (s: string | undefined) => !!s && !/[\\/:*?"<>|]/.test(s) && s !== "." && s !== "..";
+  if (actionType === "Files.Copy") {
+    const src = p("source"), dst = p("destination"), size = p("size"), taken = p("nameTaken"), over = p("overwrite");
+    if (!abs(src) || !abs(dst) || !size || !taken || !over?.startsWith("Never")) return { error: "The file to copy or where the copy goes is not given exactly." };
+    if (src!.toLowerCase() === dst!.toLowerCase()) return { error: "The copy would replace the original; it will not be offered." };
+    return { summary: `Copy ${src} to ${dst} (${size}), once. A new file is created; nothing is overwritten.${taken.startsWith("Yes") ? ` ${taken}.` : ""}` };
+  }
+  if (actionType === "Files.Rename") {
+    const folder = p("folder"), from = p("from"), to = p("to"), ext = p("extensionChange"), over = p("overwrite");
+    if (!abs(folder) || !plain(from) || !plain(to) || !ext || !over?.startsWith("Never") || from === to) return { error: "The file or its new name is not given exactly." };
+    return { summary: `Rename ${from} to ${to} in ${folder}, once. Nothing is overwritten.${ext.startsWith("Yes") ? ` Note: ${ext}.` : ""}` };
+  }
+  const op = p("operation"), target = p("path"), detail = p("detail");
+  if (!abs(target) || !detail || (op !== "Remove the copy D-ASK made" && op !== "Rename back")) return { error: "What would be undone is not given exactly." };
+  return { summary: op === "Rename back" ? `Undo the last rename: ${detail}` : `Undo the last copy: delete ${target}, ${detail}` };
+}
 
 /** File organisation: the folder and the exact number of listed moves must agree, or no decision is offered. */
 function filesSummary(actionType: string, params: ApprovalParameter[]): { summary: string } | { error: string } {
@@ -212,6 +241,13 @@ export function parseApprovalRequest(payload: unknown): { view: ApprovalView } |
     if (!p("plugin") || !p("files") || !(p("permissions") ?? "").startsWith("compute only") || String(tools.length) !== p("toolCount"))
       return fail("The plugin, its tools or its permissions are not given exactly; it will not be offered.");
     summary = `Install the plugin ${p("plugin")} with the ${tools.length} tool(s) listed below. ${p("permissions")}.`;
+  } else if (actionType === "Plugin.GrantPermission") {
+    const p = (n: string) => parameters.find((x) => x.name === n)?.value;
+    const perm = p("permission") ?? "";
+    // Exactly one known permission, named with the plugin and what it allows; anything else is not offered for a decision.
+    if (!p("plugin") || !["files.read", "memory.read"].includes(perm) || !p("allows") || !p("currently") || !p("enforcement"))
+      return fail("The plugin, the permission or what it allows are not given exactly; it will not be offered.");
+    summary = `Give the plugin ${p("plugin")} the ${perm} permission: it will be able to ${p("allows")}. D-ASK checks this every time the plugin uses it, and you can take it away again at any time.`;
   } else if (actionType === "Workflow.Schedule") {
     const p = (n: string) => parameters.find((x) => x.name === n)?.value;
     const steps = (p("steps") ?? "").split("\n").filter((l) => l.trim());
@@ -227,8 +263,18 @@ export function parseApprovalRequest(payload: unknown): { view: ApprovalView } |
     if (sep < 0 || file.slice(0, sep).toLowerCase() !== folder.toLowerCase() || file.slice(sep + 1) !== `${title}.txt`)
       return fail("The note's file and its title or folder disagree; it will not be offered.");
     summary = `Create the new note ${title}.txt in ${folder} containing exactly the ${text.length} character(s) shown below, once. Nothing is overwritten.`;
+  } else if (actionType === "App.Launch") {
+    const p = (n: string) => parameters.find((x) => x.name === n)?.value;
+    const operation = p("operation"), app = p("application"), exe = p("executable"), args = p("arguments");
+    if (!operation || !app || !exe || args !== "none" || !operation.startsWith("Open ") || !exe.toLowerCase().endsWith(`\\${app.toLowerCase()}`))
+      return fail("The application, its file or its (empty) arguments are not given exactly; it will not be offered.");
+    summary = `Open ${app} (${exe}) once, with no arguments. A new window should appear; nothing is typed, saved or changed by opening it.`;
   } else if (FILE_TYPES.has(actionType)) {
     const s = filesSummary(actionType, parameters);
+    if ("error" in s) return fail(s.error);
+    summary = s.summary;
+  } else if (COPY_RENAME_TYPES.has(actionType)) {
+    const s = copyRenameSummary(actionType, parameters);
     if ("error" in s) return fail(s.error);
     summary = s.summary;
   }

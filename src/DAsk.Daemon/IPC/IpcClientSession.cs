@@ -685,12 +685,14 @@ public class IpcClientSession
                 {
                     var req = envelope.DeserializePayload<AgentTaskStatusRequest>();
                     var rec = _agentHost?.GetTask(req?.TaskId ?? string.Empty, _sessionId);
+                    // Recovery after a HUD (or daemon) restart: a FINISHED result is returned by its task id even to a new session.
+                    var recovered = rec == null ? _agentHost?.RecoverResult(req?.TaskId ?? string.Empty) : null;
                     reply = IpcEnvelope.Create(nameof(AgentTaskStatusResponse), new AgentTaskStatusResponse
                     {
-                        Found = rec != null,
+                        Found = rec != null || recovered != null,
                         TaskId = req?.TaskId ?? string.Empty,
-                        State = rec?.State,
-                        Result = rec?.Result,
+                        State = rec?.State ?? (recovered != null ? "finished" : null),
+                        Result = rec?.Result ?? recovered,
                     }, envelope.Id);
                     break;
                 }

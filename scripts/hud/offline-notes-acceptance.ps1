@@ -14,14 +14,12 @@ if (-not $d0.offline) { Write-OfflineDecision $d0 $before; Write-Host 'Online: t
 
 $connections = Join-Path $out 'non-loopback-connections.txt'
 $monitor = Start-Job -ScriptBlock {
-    param($file)
+    param($file, $treeHelper)
+    . $treeHelper
     $seen = @{}
     while ($true) {
         $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
-        $kids = @{}; foreach ($p in $all) { $k = [int]$p.ParentProcessId; if (-not $kids.ContainsKey($k)) { $kids[$k] = @() }; $kids[$k] += $p }
-        $tree = @{}; $stack = New-Object System.Collections.Stack
-        foreach ($p in $all | Where-Object { $_.Name -in 'DAsk.Daemon.exe', 'hud-native.exe' }) { $stack.Push($p) }
-        while ($stack.Count) { $p = $stack.Pop(); if ($tree.ContainsKey([int]$p.ProcessId)) { continue }; $tree[[int]$p.ProcessId] = $p.Name; foreach ($c in @($kids[[int]$p.ProcessId])) { if ($c) { $stack.Push($c) } } }
+        $tree = Get-DAskProcessTree $all   # creation-time checked: a reused parent id is not descent (dask-process-tree.ps1)
         foreach ($c in Get-NetTCPConnection -ErrorAction SilentlyContinue) {
             if ($tree.ContainsKey([int]$c.OwningProcess) -and $c.RemoteAddress -notmatch '^(127\.|::1$|0\.0\.0\.0$|::$)') {
                 $key = "$($tree[[int]$c.OwningProcess])|$($c.RemoteAddress):$($c.RemotePort)|$($c.State)"
@@ -31,7 +29,7 @@ $monitor = Start-Job -ScriptBlock {
         foreach ($id in $tree.Keys) { $k = "p|$id"; if (-not $seen.ContainsKey($k)) { $seen[$k] = 1; Add-Content -Path "$file.processes" -Value "$((Get-Date).ToString('o')) $($tree[$id]) pid $id" } }
         Start-Sleep -Milliseconds 300
     }
-} -ArgumentList $connections
+} -ArgumentList $connections, (Join-Path $PSScriptRoot 'dask-process-tree.ps1')
 $dir = Join-Path $out 'notes'
 try {
     $ErrorActionPreference = 'Continue'

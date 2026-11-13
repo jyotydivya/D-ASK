@@ -1,0 +1,141 @@
+{
+  "at": "2026-11-08T15:11:13.588Z",
+  "model": "qwen2.5-3b-instruct-q4_k_m",
+  "backend": null,
+  "llamaWorkingSetMB": 0,
+  "hostRssMB": 114,
+  "blocked": [],
+  "remote": [],
+  "rows": [
+    {
+      "id": "A",
+      "objective": "Find all PDF files in my authorized project directory",
+      "outcome": "failed",
+      "ms": 4737,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "B",
+      "objective": "Find the latest report and show its metadata",
+      "outcome": "failed",
+      "ms": 25,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "C",
+      "objective": "Read the introduction of this report",
+      "outcome": "refused",
+      "ms": 1,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "Which report do you mean? Please name the file (its file name or path). I won't choose a file for you."
+    },
+    {
+      "id": "D",
+      "objective": "Find every occurrence of the term architecture in the project documentation",
+      "outcome": "failed",
+      "ms": 2,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "E",
+      "objective": "Summarize the report using its actual contents",
+      "outcome": "refused",
+      "ms": 0,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "Which report do you mean? Please name the file (its file name or path). I won't choose a file for you."
+    },
+    {
+      "id": "C2",
+      "objective": "Read the introduction of docs/reports/2026-q3-report.md",
+      "outcome": "failed",
+      "ms": 3,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "E2",
+      "objective": "Summarize docs/reports/2026-q3-report.md using its actual contents",
+      "outcome": "failed",
+      "ms": 2,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "M",
+      "objective": "When was docs/reports/2026-q3-report.md last modified?",
+      "outcome": "failed",
+      "ms": 1,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "R1",
+      "objective": "What is (17+25)*2?",
+      "outcome": "failed",
+      "ms": 3,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "R2",
+      "objective": "What time is it?",
+      "outcome": "failed",
+      "ms": 2,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "R3",
+      "objective": "How much memory does this computer have?",
+      "outcome": "failed",
+      "ms": 2,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "R4",
+      "objective": "List the files in the docs folder",
+      "outcome": "failed",
+      "ms": 1,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    },
+    {
+      "id": "X",
+      "objective": "Find every occurrence of the term needle in the project",
+      "outcome": "failed",
+      "ms": 5,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model failed: Insufficient physical memory: 4588 MB available, model needs ~2608 MB (estimate), leaving 1979 MB < required headroom 2000 MB"
+    }
+  ]
+}

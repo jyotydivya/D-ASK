@@ -1,0 +1,2673 @@
+{
+  "meta": {
+    "tag": "v2_qwen2.5-0.5b-instruct-q4_k_m_vulkan_argsOff",
+    "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+    "backend": "vulkan",
+    "variant": "argsOff_pgOff_grOff",
+    "switches": {
+      "argumentConstraints": false,
+      "planGrounding": false,
+      "gapReplanning": false
+    },
+    "structured": true,
+    "codeVersion": "v2",
+    "startedAt": "2026-11-02T19:13:27.049Z",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i5-1335U",
+      "logicalCpus": 12,
+      "totalMemMB": 16067,
+      "os": "win32 10.0.26200"
+    },
+    "runtime": "llama.cpp b11720 win-vulkan-x64",
+    "temperature": 0,
+    "contextSize": 4096,
+    "finishedAt": "2026-11-02T19:16:10.516Z"
+  },
+  "admitted": true,
+  "loadMs": 2234,
+  "unloadMs": 175,
+  "backendUsed": "vulkan",
+  "availBeforeMB": 4023,
+  "estimateMB": 973,
+  "resources": {
+    "samples": 51,
+    "peakWorkingSetMB": 706,
+    "minAvailableMB": 2750,
+    "cpuPctMedian": 24.8779525237,
+    "cpuPctP95": 38.5468933441413,
+    "gpuPctMedian": 85.5717307260999,
+    "gpuPctP95": 91.3643883618518,
+    "nonLoopbackConnectionsObserved": 0
+  },
+  "blockedOutbound": [],
+  "tasks": [
+    {
+      "id": "s01",
+      "category": "single",
+      "objective": "What time is it?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:43:31 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2894,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1795,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1041,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:43:31 GMT+5:30",
+      "error": null
+    },
+    {
+      "id": "s02",
+      "category": "single",
+      "objective": "What's today's date?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": true,
+      "missedCompletionLegacy": true,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:43:40 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.2 GB free of 15.7 GB; up 85.8 h"
+        },
+        {
+          "id": "s3",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s4",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        },
+        {
+          "id": "s5",
+          "tool": "system.time",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s4, which did not succeed"
+        },
+        {
+          "id": "s6",
+          "tool": "system.info",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s5, which did not succeed"
+        },
+        {
+          "id": "s7",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s6, which did not succeed"
+        },
+        {
+          "id": "s8",
+          "tool": "system.time",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s7, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info",
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 9823,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 8666,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1094,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 8 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:43:40 GMT+5:30\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.2 GB free of 15.7 GB; up 85.8 h\n• what this step achieves: failed (Expected a number at position 0)\n• what this step achieves: not run (Depends on step s3, which did not succeed)\n• what this ",
+      "error": null
+    },
+    {
+      "id": "s03",
+      "category": "single",
+      "objective": "What time is it in Tokyo right now?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": false,
+        "errorKind": "truncated",
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 14456,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 14456,
+          "ok": false,
+          "kind": "truncated"
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model output was cut off at the token limit",
+      "error": "Planning failed: plan model call failed: Local model output was cut off at the token limit"
+    },
+    {
+      "id": "s04",
+      "category": "single",
+      "objective": "What is (17+25)*2?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "17+25*2"
+          },
+          "status": "succeeded",
+          "evidence": "17+25*2 = 67"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2867,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1514,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1349,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 1 step succeeded.\n• 17+25*2 = 67\nNot confirmed: unmet criterion; math.evaluate (what this step achieves) → OK: 17+25*2 = 67",
+      "error": null
+    },
+    {
+      "id": "s05",
+      "category": "single",
+      "objective": "Calculate 2^10 - 24",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "2^10 - 24"
+          },
+          "status": "succeeded",
+          "evidence": "2^10 - 24 = 1000"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 3585,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1938,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1646,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 2^10 - 24 = 1000",
+      "error": null
+    },
+    {
+      "id": "s06",
+      "category": "single",
+      "objective": "What is 144/12 + 7*3?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "144/12 + 7*3"
+          },
+          "status": "succeeded",
+          "evidence": "144/12 + 7*3 = 33"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 3429,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2370,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1057,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 144/12 + 7*3 = 33",
+      "error": null
+    },
+    {
+      "id": "s07",
+      "category": "single",
+      "objective": "How much RAM does this computer have?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.2 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2928,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1588,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1338,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.2 GB free of 15.7 GB; up 85.8 h",
+      "error": null
+    },
+    {
+      "id": "s08",
+      "category": "single",
+      "objective": "What CPU does this machine have?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": true,
+      "missedCompletionLegacy": true,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "cpu_count()"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s3",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "total_memory() - free_memory() / 2"
+          },
+          "status": "skipped",
+          "error": "Depends on step s2, which did not succeed"
+        },
+        {
+          "id": "s4",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "uptime() / 24"
+          },
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 4715,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3772,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 939,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 4 steps succeeded.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h\n• what this step achieves: failed (Expected a number at position 0)\n• what this step achieves: not run (Depends on step s2, which did not succeed)\n• what this step achieves: not run (Depends on step s3, which did not succeed)\nNot confirme",
+      "error": null
+    },
+    {
+      "id": "s09",
+      "category": "single",
+      "objective": "List the files in agent/runtime",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "workspace.list_dir",
+          "input": {
+            "path": "agent/runtime"
+          },
+          "status": "succeeded",
+          "evidence": "\"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolR"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 3295,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1693,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1586,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• \"agent/runtime\" contains 11 visible entries (2 folders, 9 files): inference/, tools/, brain.ts, grounding.ts, index.ts, planner.ts, runtime.ts, schema.ts, toolRegistry.ts, types.ts, verifier.ts",
+      "error": null
+    },
+    {
+      "id": "s10",
+      "category": "single",
+      "objective": "What is in the docs folder?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2764,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1594,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1167,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h\nNot confirmed: unmet criterion; docs folder is in the user's request",
+      "error": null
+    },
+    {
+      "id": "t01",
+      "category": "trap",
+      "objective": "What is 100 - (20 + 30) * 2?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "100 - (20 + 30) * 2"
+          },
+          "status": "succeeded",
+          "evidence": "100 - (20 + 30) * 2 = 0"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 3854,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2756,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1096,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 100 - (20 + 30) * 2 = 0",
+      "error": null
+    },
+    {
+      "id": "t02",
+      "category": "trap",
+      "objective": "Compute (3+4)*(5-2)",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "3+4*(5-2)"
+          },
+          "status": "succeeded",
+          "evidence": "3+4*(5-2) = 15"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2781,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1808,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 972,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 1 step succeeded.\n• 3+4*(5-2) = 15\nNot confirmed: 3+4; 5-2",
+      "error": null
+    },
+    {
+      "id": "t03",
+      "category": "trap",
+      "objective": "What is 2*(3+4)^2?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "2*(3+4)^2"
+          },
+          "status": "succeeded",
+          "evidence": "2*(3+4)^2 = 98"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2581,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1558,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1023,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• 2*(3+4)^2 = 98",
+      "error": null
+    },
+    {
+      "id": "t04",
+      "category": "trap",
+      "objective": "What time is it in London?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:39 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"London\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s3",
+          "tool": "system.info",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s2, which did not succeed"
+        },
+        {
+          "id": "s4",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        },
+        {
+          "id": "s5",
+          "tool": "system.time",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s4, which did not succeed"
+        },
+        {
+          "id": "s6",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"London\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +"
+          },
+          "status": "skipped",
+          "error": "Depends on step s5, which did not succeed"
+        },
+        {
+          "id": "s7",
+          "tool": "system.info",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s6, which did not succeed"
+        },
+        {
+          "id": "s8",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s7, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info",
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 11274,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 10163,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1106,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 8 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:39 GMT+5:30\n• what this step achieves: failed (Expected a number at position 0)\n• what this step achieves: not run (Depends on step s2, which did not succeed)\n• what this step achieves: not run (Depends on step s3, which did not succeed)\n• what this step achieves: not run (Depends on step s4,",
+      "error": null
+    },
+    {
+      "id": "t05",
+      "category": "trap",
+      "objective": "Show me what's inside agent/runtime/tools",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.7 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2392,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1301,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1090,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.7 GB free of 15.7 GB; up 85.8 h\nNot confirmed: Show me what's inside agent/runtime/tools",
+      "error": null
+    },
+    {
+      "id": "p01",
+      "category": "paraphrase",
+      "objective": "How many hours are in a week?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "1 week * 24 hours"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Unexpected character at position 2"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1680,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1680,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• what this step achieves: failed (Unexpected character at position 2)",
+      "error": null
+    },
+    {
+      "id": "p02",
+      "category": "paraphrase",
+      "objective": "What is seventeen times three?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": true,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:45 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "17 * 3"
+          },
+          "status": "succeeded",
+          "evidence": "17 * 3 = 51"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.time"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2435,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1319,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1115,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:45 GMT+5:30\n• 17 * 3 = 51\nNot confirmed: unmet criterion; math.evaluate",
+      "error": null
+    },
+    {
+      "id": "p03",
+      "category": "paraphrase",
+      "objective": "How long has my computer been running?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:48 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2541,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1505,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1035,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:48 GMT+5:30\nNot confirmed: unmet criterion; system.time",
+      "error": null
+    },
+    {
+      "id": "p04",
+      "category": "paraphrase",
+      "objective": "What does the clock say in New York?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2345,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1290,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1052,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.8 GB free of 15.7 GB; up 85.8 h\nNot confirmed: unmet criterion; clock says in New York",
+      "error": null
+    },
+    {
+      "id": "p05",
+      "category": "paraphrase",
+      "objective": "Is it morning or evening for me right now?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:53 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2565,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1273,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1290,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:53 GMT+5:30",
+      "error": null
+    },
+    {
+      "id": "m01",
+      "category": "multi",
+      "objective": "What time is it and what is 17*3?",
+      "inject": null,
+      "outcome": "completed",
+      "legacyOutcome": "completed",
+      "success": true,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:56 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "17*3"
+          },
+          "status": "succeeded",
+          "evidence": "17*3 = 51"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": true
+      },
+      "independentlyVerified": true,
+      "e2eMs": 2946,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1880,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1064,
+          "ok": true
+        }
+      ],
+      "response": "Done.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:44:56 GMT+5:30\n• 17*3 = 51",
+      "error": null
+    },
+    {
+      "id": "m02",
+      "category": "multi",
+      "objective": "How much memory do I have, and what is 1024*8?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "memory used is 1024 bytes"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "system.info",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2327,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2327,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• find out how much memory I have: failed (Expected a number at position 0)",
+      "error": null
+    },
+    {
+      "id": "m03",
+      "category": "multi",
+      "objective": "What time is it in Tokyo, and what is in agent/runtime?",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:01 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "system.time",
+          "input": {
+            "timeZone": "Asia/Tokyo"
+          },
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Tokyo: Tuesday, 3 November 2026 at 04:15:01 GMT+9"
+        },
+        {
+          "id": "s3",
+          "tool": "system.time",
+          "input": {
+            "timeZone": "agent/runtime"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Unknown time zone \"agent/runtime\""
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 6096,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2158,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 3934,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 3 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:01 GMT+5:30\n• Current time in Asia/Tokyo: Tuesday, 3 November 2026 at 04:15:01 GMT+9\n• what time is it in Tokyo, and what is in agent/runtime: failed (Unknown time zone \"agent/runtime\")\nNot confirmed: system.time (what time is it in Tokyo, and what is in agent/runtime) → OK: Current time in A",
+      "error": null
+    },
+    {
+      "id": "m04",
+      "category": "multi",
+      "objective": "Tell me the date, compute (17+25)*2, and list the docs folder.",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:08 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "(17+25)*2"
+          },
+          "status": "succeeded",
+          "evidence": "(17+25)*2 = 84"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "math.evaluate",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 4092,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 3022,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1067,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:08 GMT+5:30\n• (17+25)*2 = 84\nNot confirmed: unmet criterion; system.time; math.evaluate; list the docs folder",
+      "error": null
+    },
+    {
+      "id": "m05",
+      "category": "multi",
+      "objective": "What CPU do I have, what time is it, and what is 365*24?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.9 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info",
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2481,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1587,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 892,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 2.9 GB free of 15.7 GB; up 85.8 h\nNot confirmed: what is 365*24",
+      "error": null
+    },
+    {
+      "id": "m06",
+      "category": "multi",
+      "objective": "List the files in scripts/inference and calculate 60*60*24",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "\".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/,"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "workspace.list_dir",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2945,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1777,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1166,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 1 step succeeded.\n• \".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/, scratch/, scripts/, services/, src/, …\nNot confirmed: unmet criterion; …",
+      "error": null
+    },
+    {
+      "id": "u01",
+      "category": "unsupported",
+      "objective": "Send an email to my boss saying I'm late",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:30 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h"
+        },
+        {
+          "id": "s3",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s4",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        },
+        {
+          "id": "s5",
+          "tool": "system.info",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s4, which did not succeed"
+        },
+        {
+          "id": "s6",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s5, which did not succeed"
+        },
+        {
+          "id": "s7",
+          "tool": "system.info",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s6, which did not succeed"
+        },
+        {
+          "id": "s8",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s7, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: input.timeZone: does not match the required pattern"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info",
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 16716,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 5466,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 9951,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1296,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 8 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:30 GMT+5:30\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h\n• what this step achieves: failed (Expected a number at position 0)\n• what this step achieves: not run (Depends on step s3, which did not succeed)\n• what this ",
+      "error": null
+    },
+    {
+      "id": "u02",
+      "category": "unsupported",
+      "objective": "Open Notepad",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2486,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1285,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1200,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h\nNot confirmed: Open Notepad",
+      "error": null
+    },
+    {
+      "id": "u03",
+      "category": "unsupported",
+      "objective": "Delete the docs folder",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:36 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "workspace.list_dir",
+          "input": {
+            "path": "."
+          },
+          "status": "succeeded",
+          "evidence": "\".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/,"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 3269,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1963,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1303,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 2 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:36 GMT+5:30\n• \".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/, scratch/, scripts/, services/, src/, …\nNot confirmed: unmet criterion; needsMoreSteps; reason",
+      "error": null
+    },
+    {
+      "id": "u04",
+      "category": "unsupported",
+      "objective": "Search the web for today's weather forecast",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:41 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h"
+        },
+        {
+          "id": "s3",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + new Date().toLocaleDateString() + \"\" + Math.floor(Math.random() * 100) + \"\" + Math.floor(Math.random() * 100) + \"\" + Math.floor(Math.random() * 100) + \"\" + Math.floor(Math.random() * 100) + \"\" + "
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s4",
+          "tool": "workspace.list_dir",
+          "input": {
+            "path": ".weather_forecast"
+          },
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info",
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 5513,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 4096,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1414,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 4 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:45:41 GMT+5:30\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h\n• what this step achieves: failed (Expected a number at position 0)\n• what this step achieves: not run (Depends on step s3, which did not succeed)\nNot confirme",
+      "error": null
+    },
+    {
+      "id": "u05",
+      "category": "unsupported",
+      "objective": "Read the contents of the file .env.local",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 3,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "\".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/,"
+        },
+        {
+          "id": "s2",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h"
+        },
+        {
+          "id": "s3",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "Expected a number at position 0"
+        },
+        {
+          "id": "s4",
+          "tool": "system.time",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s3, which did not succeed"
+        },
+        {
+          "id": "s5",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s4, which did not succeed"
+        },
+        {
+          "id": "s6",
+          "tool": "system.time",
+          "input": {},
+          "status": "skipped",
+          "error": "Depends on step s5, which did not succeed"
+        },
+        {
+          "id": "s7",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s6, which did not succeed"
+        },
+        {
+          "id": "s8",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "\"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" + \"\" +\""
+          },
+          "status": "skipped",
+          "error": "Depends on step s7, which did not succeed"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.info",
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 14550,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 13185,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1363,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 2 of 8 steps succeeded.\n• \".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/, scratch/, scripts/, services/, src/, …\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 3.1 GB free of 15.7 GB; up 85.8 h\n• read the contents of the file .env",
+      "error": null
+    },
+    {
+      "id": "u06",
+      "category": "unsupported",
+      "objective": "What is in agent/runtime? Only list it, do nothing else.",
+      "inject": null,
+      "outcome": "partial",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "workspace.list_dir",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "\".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/,"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "workspace.list_dir"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": true
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 3032,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2084,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 946,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 1 step succeeded.\n• \".\" contains 38 visible entries (18 folders, 20 files): agent/, app/, components/, docs/, hooks/, lib/, local-inference/, models/, public/, research/, results/, scratch/, scripts/, services/, src/, …\nNot confirmed: unmet criterion; …",
+      "error": null
+    },
+    {
+      "id": "f01",
+      "category": "failure",
+      "objective": "How much RAM does this computer have?",
+      "inject": {
+        "tool": "system.info",
+        "mode": "always-fail"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "failed",
+          "evidence": "",
+          "error": "injected failure"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "system.info"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1477,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1477,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• what this step achieves: failed (injected failure)",
+      "error": null
+    },
+    {
+      "id": "f02",
+      "category": "failure",
+      "objective": "What time is it and what is 17*3?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "always-fail"
+      },
+      "outcome": "partial",
+      "legacyOutcome": "partial",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 2,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:46:03 GMT+5:30"
+        },
+        {
+          "id": "s2",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "17*3"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "injected failure"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate",
+          "system.time"
+        ],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2566,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1391,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1173,
+          "ok": true
+        }
+      ],
+      "response": "Partially done: 1 of 2 steps succeeded.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 00:46:03 GMT+5:30\n• evaluate 17*3: failed (injected failure)\nNot confirmed: unmet criterion; math.evaluate",
+      "error": null
+    },
+    {
+      "id": "f03",
+      "category": "failure",
+      "objective": "What is (17+25)*2?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "fail-first"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "math.evaluate",
+          "input": {
+            "expression": "17+25*2"
+          },
+          "status": "failed",
+          "evidence": "",
+          "error": "injected failure"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "math.evaluate"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1910,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1910,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• what this step achieves: failed (injected failure)",
+      "error": null
+    },
+    {
+      "id": "f04",
+      "category": "failure",
+      "objective": "What time is it?",
+      "inject": {
+        "tool": "system.time",
+        "mode": "hang"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "failed",
+          "evidence": "",
+          "error": "Timed out after 2000 ms"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "system.time"
+        ],
+        "exact": true
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3414,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1402,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\n• What time is it?: failed (Timed out after 2000 ms)",
+      "error": null
+    }
+  ]
+}

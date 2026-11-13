@@ -229,7 +229,7 @@ public class FileOrganizeTests
     public void Tools_OfferedOnlyWhenEnabled_WithRootsAndAudit()
     {
         using var on = new Rig();
-        Assert.Equal(new[] { "files.organize", "files.undo_organize" }, on.Service.Tools);
+        Assert.Equal(new[] { "files.organize", "files.undo_organize", "files.copy", "files.rename", "files.undo_copy_rename", "files.move" }, on.Service.Tools);
         using var off = new Rig(enabled: false); Assert.Empty(off.Service.Tools);
         using var noAudit = new Rig(withAudit: false); Assert.Empty(noAudit.Service.Tools);
         using var noRoots = new Rig(withRoot: false); Assert.Empty(noRoots.Service.Tools);

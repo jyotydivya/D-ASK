@@ -1,0 +1,1994 @@
+{
+  "meta": {
+    "tag": "v2_qwen2.5-0.5b-instruct-q4_k_m_vulkan_product_unstructured",
+    "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+    "backend": "vulkan",
+    "variant": "argsOn_pgOff_grOff",
+    "switches": {
+      "argumentConstraints": true,
+      "planGrounding": false,
+      "gapReplanning": false
+    },
+    "structured": false,
+    "codeVersion": "v2",
+    "startedAt": "2026-11-02T19:58:21.588Z",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i5-1335U",
+      "logicalCpus": 12,
+      "totalMemMB": 16067,
+      "os": "win32 10.0.26200"
+    },
+    "runtime": "llama.cpp b11720 win-vulkan-x64",
+    "temperature": 0,
+    "contextSize": 4096,
+    "finishedAt": "2026-11-02T20:00:30.243Z"
+  },
+  "admitted": true,
+  "loadMs": 2332,
+  "unloadMs": 202,
+  "backendUsed": "vulkan",
+  "availBeforeMB": 5736,
+  "estimateMB": 973,
+  "resources": {
+    "samples": 39,
+    "peakWorkingSetMB": 736,
+    "minAvailableMB": 4949,
+    "cpuPctMedian": 15.0582110287945,
+    "cpuPctP95": 24.340931293126,
+    "gpuPctMedian": 80.5541249239954,
+    "gpuPctP95": 88.3885673232163,
+    "nonLoopbackConnectionsObserved": 0
+  },
+  "blockedOutbound": [],
+  "tasks": [
+    {
+      "id": "s01",
+      "category": "single",
+      "objective": "What time is it?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 15287,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 736,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 14531,
+          "ok": false,
+          "kind": "truncated"
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model output was cut off at the token limit",
+      "error": "Planning failed: plan model call failed: Local model output was cut off at the token limit"
+    },
+    {
+      "id": "s02",
+      "category": "single",
+      "objective": "What's today's date?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 853,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 208,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 600,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: a task or question needs at least one step",
+      "error": "Planning failed: The model did not produce a valid plan: a task or question needs at least one step"
+    },
+    {
+      "id": "s03",
+      "category": "single",
+      "objective": "What time is it in Tokyo right now?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1242,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1016,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 219,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "s04",
+      "category": "single",
+      "objective": "What is (17+25)*2?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2243,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1952,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 288,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "s05",
+      "category": "single",
+      "objective": "Calculate 2^10 - 24",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1619,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1307,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 306,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "s06",
+      "category": "single",
+      "objective": "What is 144/12 + 7*3?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.goal: required",
+          "plan.steps: required",
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1113,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 382,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 727,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "s07",
+      "category": "single",
+      "objective": "How much RAM does this computer have?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1197,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 974,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 220,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "s08",
+      "category": "single",
+      "objective": "What CPU does this machine have?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: required",
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2015,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 868,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1143,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "s09",
+      "category": "single",
+      "objective": "List the files in agent/runtime",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: workspace.list_dir.path is required and must be one of \"agent/runtime\""
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 1,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3095,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1820,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1267,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "s10",
+      "category": "single",
+      "objective": "What is in the docs folder?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": false,
+        "errors": [
+          "step s1: workspace.list_dir.path is required and must be one of \"docs\""
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 1,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3477,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1958,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1514,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "t01",
+      "category": "trap",
+      "objective": "What is 100 - (20 + 30) * 2?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2471,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2173,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 295,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "t02",
+      "category": "trap",
+      "objective": "Compute (3+4)*(5-2)",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1919,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1625,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 288,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "t03",
+      "category": "trap",
+      "objective": "What is 2*(3+4)^2?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2328,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2033,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 292,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "t04",
+      "category": "trap",
+      "objective": "What time is it in London?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1029,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 801,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 225,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "t05",
+      "category": "trap",
+      "objective": "Show me what's inside agent/runtime/tools",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: required",
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1665,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 532,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1131,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "p01",
+      "category": "paraphrase",
+      "objective": "How many hours are in a week?",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.time",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 01:29:07 GMT+5:30"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "a task or question needs at least one step"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.time"
+        ],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 3117,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1112,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 914,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 1078,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Current time in Asia/Calcutta: Tuesday, 3 November 2026 at 01:29:07 GMT+5:30\nNot confirmed: unmet criterion; how many hours are in a week; ...",
+      "error": null
+    },
+    {
+      "id": "p02",
+      "category": "paraphrase",
+      "objective": "What is seventeen times three?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 5747,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 5552,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 194,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "p03",
+      "category": "paraphrase",
+      "objective": "How long has my computer been running?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1299,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1072,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 225,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "p04",
+      "category": "paraphrase",
+      "objective": "What does the clock say in New York?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1219,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1020,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 197,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "p05",
+      "category": "paraphrase",
+      "objective": "Is it morning or evening for me right now?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1185,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 965,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 218,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "m01",
+      "category": "multi",
+      "objective": "What time is it and what is 17*3?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": false,
+        "errorKind": "truncated",
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 14572,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 14568,
+          "ok": false,
+          "kind": "truncated"
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model output was cut off at the token limit",
+      "error": "Planning failed: plan model call failed: Local model output was cut off at the token limit"
+    },
+    {
+      "id": "m02",
+      "category": "multi",
+      "objective": "How much memory do I have, and what is 1024*8?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2787,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1029,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1755,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "m03",
+      "category": "multi",
+      "objective": "What time is it in Tokyo, and what is in agent/runtime?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: required",
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2564,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 641,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1922,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "m04",
+      "category": "multi",
+      "objective": "Tell me the date, compute (17+25)*2, and list the docs folder.",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "math.evaluate",
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2437,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 2209,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 227,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "m05",
+      "category": "multi",
+      "objective": "What CPU do I have, what time is it, and what is 365*24?",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info",
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1639,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1423,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 212,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "m06",
+      "category": "multi",
+      "objective": "List the files in scripts/inference and calculate 60*60*24",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "workspace.list_dir",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1738,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1520,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 213,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "u01",
+      "category": "unsupported",
+      "objective": "Send an email to my boss saying I'm late",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1509,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1293,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 215,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "u02",
+      "category": "unsupported",
+      "objective": "Open Notepad",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: unknown tool \"namespace.action\""
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1268,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1044,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 214,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: required; plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: required; plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "u03",
+      "category": "unsupported",
+      "objective": "Delete the docs folder",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: unknown tool \"namespace.action\""
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2419,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1206,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 1209,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "u04",
+      "category": "unsupported",
+      "objective": "Search the web for today's weather forecast",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "step s1: unknown tool \"namespace.search\""
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 3709,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1295,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 2410,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "u05",
+      "category": "unsupported",
+      "objective": "Read the contents of the file .env.local",
+      "inject": null,
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1367,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1140,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 227,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "u06",
+      "category": "unsupported",
+      "objective": "What is in agent/runtime? Only list it, do nothing else.",
+      "inject": null,
+      "outcome": "unverified",
+      "legacyOutcome": "completed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": true,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 1,
+      "steps": [
+        {
+          "id": "s1",
+          "tool": "system.info",
+          "input": {},
+          "status": "succeeded",
+          "evidence": "win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 4.9 GB free of 15.7 GB; up 86.6 h"
+        }
+      ],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": true,
+        "fullValid": true,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": true,
+      "toolSelection": {
+        "planned": [
+          "system.info"
+        ],
+        "expected": [
+          "workspace.list_dir"
+        ],
+        "exact": false
+      },
+      "assessor": {
+        "criteriaSatisfied": true,
+        "oracle": false
+      },
+      "independentlyVerified": false,
+      "e2eMs": 2717,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1796,
+          "ok": true
+        },
+        {
+          "purpose": "assess",
+          "ms": 914,
+          "ok": true
+        }
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 4.9 GB free of 15.7 GB; up 86.6 h\nNot confirmed: unmet criterion",
+      "error": null
+    },
+    {
+      "id": "f01",
+      "category": "failure",
+      "objective": "How much RAM does this computer have?",
+      "inject": {
+        "tool": "system.info",
+        "mode": "always-fail"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.info"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 1815,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1592,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 220,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required"
+    },
+    {
+      "id": "f02",
+      "category": "failure",
+      "objective": "What time is it and what is 17*3?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "always-fail"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": false,
+        "errorKind": "truncated",
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": []
+      },
+      "planCalls": 1,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time",
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 14679,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 14674,
+          "ok": false,
+          "kind": "truncated"
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model output was cut off at the token limit",
+      "error": "Planning failed: plan model call failed: Local model output was cut off at the token limit"
+    },
+    {
+      "id": "f03",
+      "category": "failure",
+      "objective": "What is (17+25)*2?",
+      "inject": {
+        "tool": "math.evaluate",
+        "mode": "fail-first"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.intent: must be one of task, question, unsupported"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "math.evaluate"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 2244,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 1965,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 276,
+          "ok": true
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported",
+      "error": "Planning failed: The model did not produce a valid plan: plan.goal: required; plan.steps: required; plan.intent: must be one of task, question, unsupported"
+    },
+    {
+      "id": "f04",
+      "category": "failure",
+      "objective": "What time is it?",
+      "inject": {
+        "tool": "system.time",
+        "mode": "hang"
+      },
+      "outcome": "failed",
+      "legacyOutcome": "failed",
+      "success": false,
+      "incorrectClaim": false,
+      "incorrectClaimLegacy": false,
+      "missedCompletion": false,
+      "missedCompletionLegacy": false,
+      "refused": false,
+      "iterations": 1,
+      "toolCalls": 0,
+      "steps": [],
+      "firstPlan": {
+        "jsonOk": true,
+        "errorKind": null,
+        "shapeValid": false,
+        "fullValid": false,
+        "errors": [
+          "plan.goal: required",
+          "plan.steps: required"
+        ]
+      },
+      "planCalls": 2,
+      "argViolations": 0,
+      "acceptedAfterRepair": false,
+      "toolSelection": {
+        "planned": [],
+        "expected": [
+          "system.time"
+        ],
+        "exact": false
+      },
+      "assessor": null,
+      "independentlyVerified": false,
+      "e2eMs": 14484,
+      "modelCalls": [
+        {
+          "purpose": "plan",
+          "ms": 253,
+          "ok": true
+        },
+        {
+          "purpose": "plan",
+          "ms": 14228,
+          "ok": false,
+          "kind": "truncated"
+        }
+      ],
+      "response": "I couldn't complete this.\nPlanning failed: plan model call failed: Local model output was cut off at the token limit",
+      "error": "Planning failed: plan model call failed: Local model output was cut off at the token limit"
+    }
+  ]
+}

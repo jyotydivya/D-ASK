@@ -66,7 +66,7 @@ public class Phase7B3Tests
         {
             Recorder = journal && recorder == null ? new SqliteEvidenceRecorder(NullLogger<SqliteEvidenceRecorder>.Instance, Db) : null;
             IEvidenceRecorder? ev = recorder ?? Recorder;
-            Policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, ev);
+            Policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, ev, Windows);   // Phase 4B-2A: the OS view used to re-verify a window-bound approval
             Policy.SetSessionLivenessGate(s => Live.Contains(s));
             Policy.ApprovalRequested += (_, r) => { lock (Delivered) Delivered.Add(r); };
             Windows.Windows.Add(W(Hwnd, 4000, "notepad.exe", "Untitled - Notepad"));

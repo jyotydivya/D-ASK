@@ -325,8 +325,8 @@ async function main(): Promise<void> {
   console.log("\n[S] Security");
   {
     const tools = createDesktopTools(new FakeDaemon([]));
-    check(tools.map((t) => t.name).sort().join() === "desktop.click_element,desktop.focus_window,desktop.inspect_window,desktop.list_windows,desktop.press_keys,desktop.read_text,desktop.set_window_state,desktop.type_text",
-      "S1 desktop tools: list, inspect, read_text (vision, read-only; added 2026-11-10), the two window requests and the three element-bound input requests");
+    check(tools.map((t) => t.name).sort().join() === "desktop.click_element,desktop.focus_window,desktop.inspect_window,desktop.launch_app,desktop.list_apps,desktop.list_windows,desktop.open_settings,desktop.press_keys,desktop.read_text,desktop.set_window_state,desktop.type_text,dev.run_task,office.create_excel_workbook,office.create_word_document",
+      "S1 desktop tools: list, inspect, read_text (vision, read-only), the two window requests, the three element-bound input requests, launch_app (added 2026-11-12), open_settings and list_apps (universal app control, 2026-11-14), the two Office document tools and dev.run_task (2026-11-14)");
     const readTools = tools.filter((t) => t.name === "desktop.list_windows" || t.name === "desktop.inspect_window");
     const actionTools = tools.filter((t) => t.name === "desktop.focus_window" || t.name === "desktop.set_window_state");
     check(readTools.every((t) => t.permissions.length === 1 && t.permissions[0] === "read:desktop" && !t.requiresApproval && t.risk === "low"), "S2 the read tools need only read:desktop");

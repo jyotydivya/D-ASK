@@ -11,7 +11,7 @@ import { AgentRuntime } from "../../agent/runtime/runtime";
 import { createDefaultRegistry, DEFAULT_GRANTS } from "../../agent/runtime/defaults";
 import { clarificationFor, groundCall } from "../../agent/runtime/grounding";
 import { FileAccess } from "../../agent/runtime/tools/filesystem";
-import { MAX_BATCH, MAX_BATCH_TEXT, isOrganizePreview, isOrganizeRequest, isUndoOrganize, movesText, organizeFolders, organizeRule, planOrganize } from "../../agent/runtime/tools/fileOrganize";
+import { MAX_BATCH, MAX_BATCH_TEXT, isOrganizePreview, isOrganizeRequest, isUndoOrganize, isUndoCopyRename, movesText, organizeFolders, organizeRule, planOrganize, requestedCopy, requestedRename } from "../../agent/runtime/tools/fileOrganize";
 import { actuationRefusal, type DesktopBridge, type DesktopReply } from "../../agent/runtime/tools/desktop";
 import { parseRequest } from "../../agent/host/protocol";
 import type { LanguageModel, StructuredRequest, ToolPermission } from "../../agent/runtime/types";
@@ -134,6 +134,45 @@ async function main() {
     check(ok, "H1 the daemon's offer of files.organize / files.undo_organize is accepted");
     let refused = false; try { parseRequest(hello(["files.delete"])); } catch { refused = true; }
     check(refused, "H2 any other files.* name is refused");
+  }
+
+  console.log("\n[C] copy / rename / undo (agent side; the daemon is scripted)");
+  {
+    class CRDaemon implements DesktopBridge {
+      available = true; calls: { tool: string; args: any }[] = [];
+      offers(t: string) { return ["files.copy", "files.rename", "files.undo_copy_rename"].includes(t); }
+      async call(_t: string, tool: string, args: Record<string, unknown>): Promise<DesktopReply> {
+        this.calls.push({ tool, args: structuredClone(args) });
+        if (tool === "files.copy") return { status: "ok", result: { executed: true, verified: true, source: args.path, destination: path.join(String(args.toFolder ?? path.dirname(String(args.path))), String(args.newName ?? path.basename(String(args.path)))), sha256: "ab".repeat(32) } };
+        if (tool === "files.rename") return { status: "ok", result: { executed: true, verified: true, folder: path.dirname(String(args.path)), from: path.basename(String(args.path)), to: args.newName } };
+        return { status: "ok", result: { executed: true, verified: true, kind: "rename", path: "x" } };
+      }
+    }
+    const SRC = path.join(DL, "notes.txt"), ARCH = path.join(DL, "Archive");
+    check(JSON.stringify(requestedCopy(`Copy "${SRC}" to "${ARCH}"`)) === JSON.stringify({ path: SRC, toFolder: ARCH }), "C1 copy grammar: file and destination (quoted paths with spaces allowed)", requestedCopy(`Copy "${SRC}" to "${ARCH}"`));
+    check(requestedCopy(`Make a copy of ${SRC} called notes-v2.txt`)?.newName === "notes-v2.txt" && requestedRename(`Rename ${SRC} to "final notes.txt"`)?.newName === "final notes.txt", "C2 new names (quoted or not)");
+    check(requestedRename(`Rename ${SRC} to ..\\evil.txt`) === null && requestedRename(`Rename ${SRC} to con`) === null && requestedCopy(`Copy ${SRC} to the cloud`) === null, "C3 unsafe names and non-paths are not understood (nothing guessed)");
+    check(isUndoCopyRename("Undo the last copy") && isUndoCopyRename("undo the last rename") && !isUndoOrganize("Undo the last copy") && !isUndoCopyRename("Undo the last file organisation"), "C4 undo of copy/rename is distinct from undo of an organisation");
+    let d = new CRDaemon();
+    let r = await run(d, new Scripted([plan("filesystem.copy", { path: SRC, toFolder: ARCH })]), `Copy "${SRC}" to "${ARCH}"`);
+    check(r.outcome === "completed" && r.verification?.independentlyVerified === true && d.calls[0]?.tool === "files.copy" && d.calls[0]!.args.toFolder === ARCH, "C5 copy runs through the daemon (approval there) and completes verified", { o: r.outcome, calls: d.calls });
+    d = new CRDaemon();
+    r = await run(d, new Scripted([plan("filesystem.copy", { path: SRC, toFolder: "C:\\Windows" })]), `Copy "${SRC}" to "${ARCH}"`);
+    check(r.outcome !== "completed" && !d.calls.some((c) => c.args.toFolder === "C:\\Windows"), "C6 the model cannot change the destination", d.calls);
+    d = new CRDaemon();
+    r = await run(d, new Scripted([plan("filesystem.rename", { path: SRC, newName: "final.txt" })]), `Rename ${SRC} to final.txt`);
+    check(r.outcome === "completed" && d.calls[0]?.tool === "files.rename" && d.calls[0]!.args.newName === "final.txt", "C7 rename runs through the daemon and completes verified", r.outcome);
+    d = new CRDaemon();
+    r = await run(d, new Scripted([plan("filesystem.rename", { path: SRC, newName: "other.txt" })]), `Rename ${SRC} to final.txt`);
+    check(r.outcome !== "completed" && !d.calls.some((c) => c.args.newName === "other.txt"), "C8 the model cannot change the new name", d.calls);
+    d = new CRDaemon();
+    r = await run(d, new Scripted([plan("filesystem.undo_copy_rename", {})]), "Undo the last rename");
+    check(r.outcome === "completed" && d.calls[0]?.tool === "files.undo_copy_rename", "C9 undo goes through the daemon", r.outcome);
+    // The real 0.5B plan (2026-11-13): the same undo step 8 times. Exact duplicates are removed; one call, COMPLETED (not "partial").
+    d = new CRDaemon();
+    const eight = { intent: "task", goal: "g", successCriteria: ["done"], steps: Array.from({ length: 8 }, (_, i) => ({ id: `s${i + 1}`, description: "undo the last rename", tool: "filesystem.undo_copy_rename", input: {}, dependsOn: i ? [`s${i}`] : [] })) };
+    r = await run(d, new Scripted([eight]), "Undo the last rename");
+    check(r.outcome === "completed" && d.calls.length === 1, "C10 an 8-fold repeated undo runs once and completes", { outcome: r.outcome, calls: d.calls.length });
   }
 
   await fs.rm(TMP, { recursive: true, force: true });

@@ -168,7 +168,7 @@ function Get-ClickGuardViolation {
 
 # Pure: the task outcome the HUD panel shows in this text (same rule as hud-driver's Get-HudOutcome).
 function Get-OutcomeFromText([string]$Text) {
-    $m = [regex]::Match($Text, '(?m)^RESULT[^\n]*\n(COMPLETED|UNVERIFIED|PARTIAL|FAILED|REFUSED|CANCELLED)', 'IgnoreCase')
+    $m = [regex]::Match($Text, '(?m)^RESULT[^\n]*\n(COMPLETED|ANSWERED|UNVERIFIED|PARTIAL|FAILED|REFUSED|CANCELLED)', 'IgnoreCase')
     if ($m.Success) { return $m.Groups[1].Value.ToUpper() }
     return $null
 }

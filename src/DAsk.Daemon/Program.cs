@@ -88,7 +88,8 @@ public class Program
             {
                 var logger = sp.GetRequiredService<ILogger<ActionPolicyEngine>>();
                 var evidence = sp.GetService<IEvidenceRecorder>();
-                return new ActionPolicyEngine(logger, evidence);
+                // Phase 4B-2A: window-bound approvals are re-verified against the live OS window when consumed.
+                return new ActionPolicyEngine(logger, evidence, sp.GetRequiredService<IWindowSource>());
             });
             services.AddSingleton<ActionExecutionEngine>(sp =>
             {
@@ -145,6 +146,8 @@ public class Program
             {
                 var engine = sp.GetRequiredService<ActionExecutionEngine>();
                 var hostOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentHostOptions>>().Value;
+                // Windows this daemon opened for a task: the typing tools prefer them (same handle, pid and creation time).
+                var launchedWindows = new DAsk.Daemon.Automation.Desktop.LaunchedWindowRegistry();
                 // P1/P2: guarded element-bound input beside the window operations. Mouse and keyboard are separate policies.
                 var input = new DAsk.Daemon.Automation.Input.GuardedInputRequestService(
                     sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
@@ -156,7 +159,25 @@ public class Program
                     sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
                     new DAsk.Daemon.Automation.Input.Win32DesktopInputPlatform(),
                     new DAsk.Daemon.Automation.Input.GuardedInputOptions { MouseEnabled = hostOpts.DesktopMouseInput, KeyboardEnabled = hostOpts.DesktopKeyboardInput },
-                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Input.GuardedInputRequestService>>());
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Input.GuardedInputRequestService>>(),
+                    launchedWindows);
+                // desktop.launch_app: open one application from the daemon's fixed list after approval; success only on a NEW window.
+                var appLaunch = new DAsk.Daemon.Automation.Desktop.AppLaunchRequestService(
+                    sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
+                    new DAsk.Daemon.Automation.Desktop.AppLaunchOptions
+                    {
+                        Enabled = hostOpts.DesktopAppLaunch,
+                        // Any installed application (Start menu, App Paths, packaged apps, Windows tools), resolved by name; Settings pages.
+                        Catalog = new DAsk.Daemon.Automation.Desktop.InstalledAppCatalog(new DAsk.Daemon.Automation.Desktop.Win32InstalledAppSource()),
+                        WebSearchAllowed = hostOpts.WebSearch,   // offline-first: off unless explicitly enabled
+                    },
+                    launchedWindows,
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Desktop.AppLaunchRequestService>>());
                 // Browser stage 2: approval authority for D-ASK's private browser (the agent host performs, then verifies).
                 var browserActions = new DAsk.Daemon.Automation.Browser.BrowserActionRequestService(
                     sp.GetRequiredService<ActionPolicyEngine>(),
@@ -205,7 +226,25 @@ public class Program
                         NotesDir = string.IsNullOrWhiteSpace(hostOpts.NotesDir) ? new DAsk.Daemon.Automation.Files.NoteOptions().NotesDir : hostOpts.NotesDir!,
                     },
                     logger: sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Files.NoteCreateRequestService>>());
-                return new DAsk.Daemon.Automation.Input.CompositeDesktopActionRequestService(input, browserActions, fileOrganize, notes, workflows, plugins, windowText, new DAsk.Daemon.Automation.Desktop.DesktopActionRequestService(
+                // Office: a new Word document / Excel workbook with exactly the approved content, verified by reading the saved file back.
+                var office = new DAsk.Daemon.Automation.Office.OfficeDocumentService(
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
+                    new DAsk.Daemon.Automation.Office.OfficeDocumentOptions { Enabled = hostOpts.OfficeDocuments },
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Office.OfficeDocumentService>>());
+                // Developer tasks: build or test ONE project in an allowed folder with the daemon's fixed command, after approval.
+                var devTasks = new DAsk.Daemon.Automation.Dev.DevTaskService(
+                    sp.GetRequiredService<ActionPolicyEngine>(),
+                    () => engine.IsEmergencyStopped,
+                    () => engine.CurrentStopGeneration,
+                    sp.GetService<IEvidenceRecorder>(),
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
+                    new DAsk.Daemon.Automation.Dev.DevTaskOptions { Enabled = hostOpts.DevProjectRoots.Length > 0, Roots = hostOpts.DevProjectRoots },
+                    sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Dev.DevTaskService>>());
+                return new DAsk.Daemon.Automation.Input.CompositeDesktopActionRequestService(input, appLaunch, browserActions, fileOrganize, notes, workflows, plugins, windowText, office, devTasks, new DAsk.Daemon.Automation.Desktop.DesktopActionRequestService(
                     sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
                     sp.GetRequiredService<ActionPolicyEngine>(),
                     () => engine.IsEmergencyStopped,

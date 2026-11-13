@@ -14,12 +14,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi, type TelemetryData } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { soundFx, speechFx, type ThemeColor } from "@/lib/soundEngine";
+import { overlapsOwnSpeech, type SpeechWindow } from "@/lib/spokenText";
 import { PcmRecorder } from "@/lib/pcmRecorder";
+import { parseVoiceTranscript } from "@/lib/voiceCommand";
 import DevicePanel from "@/components/DevicePanel";
 import ApprovalSurface from "@/components/ApprovalSurface";
 import { AgentStatusPanel } from "@/components/AgentStatusPanel";
 import { useTask } from "@/hooks/useTask";
 import { isNativeHud } from "@/hooks/nativeAgent";
+import { ManagePanel } from "@/components/ManagePanel";
 import { requestMode, useHudInteraction } from "@/hooks/hudInteraction";
 import type { DeviceInfo } from "@/app/api/devices/route";
 
@@ -44,7 +47,11 @@ type CommandEntry = {
   command: string;
   response: string;
   time: string;
+  /** Native HUD: the daemon's id for the task this entry submitted (recorded on acceptance), so its result can be recovered after a restart. */
+  taskId?: string;
 };
+
+const RESULT_UNKNOWN = "⚠ RESULT UNKNOWN: D-ASK CLOSED BEFORE THIS FINISHED.";
 
 const COMMAND_HISTORY_KEY = "ultron-command-history";
 const MAX_HISTORY_ENTRIES = 8;
@@ -192,6 +199,10 @@ export default function JarvisOrb() {
   const lastCommandRef = useRef<{ text: string; time: number } | null>(null);
   // TTS echo guard: true while D-ASK is speaking — suppresses mic input
   const isSpeakingRef = useRef<boolean>(false);
+  // When D-ASK last spoke (a fixed interval computed when the speech starts) and when the current recording segment began: audio recorded in that
+  // interval is D-ASK's own voice (or someone talking over it) and is discarded, whatever time its transcript arrives (see lib/spokenText.ts).
+  const speechWindowRef = useRef<SpeechWindow | null>(null);
+  const segmentStartRef = useRef<number>(0);
 
   // Groq STT Refs
   const mediaRecorderRef = useRef<PcmRecorder | null>(null);
@@ -203,6 +214,10 @@ export default function JarvisOrb() {
   const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [command, setCommand] = useState("");
+  // Known only after mount (the server render cannot know), so the first client render matches the server HTML.
+  const [nativeShell, setNativeShell] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  useEffect(() => { setNativeShell(isNativeHud()); }, []);
   const [history, setHistory] = useState<CommandEntry[]>([]);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [aiThinking, setAiThinking] = useState(false);
@@ -235,8 +250,23 @@ export default function JarvisOrb() {
 
   // ── Agentic Task System ──────────────────────────────────────────────────
   // Callbacks update history ONCE when the task terminates
+  // A request that came from the microphone has its RESULT spoken too (through the local voice). The request text is remembered so that
+  // only that task's result is spoken; a typed request is never read aloud. speakResultRef is filled in once speakResponse exists.
+  const voiceCommandRef = useRef<string | null>(null);
+  const historyRef = useRef<{ command: string; response: string; taskId?: string }[]>([]);
+  const speakResultRef = useRef<(text: string) => void>(() => {});
+  const spokenSummary = (text: string) => text.replace(/^Done\.\s*/i, "").replace(/\u2022/g, "").replace(/\s+/g, " ").trim().slice(0, 600);
+  const speakIfVoiceTask = (text: string) => {
+    const pending = historyRef.current.find((e) => e.response.startsWith("⏳"));
+    if (pending && voiceCommandRef.current !== null && pending.command === voiceCommandRef.current) {
+      voiceCommandRef.current = null;
+      const t = spokenSummary(text);
+      if (t) speakResultRef.current(t);
+    }
+  };
   const taskCallbacksRef = useRef({
     onComplete: (response: string) => {
+      speakIfVoiceTask(response);
       setAiThinking(false);
       // Replace the ⏳ placeholder with the real result
       setHistory((current) => {
@@ -249,6 +279,7 @@ export default function JarvisOrb() {
       soundFx.playLockSound();
     },
     onFail: (error: string) => {
+      speakIfVoiceTask(`That failed. ${error}`);
       setAiThinking(false);
       setHistory((current) => {
         const updated = [...current];
@@ -273,10 +304,34 @@ export default function JarvisOrb() {
     result: taskResult,
     submitTask,
     cancelTask,
+    recoverTask,
   } = useTask({
     onComplete: (response) => taskCallbacksRef.current.onComplete(response),
     onFail: (error) => taskCallbacksRef.current.onFail(error),
+    // The task id is written to the pending entry when the daemon accepts it (well before the result): if the HUD is then closed or killed before the
+    // result is saved, the next start asks the daemon for that task's real result instead of leaving "result unknown".
+    onAccepted: (taskId) => setHistory((current) => {
+      const idx = current.findIndex((e) => e.response.startsWith("⏳") && !e.taskId);
+      if (idx < 0) return current;
+      const updated = [...current];
+      updated[idx] = { ...updated[idx]!, taskId };
+      return updated;
+    }),
+    onRecovered: (taskId, text, failed) => {
+      if (text === null) return;   // unknown to the daemon (or not finished): the entry keeps saying the result is unknown
+      setHistory((current) => current.map((e) => e.taskId === taskId && e.response === RESULT_UNKNOWN
+        ? { ...e, response: `${failed ? "✗ " : ""}RECOVERED AFTER RESTART · ${text}` } : e));
+    },
   });
+
+  // History recovery: entries restored as "result unknown" that recorded their task id are looked up in the daemon (a few attempts, because the
+  // daemon may still be connecting when the HUD starts). Read-only; a result can only fill in the entry that submitted that task.
+  useEffect(() => {
+    const timers = [2500, 8000, 20000].map((delay) => window.setTimeout(() => {
+      for (const e of historyRef.current) if (e.response === RESULT_UNKNOWN && e.taskId) recoverTask(e.taskId);
+    }, delay));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [recoverTask]);
 
   // Device Link State
   const [activeDevice, setActiveDevice] = useState<DeviceInfo | null>(null);
@@ -484,7 +539,7 @@ export default function JarvisOrb() {
         // A saved placeholder belongs to a request from an earlier run: nothing will ever fill it in now.
         setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES).map((entry) =>
           typeof entry?.response === "string" && entry.response.startsWith("⏳")
-            ? { ...entry, response: "⚠ RESULT UNKNOWN: D-ASK CLOSED BEFORE THIS FINISHED." }
+            ? { ...entry, response: RESULT_UNKNOWN }
             : entry));
       }
     } catch {
@@ -581,7 +636,8 @@ export default function JarvisOrb() {
       if (!isSpeechEnabled) return;
       // Set speaking guard: suppresses mic input while D-ASK is talking
       isSpeakingRef.current = true;
-      speechFx.speak(
+      const startedAt = Date.now();
+      const estimatedMs = speechFx.speak(
         text,
         (level) => {
           setAudioLevel(level);
@@ -594,9 +650,12 @@ export default function JarvisOrb() {
           setTimeout(() => { isSpeakingRef.current = false; }, 1200);
         },
       );
+      if (estimatedMs > 0) speechWindowRef.current = { start: startedAt, end: startedAt + estimatedMs };
     },
     [isSpeechEnabled],
   );
+  useEffect(() => { speakResultRef.current = speakResponse; }, [speakResponse]);
+  useEffect(() => { historyRef.current = history; }, [history]);
 
   const addHistoryEntry = useCallback(
     (commandText: string, response: string) => {
@@ -920,6 +979,9 @@ export default function JarvisOrb() {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         audioChunksRef.current = [];
 
+        // Audio recorded while D-ASK was speaking (plus a grace period) is its own voice: never transcribed, never run as a command.
+        if (overlapsOwnSpeech(segmentStartRef.current, Date.now(), speechWindowRef.current)) { setCommand(""); return; }
+
         // Skip tiny blips
         if (blob.size < 3000) return;
 
@@ -932,24 +994,20 @@ export default function JarvisOrb() {
             const transcript = data.text?.trim();
             if (transcript) {
               setCommand(transcript);
-              const wakeMatch = /(?:^|\b)(?:d[\s-]*ask|the[\s-]*ask|deask|task|desk|hey[\s-]*d[\s-]*ask|jarvis|ultron)\b/i.exec(transcript);
+              // A wake word counts only at the START of the utterance (lib/voiceCommand.ts); a request that mentions D-ASK is sent whole.
+              const action = parseVoiceTranscript(transcript);
               if (!isSpeakingRef.current) {
-                if (wakeMatch && wakeMatch.index !== undefined) {
+                if (action.kind === "wake-only" || (action.kind === "command" && action.viaWakeWord)) {
                   soundFx.playWakeSound();
                   setWakeActive(true);
                   if (wakeTimeoutRef.current) clearTimeout(wakeTimeoutRef.current);
                   wakeTimeoutRef.current = setTimeout(() => setWakeActive(false), 5000);
-                  const requestedCommand = transcript.slice(wakeMatch.index + wakeMatch[0].length).replace(/^[\s,.:;!?-]+/, "").trim();
-                  if (requestedCommand && requestedCommand.length >= 3) {
-                    void runCommand(requestedCommand);
-                  } else if (!requestedCommand) {
-                    addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
-                  }
-                } else {
-                  const wordCount = transcript.split(/\s+/).length;
-                  if (wordCount >= 2 || transcript.length >= 10) {
-                    void runCommand(transcript);
-                  }
+                }
+                if (action.kind === "wake-only") {
+                  addHistoryEntry("D-ASK WAKE WORD", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
+                } else if (action.kind === "command") {
+                  voiceCommandRef.current = action.text.toUpperCase();
+                  void runCommand(action.text);
                 }
               }
             } else {
@@ -978,6 +1036,7 @@ export default function JarvisOrb() {
           if (!isRecordingRef.current) {
             isRecordingRef.current = true;
             if (mediaRecorderRef.current?.state === "inactive") {
+              segmentStartRef.current = Date.now();
               mediaRecorderRef.current.start();
             }
           }
@@ -1257,9 +1316,17 @@ export default function JarvisOrb() {
         </form>
 
         <div className="command-shortcuts" aria-label="Command shortcuts">
-          {["STATUS", "OPEN YOUTUBE", "UNLOCK PHONE", "RED ALERT", "HELP"].map((shortcut) => (
+          {(nativeShell
+            // Native HUD: each shortcut submits an ordinary natural-language request to the local agent (same runtime, grounding and approvals as typing it).
+            ? ["LIST MY WORKFLOWS", "LIST MY PLUGINS", "WHAT TIME IS IT", "SYSTEM INFO", "HELP"]
+            : ["STATUS", "OPEN YOUTUBE", "UNLOCK PHONE", "RED ALERT", "HELP"]).map((shortcut) => (
             <button key={shortcut} type="button" onClick={() => void runCommand(shortcut)}>{shortcut}</button>
           ))}
+          {nativeShell ? (
+            <button type="button" aria-pressed={manageOpen} onClick={() => setManageOpen((v) => !v)} title="Manage workflows, plugins and memory">
+              {manageOpen ? "MANAGE ▾" : "MANAGE"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="voice-button"
@@ -1278,6 +1345,10 @@ export default function JarvisOrb() {
             WAKE TEST
           </button>
         </div>
+
+        {nativeShell && manageOpen ? (
+          <ManagePanel history={history} busy={aiThinking || taskActive} onRun={(request) => void runCommand(request)} onClose={() => setManageOpen(false)} />
+        ) : null}
 
         <div className="command-history" aria-live="polite">
           {history.length === 0 ? (

@@ -55,7 +55,11 @@ impl Tts {
                                 if let Some(v) = &voice {
                                     let h = HSTRING::from(text.as_str());
                                     let flags = (SPF_ASYNC.0 | SPF_PURGEBEFORESPEAK.0 | SPF_IS_NOT_XML.0) as u32;
-                                    if let Err(e) = v.Speak(PCWSTR(h.as_ptr()), flags, None) { warn!("[TTS] Speak failed: {e}"); }
+                                    match v.Speak(PCWSTR(h.as_ptr()), flags, None) {
+                                        // The log names the length only, never the text (it may be a private result).
+                                        Ok(_) => info!("[TTS] speaking {} characters (local SAPI)", text.chars().count()),
+                                        Err(e) => warn!("[TTS] Speak failed: {e}"),
+                                    }
                                 }
                             }
                             TtsCommand::Stop => {

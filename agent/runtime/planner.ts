@@ -194,6 +194,15 @@ export class Planner {
       };
     }
 
+    // A request that fully determines its own step order (an application session) arranges the proposal first; every step,
+    // proposed or added, is then validated exactly like any other below.
+    if (req.objective !== undefined) {
+      for (const d of this.registry.list()) {
+        const arrange = this.registry.get(d.name)?.requestCheck?.arrangeSteps;
+        if (!arrange) continue;
+        try { p.steps = arrange(p.steps, req.objective) as typeof p.steps; } catch { /* a broken arranger changes nothing */ }
+      }
+    }
     const errors: string[] = [];
     if (p.steps.length === 0) errors.push("a task or question needs at least one step");
     if (p.steps.length > req.maxSteps) errors.push(`too many steps (${p.steps.length} > ${req.maxSteps})`);
@@ -273,7 +282,13 @@ export const DEDUPLICATED_TOOLS: ReadonlySet<string> = new Set(["desktop.focus_w
   // Found in the real-HUD feature run (2026-11-10): the local model planned filesystem.undo_organize 8 times; the daemon refuses
   // every copy after the first (one approval per task), which turned a verified undo into "partial". Same rationale as above.
   "filesystem.organize", "filesystem.undo_organize", "workflow.save", "workflow.delete", "workflow.unschedule", "workflow.schedule",
-  "plugin.install", "plugin.remove", "notes.create"]);
+  "plugin.install", "plugin.remove", "plugin.grant", "plugin.revoke_permission", "plugin.enable", "plugin.disable", "notes.create",
+  // Found in the real-HUD management-panel run (2026-11-12): the local model planned plugin.list three times and the reply repeated the list. Read-only list tools: an exact
+  // duplicate adds nothing (and unlike system.time no test relies on repeating them).
+  "plugin.list", "memory.list", "workflow.list",
+  // Found in the real-HUD cross-feature run (2026-11-13): the same 8-fold repeat of filesystem.undo_copy_rename turned a verified undo into "partial".
+  // Copy, rename and their undo are approved once per task, like organise.
+  "filesystem.copy", "filesystem.rename", "filesystem.undo_copy_rename"]);
 
 /** Canonical JSON (object keys sorted, recursively), so inputs compare by content, not by key order. */
 export function canonicalJson(v: unknown): string {

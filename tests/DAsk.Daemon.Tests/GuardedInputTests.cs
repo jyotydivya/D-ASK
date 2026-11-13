@@ -104,7 +104,7 @@ public class GuardedInputTests
         public Rig(bool mouse = true, bool keyboard = true)
         {
             Recorder = new SqliteEvidenceRecorder(NullLogger<SqliteEvidenceRecorder>.Instance, Db);
-            Policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, Recorder);
+            Policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, Recorder, Windows);   // Phase 4B-2A: the OS view used to re-verify a window-bound approval
             Policy.SetSessionLivenessGate(s => Live.Contains(s));
             Policy.ApprovalRequested += (_, r) => { lock (Delivered) Delivered.Add(r); };
             Windows.Windows.Add(W(Hwnd, 4000, "fixture.exe", "DASK Input Fixture"));

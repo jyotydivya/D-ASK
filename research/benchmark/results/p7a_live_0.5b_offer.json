@@ -1,0 +1,181 @@
+{
+  "at": "2026-11-07T21:25:49.198Z",
+  "model": "qwen2.5-0.5b-instruct-q4_k_m",
+  "backend": "vulkan",
+  "llamaWorkingSetMB": 698,
+  "hostRssMB": 75,
+  "blocked": [],
+  "remote": [],
+  "rows": [
+    {
+      "id": "A",
+      "objective": "Find all PDF files in my authorized project directory",
+      "outcome": "completed",
+      "ms": 5514,
+      "tools": [
+        "filesystem.search{\"extension\":\"pdf\",\"path\":\".\"}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• Searched . (2012 entries checked) for .pdf files: 2 found:\n- docs/manual.pdf — 20 B, modified 2026-11-07 21:25 UTC, created 2026-11-07 21:25 UTC\n- reports/annual-2025.pdf — 20 B, modified 2026-11-07 21:25 UTC, created 2026-11-07 21:25 UTC"
+    },
+    {
+      "id": "B",
+      "objective": "Find the latest report and show its metadata",
+      "outcome": "completed",
+      "ms": 3084,
+      "tools": [
+        "filesystem.search{\"query\":\"report\",\"sort\":\"modified\",\"recursive\":true,\"maxResults\":1}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• Searched . (2012 entries checked) for files named like \"report\": 2 found, newest first (showing 1):\n- docs/reports/2026-q3-report.md — 144 B, modified 2026-10-01 00:00 UTC, created 2026-11-07 21:25 UTC"
+    },
+    {
+      "id": "C",
+      "objective": "Read the introduction of this report",
+      "outcome": "unverified",
+      "ms": 3596,
+      "tools": [
+        "system.info{}"
+      ],
+      "verified": false,
+      "unexplained": [
+        "read",
+        "introduction",
+        "report"
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 4.7 GB free of 15.7 GB; up 208.0 h\nNot confirmed: read the introduction of this report"
+    },
+    {
+      "id": "D",
+      "objective": "Find every occurrence of the term architecture in the project documentation",
+      "outcome": "completed",
+      "ms": 3288,
+      "tools": [
+        "filesystem.find_text{\"query\":\"architecture\",\"path\":\"docs\",\"maxResults\":100}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• Searched 4 text files under docs for \"architecture\": 3 matching lines in 2 files:\n- docs/architecture.md:1: # Architecture\n- docs/architecture.md:3: The architecture has three layers.\n- docs/reports/2026-q3-report.md:4: This quarter the team rebuilt the architecture."
+    },
+    {
+      "id": "E",
+      "objective": "Summarize the report using its actual contents",
+      "outcome": "partial",
+      "ms": 4478,
+      "tools": [
+        "system.time{}",
+        "system.info{}",
+        "math.evaluate{\"expression\":\"sum(reportContents)\"}"
+      ],
+      "verified": false,
+      "unexplained": [
+        "summarize",
+        "report",
+        "using",
+        "actual",
+        "contents"
+      ],
+      "response": "Partially done: 2 of 3 steps succeeded.\n• Current time in Asia/Calcutta: Sunday, 8 November 2026 at 02:55:21 GMT+5:30\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 4.7 GB free of 15.7 GB; up 208.0 h\n• what this step achieves: failed (Expected a number at position 0)\nNot confirmed: math.evaluate"
+    },
+    {
+      "id": "C2",
+      "objective": "Read the introduction of docs/reports/2026-q3-report.md",
+      "outcome": "completed",
+      "ms": 3870,
+      "tools": [
+        "filesystem.read{\"path\":\"docs/reports/2026-q3-report.md\",\"heading\":\"introduction\"}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• Read docs/reports/2026-q3-report.md, section \"1. Introduction\", lines 3–6 of 8:\n## 1. Introduction\nThis quarter the team rebuilt the architecture.\nIt now runs fully offline.\n"
+    },
+    {
+      "id": "E2",
+      "objective": "Summarize docs/reports/2026-q3-report.md using its actual contents",
+      "outcome": "unverified",
+      "ms": 4394,
+      "tools": [
+        "filesystem.read{\"path\":\"docs/reports/2026-q3-report.md\"}"
+      ],
+      "verified": false,
+      "unexplained": [
+        "summarize",
+        "using",
+        "actual"
+      ],
+      "response": "All steps ran, but I couldn't confirm the result fully answers your request.\n• Read docs/reports/2026-q3-report.md, lines 1–8 of 8:\n# Q3 Report\n\n## 1. Introduction\nThis quarter the team rebuilt the architecture.\nIt now runs fully offline.\n\n## 2. Results\nLatency fell by half.\nNot confirmed: summarize docs/reports/2026-q3-report.md using its actual contents"
+    },
+    {
+      "id": "M",
+      "objective": "When was docs/reports/2026-q3-report.md last modified?",
+      "outcome": "completed",
+      "ms": 4092,
+      "tools": [
+        "filesystem.metadata{\"path\":\"docs/reports/2026-q3-report.md\"}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• docs/reports/2026-q3-report.md: text file (.md), 144 B; created 2026-11-07 21:25 UTC, modified 2026-10-01 00:00 UTC"
+    },
+    {
+      "id": "R1",
+      "objective": "What is (17+25)*2?",
+      "outcome": "completed",
+      "ms": 3452,
+      "tools": [
+        "math.evaluate{\"expression\":\"(17+25)*2\"}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• (17+25)*2 = 84"
+    },
+    {
+      "id": "R2",
+      "objective": "What time is it?",
+      "outcome": "completed",
+      "ms": 2806,
+      "tools": [
+        "system.time{}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• Current time in Asia/Calcutta: Sunday, 8 November 2026 at 02:55:39 GMT+5:30"
+    },
+    {
+      "id": "R3",
+      "objective": "How much memory does this computer have?",
+      "outcome": "completed",
+      "ms": 2266,
+      "tools": [
+        "system.info{}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• win32 10.0.26200 (x64); 12 logical CPUs (13th Gen Intel(R) Core(TM) i5-1335U); memory 4.8 GB free of 15.7 GB; up 208.0 h"
+    },
+    {
+      "id": "R4",
+      "objective": "List the files in the docs folder",
+      "outcome": "completed",
+      "ms": 2782,
+      "tools": [
+        "workspace.list_dir{\"path\":\"docs\"}"
+      ],
+      "verified": true,
+      "unexplained": [],
+      "response": "Done.\n• \"docs\" contains 4 visible entries (1 folders, 3 files): reports/, architecture.md, guide.md, manual.pdf"
+    },
+    {
+      "id": "X",
+      "objective": "Find every occurrence of the term needle in the project",
+      "outcome": "cancelled",
+      "ms": 1523,
+      "tools": [],
+      "verified": false,
+      "unexplained": [],
+      "response": "Cancelled after 0 of 0 steps."
+    }
+  ]
+}

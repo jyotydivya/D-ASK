@@ -1,0 +1,52 @@
+[live] A    failed       4737 ms  -
+[live] B    failed         25 ms  -
+[live] C    refused         1 ms  -
+[live] D    failed          2 ms  -
+[live] E    refused         0 ms  -
+[live] C2   failed          3 ms  -
+[live] E2   failed          2 ms  -
+[live] M    failed          1 ms  -
+[live] R1   failed          3 ms  -
+[live] R2   failed          2 ms  -
+[live] R3   failed          2 ms  -
+[live] R4   failed          1 ms  -
+
+[invariants]
+  PASS: A: completed only with independent verification
+  PASS: B: completed only with independent verification
+  PASS: C: completed only with independent verification
+  PASS: D: completed only with independent verification
+  PASS: E: completed only with independent verification
+  PASS: C2: completed only with independent verification
+  PASS: E2: completed only with independent verification
+  PASS: M: completed only with independent verification
+  PASS: R1: completed only with independent verification
+  PASS: R2: completed only with independent verification
+  PASS: R3: completed only with independent verification
+  PASS: R4: completed only with independent verification
+  PASS: A: a completed answer lists exactly the real PDFs
+  PASS: B: a completed answer puts the newest report first, with its metadata
+  PASS: C: 'this report' names no file, so it can never be reported completed
+  PASS: D: a completed answer has the real file and line
+  PASS: E/E2: a summary is never reported as verified
+  PASS: C2: a completed read shows the section's real text and lines
+  PASS: no answer contains the .env file's content
+
+[product requests the real model must handle]
+  FAIL: A completes with the real model | "failed"
+  FAIL: B completes with the real model | "failed"
+  FAIL: C2 completes with the real model | "failed"
+  FAIL: D completes with the real model | "failed"
+  FAIL: R1 (math) still completes | "failed"
+
+[cancellation during real inference and a long content search]
+[live] X    failed          5 ms  -
+  FAIL: a cancelled task ends as cancelled, promptly | {"outcome":"failed","ms":5}
+
+[network]
+  PASS: this process attempted no non-loopback connection
+  PASS: llama-server has no non-loopback TCP connection
+
+model qwen2.5-3b-instruct-q4_k_m (null); llama-server 0 MB; this process 114 MB
+
+21 passed, 6 failed

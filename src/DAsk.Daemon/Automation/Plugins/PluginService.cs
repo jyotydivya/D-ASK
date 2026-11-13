@@ -18,7 +18,28 @@ public sealed class PluginOptions
     public string ApprovedPath { get; init; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D-ASK", "plugins-approved.json");
 }
 
-public sealed record ApprovedPlugin(string Id, string Version, Dictionary<string, string> Files, DateTime ApprovedUtc);
+/// <summary>
+/// An approved (installed) plugin. <c>Granted</c> is the set of permissions the user has individually granted ("compute" is granted by the install
+/// approval itself; every other permission needs its own approval). Null means an older record: only "compute". <c>Disabled</c> keeps the approval
+/// but stops the plugin from being offered or run.
+/// </summary>
+public sealed record ApprovedPlugin(string Id, string Version, Dictionary<string, string> Files, DateTime ApprovedUtc, List<string>? Granted = null, bool Disabled = false)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> GrantedPermissions => Granted ?? new List<string> { PluginPermissions.Compute };
+}
+
+/// <summary>The permissions a plugin can declare. Each one is enforced by the agent host at the moment of use (a capability the sandbox does not have by itself).</summary>
+public static class PluginPermissions
+{
+    public const string Compute = "compute", FilesRead = "files.read", MemoryRead = "memory.read";
+    public static readonly IReadOnlyDictionary<string, string> All = new Dictionary<string, string>
+    {
+        [Compute] = "run its own code in D-ASK's sandbox (no files, no network, no programs)",
+        [FilesRead] = "read text files inside the folders D-ASK is allowed to read (never secret files, never anywhere else)",
+        [MemoryRead] = "read the notes you asked D-ASK to remember (search only; it cannot add or delete them)",
+    };
+}
 
 /// <summary>
 /// Dynamic plugins: the daemon is the authority. A plugin is a folder in PluginsDir with plugin.json and its code. The daemon
@@ -31,8 +52,11 @@ public sealed record ApprovedPlugin(string Id, string Version, Dictionary<string
 public sealed class PluginService : IDesktopActionRequestService
 {
     public const string ListTool = "plugins.list", Approve = "plugins.approve", Revoke = "plugins.revoke";
-    public const string InstallType = "Plugin.Install";
-    public static bool IsUnmetered(string tool) => tool == ListTool;
+    /// <summary>Granular permissions: grant ONE declared permission (approval card), revoke one (no card), disable / enable the plugin (no card: nothing new is allowed).</summary>
+    public const string GrantTool = "plugins.grant", RevokePermissionTool = "plugins.revoke_permission", DisableTool = "plugins.disable", EnableTool = "plugins.enable";
+    public const string InstallType = "Plugin.Install", GrantType = "Plugin.GrantPermission";
+    /// <summary>Calls that never ask for an approval do not count against the task's one-approval budget.</summary>
+    public static bool IsUnmetered(string tool) => tool is ListTool or DisableTool or EnableTool or RevokePermissionTool;
     public const int MaxFiles = 30;
     public const long MaxTotalBytes = 2 * 1024 * 1024;
     private static readonly Regex Id = new("^[a-z][a-z0-9_]{1,30}$");
@@ -54,10 +78,10 @@ public sealed class PluginService : IDesktopActionRequestService
     }
 
     public bool Enabled => _opts.Enabled && _evidence != null;
-    public IReadOnlyList<string> Tools => Enabled ? new[] { ListTool, Approve, Revoke } : Array.Empty<string>();
+    public IReadOnlyList<string> Tools => Enabled ? new[] { ListTool, Approve, Revoke, GrantTool, RevokePermissionTool, DisableTool, EnableTool } : Array.Empty<string>();
     public int MaxCallMs => (int)Math.Min(_ttl.TotalMilliseconds, ActionPolicyEngine.MaxApprovalTtl.TotalMilliseconds) + 10_000;
 
-    public sealed record Inspected(string Id, string Name, string Version, string Description, List<(string name, string description)> Tools, Dictionary<string, string> Files, long Bytes);
+    public sealed record Inspected(string Id, string Name, string Version, string Description, List<(string name, string description)> Tools, Dictionary<string, string> Files, long Bytes, List<string> Declared);
 
     /// <summary>Reads and validates a plugin folder. The same rules as the agent host's validateManifest.</summary>
     public string? Inspect(string id, out Inspected? plugin)
@@ -89,8 +113,16 @@ public sealed class PluginService : IDesktopActionRequestService
         if (name is not { Length: >= 1 and <= 60 }) return "name is 1-60 characters";
         if (version == null || !Version.IsMatch(version)) return "version is MAJOR.MINOR.PATCH";
         if (entry == null || !Regex.IsMatch(entry, @"^[\w-]{1,60}\.(c?js)$") || !hashes.ContainsKey(entry)) return "entry must be a .js/.cjs file of the plugin";
-        if (!m.TryGetProperty("permissions", out var perms) || perms.ValueKind != JsonValueKind.Array || perms.EnumerateArray().Any(p => p.GetString() != "compute"))
-            return "the only permission a plugin may have is \"compute\"";
+        var declared = new List<string>();
+        if (!m.TryGetProperty("permissions", out var perms) || perms.ValueKind != JsonValueKind.Array) return "permissions must be a list that includes \"compute\"";
+        foreach (var p in perms.EnumerateArray())
+        {
+            var pn = p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+            if (pn == null || !PluginPermissions.All.ContainsKey(pn)) return $"unknown permission \"{pn}\"; a plugin may declare only: {string.Join(", ", PluginPermissions.All.Keys)}";
+            if (declared.Contains(pn)) return $"the permission \"{pn}\" is declared twice";
+            declared.Add(pn);
+        }
+        if (!declared.Contains(PluginPermissions.Compute)) return "permissions must include \"compute\"";
         if (!m.TryGetProperty("tools", out var tools) || tools.ValueKind != JsonValueKind.Array || tools.GetArrayLength() is 0 or > 10) return "1 to 10 tools";
         var list = new List<(string, string)>();
         foreach (var t in tools.EnumerateArray())
@@ -103,7 +135,7 @@ public sealed class PluginService : IDesktopActionRequestService
             if (t.TryGetProperty("timeoutMs", out var to) && (!to.TryGetInt32(out int ms) || ms <= 0 || ms > 10_000)) return "timeoutMs is at most 10000";
             list.Add((tn, td));
         }
-        plugin = new Inspected(id, name, version, S(m, "description") ?? "", list, hashes, total);
+        plugin = new Inspected(id, name, version, S(m, "description") ?? "", list, hashes, total, declared);
         return null;
     }
 
@@ -127,7 +159,9 @@ public sealed class PluginService : IDesktopActionRequestService
         if (!Tools.Contains(tool)) return DesktopCallResult.Fail("unknown_tool", "This operation is not available.");
         if (args.ValueKind != JsonValueKind.Object) return DesktopCallResult.Fail("invalid_args", "arguments must be an object");
         string? id = args.TryGetProperty("id", out var iv) && iv.ValueKind == JsonValueKind.String ? iv.GetString() : null;
-        if (args.EnumerateObject().Any(p => p.Name != "id")) return DesktopCallResult.Fail("invalid_args", "only an id may be given");
+        bool takesPermission = tool is GrantTool or RevokePermissionTool;
+        string? permission = takesPermission && args.TryGetProperty("permission", out var pv) && pv.ValueKind == JsonValueKind.String ? pv.GetString() : null;
+        if (args.EnumerateObject().Any(p => p.Name != "id" && !(takesPermission && p.Name == "permission"))) return DesktopCallResult.Fail("invalid_args", takesPermission ? "only an id and a permission may be given" : "only an id may be given");
         List<ApprovedPlugin> approved;
         try { approved = LoadApproved(); } catch { return DesktopCallResult.Fail("store_unreadable", "The approved-plugins list could not be read; nothing was changed."); }
 
@@ -141,11 +175,51 @@ public sealed class PluginService : IDesktopActionRequestService
                     var a = approved.FirstOrDefault(x => x.Id == f);
                     string? err = Inspect(f!, out var p);
                     bool intact = a != null && p != null && p.Version == a.Version && p.Files.Count == a.Files.Count && p.Files.All(kv => a.Files.TryGetValue(kv.Key, out var h) && h == kv.Value);
-                    return new { id = f, name = p?.Name, version = p?.Version, approved = a != null, intact, problem = err, tools = p?.Tools.Select(t => t.name).ToArray() };
+                    return new
+                    {
+                        id = f, name = p?.Name, version = p?.Version, approved = a != null, intact, problem = err, tools = p?.Tools.Select(t => t.name).ToArray(),
+                        enabled = a != null && !a.Disabled,
+                        // What the manifest asks for, and what the user has actually granted (a permission the manifest does not declare can never be granted).
+                        declared = p?.Declared.ToArray() ?? Array.Empty<string>(),
+                        granted = a != null && intact ? a.GrantedPermissions.ToArray() : Array.Empty<string>(),
+                    };
                 }).ToArray(),
             });
         }
         if (id == null || !Id.IsMatch(id)) return DesktopCallResult.Fail("invalid_args", "a plugin id is required");
+        if (tool is GrantTool or RevokePermissionTool && (permission == null || !PluginPermissions.All.ContainsKey(permission)))
+            return DesktopCallResult.Fail("invalid_args", $"a permission is required: one of {string.Join(", ", PluginPermissions.All.Keys.Where(k => k != PluginPermissions.Compute))}");
+        if (tool is DisableTool or EnableTool or RevokePermissionTool or GrantTool)
+        {
+            var cur = approved.FirstOrDefault(x => x.Id == id);
+            if (cur == null) return DesktopCallResult.Fail("not_approved", $"The plugin {id} is not installed.");
+            if (tool == DisableTool)
+            {
+                if (cur.Disabled) return DesktopCallResult.Ok(new { disabled = true, id, unchanged = true });
+                approved[approved.IndexOf(cur)] = cur with { Disabled = true }; StoreApproved(approved);
+                await AuditAsync("PluginDisabled", ctx, id, "plugin disabled by the user");
+                return DesktopCallResult.Ok(new { disabled = true, id });
+            }
+            if (tool == EnableTool)
+            {
+                // Enabling restores a state the user already approved; it only works while every file still matches that approval.
+                if (Inspect(id, out var now) is { } why || !Matches(cur, now!)) return DesktopCallResult.Fail("changed", "The plugin's files changed since you approved it; it stays disabled until you install it again.");
+                if (!cur.Disabled) return DesktopCallResult.Ok(new { enabled = true, id, unchanged = true });
+                approved[approved.IndexOf(cur)] = cur with { Disabled = false }; StoreApproved(approved);
+                await AuditAsync("PluginEnabled", ctx, id, "plugin enabled by the user");
+                return DesktopCallResult.Ok(new { enabled = true, id });
+            }
+            if (tool == RevokePermissionTool)
+            {
+                if (permission == PluginPermissions.Compute) return DesktopCallResult.Fail("invalid_args", "\"compute\" is what lets the plugin run at all; use \"disable the plugin\" or \"remove the plugin\" instead.");
+                if (!cur.GrantedPermissions.Contains(permission!)) return DesktopCallResult.Fail("not_granted", $"The plugin {id} does not have the {permission} permission.");
+                var left = cur.GrantedPermissions.Where(p => p != permission).ToList();
+                approved[approved.IndexOf(cur)] = cur with { Granted = left }; StoreApproved(approved);
+                await AuditAsync("PluginPermissionRevoked", ctx, id, $"{permission} revoked");
+                return DesktopCallResult.Ok(new { revoked = true, id, permission, granted = left });
+            }
+            return await GrantAsync(cur, permission!, approved, ctx, ct);
+        }
         if (tool == Revoke)
         {
             var a = approved.FirstOrDefault(x => x.Id == id);
@@ -164,7 +238,8 @@ public sealed class PluginService : IDesktopActionRequestService
             ["plugin"] = $"{plugin.Name} ({plugin.Id}) {plugin.Version}",
             ["tools"] = string.Join("\n", plugin.Tools.Select(t => $"{t.name}: {t.description}")),
             ["toolCount"] = plugin.Tools.Count.ToString(),
-            ["permissions"] = "compute only: no files, no network, no programs, no other processes (enforced by D-ASK's sandbox)",
+            ["permissions"] = "compute only: no files, no network, no programs, no other processes (enforced by D-ASK's sandbox)"
+                + (plugin.Declared.Any(p => p != PluginPermissions.Compute) ? $". It also asks for: {string.Join(", ", plugin.Declared.Where(p => p != PluginPermissions.Compute))}; this approval does NOT grant those, each needs its own approval" : ""),
             ["files"] = $"{plugin.Files.Count} file(s), {plugin.Bytes} bytes; manifest SHA-256 {manifestHash}",
             ["verification"] = "Every file is checked against these hashes before each run; any change disables the plugin until approved again.",
             ["reversible"] = $"Yes: say \"remove the plugin {plugin.Id}\" (no approval needed).",
@@ -193,11 +268,65 @@ public sealed class PluginService : IDesktopActionRequestService
             return DesktopCallResult.Fail("changed", "The plugin's files changed after your approval; nothing was installed.");
         try { approved = LoadApproved(); } catch { return DesktopCallResult.Fail("store_unreadable", "The approved-plugins list could not be read; nothing was installed."); }
         approved.RemoveAll(x => x.Id == id);
-        approved.Add(new ApprovedPlugin(plugin.Id, plugin.Version, plugin.Files, DateTime.UtcNow));
+        approved.Add(new ApprovedPlugin(plugin.Id, plugin.Version, plugin.Files, DateTime.UtcNow, new List<string> { PluginPermissions.Compute }, false));
         StoreApproved(approved);
         await AuditAsync("PluginInstalled", ctx, id, $"{plugin.Version}; manifest {manifestHash}");
         _logger?.LogInformation("[Plugins] {Id} {Version} approved ({Count} files).", plugin.Id, plugin.Version, plugin.Files.Count);
         return DesktopCallResult.Ok(new { decision = "approved", consumed = true, executed = true, verified = true, id = plugin.Id, version = plugin.Version, tools = plugin.Tools.Select(t => t.name).ToArray() });
+    }
+
+    private static bool Matches(ApprovedPlugin a, Inspected p) =>
+        p.Version == a.Version && p.Files.Count == a.Files.Count && p.Files.All(kv => a.Files.TryGetValue(kv.Key, out var h) && h == kv.Value);
+
+    /// <summary>Grants ONE declared permission after the user approves it in a card that names the plugin, the permission and what it allows.</summary>
+    private async Task<DesktopCallResult> GrantAsync(ApprovedPlugin cur, string permission, List<ApprovedPlugin> approved, DesktopActionContext ctx, CancellationToken ct)
+    {
+        string id = cur.Id;
+        if (permission == PluginPermissions.Compute) return DesktopCallResult.Fail("invalid_args", "\"compute\" was granted when the plugin was installed.");
+        if (cur.GrantedPermissions.Contains(permission)) return DesktopCallResult.Fail("already_granted", $"The plugin {id} already has the {permission} permission.");
+        if (Inspect(id, out var plugin) is { } bad) return DesktopCallResult.Fail("plugin_refused", $"The permission cannot be granted: {bad}. Nothing was changed.");
+        if (!Matches(cur, plugin!)) return DesktopCallResult.Fail("changed", "The plugin's files changed since you approved it; install it again before granting permissions.");
+        if (!plugin!.Declared.Contains(permission)) return DesktopCallResult.Fail("not_declared", $"The plugin {id} does not declare the {permission} permission, so it cannot be granted.");
+        if (_isStopped()) return DesktopCallResult.Fail("emergency_stopped", "Emergency Stop is active. Nothing was changed.");
+        var parameters = new Dictionary<string, string>
+        {
+            ["plugin"] = $"{plugin.Name} ({plugin.Id}) {plugin.Version}",
+            ["permission"] = permission,
+            ["allows"] = PluginPermissions.All[permission],
+            ["currently"] = $"granted now: {string.Join(", ", cur.GrantedPermissions)}",
+            ["enforcement"] = "D-ASK's agent host checks this permission every time the plugin tries to use it; the plugin's own code cannot bypass the check.",
+            ["manifest"] = $"manifest SHA-256 {plugin.Files["plugin.json"]}",
+            ["reversible"] = $"Yes: say \"revoke the {permission} permission of the plugin {id}\" (no approval needed).",
+        };
+        using var self = Process.GetCurrentProcess();
+        var started = new DateTimeOffset(self.StartTime.ToUniversalTime(), TimeSpan.Zero);
+        var (_, risk, _) = _policy.EvaluatePolicy(GrantType, new Dictionary<string, string>(), "D-ASK plugins");
+        if (risk != ActionRiskLevel.Elevated) return DesktopCallResult.Fail("approval_refused", "Granting plugin permissions is not classified for approval. Nothing was changed.");
+        var request = new ActionApprovalRequest
+        {
+            ApprovalId = Guid.NewGuid().ToString("N"), ActionId = Guid.NewGuid().ToString("N"), ActionType = GrantType, ActionParameters = parameters,
+            TargetProcessName = "D-ASK plugins", TargetWindowTitle = plugin.Id, TargetHwnd = 0, TargetProcessId = self.Id, TargetProcessCreationTime = started,
+            SessionId = ctx.OwnerSessionId, StopGeneration = _generation(), RiskLevel = risk.ToString(), CreatedAtUtc = DateTimeOffset.UtcNow,
+            ExpiresAtUtc = DateTimeOffset.UtcNow + _ttl, Reason = $"D-ASK asks to give the plugin {plugin.Id} the {permission} permission.",
+        };
+        await AuditAsync("PluginPermissionRequested", ctx, id, permission);
+        var decision = await _policy.RequestApprovalAsync(request, ct);
+        if (ct.IsCancellationRequested) return DesktopCallResult.Cancelled();
+        if (!decision.Approved) { await AuditAsync("PluginPermissionNotApproved", ctx, id, $"{permission}: {decision.DecisionSource ?? "denied"}"); return DesktopCallResult.Fail("approval_denied", "The permission was not granted. Nothing was changed."); }
+        var (valid, error) = _policy.ValidateConsumedApproval(request.ApprovalId, request.ActionId, request.ActionType, parameters, request.TargetProcessName, 0, self.Id, started,
+            ctx.OwnerSessionId, _generation(), _isStopped());
+        if (!valid) return DesktopCallResult.Fail("approval_invalid", "The approval could not be validated. Nothing was changed.");
+        // The plugin must still be exactly what was shown, and still installed.
+        List<ApprovedPlugin> fresh;
+        try { fresh = LoadApproved(); } catch { return DesktopCallResult.Fail("store_unreadable", "The approved-plugins list could not be read; nothing was changed."); }
+        var now = fresh.FirstOrDefault(x => x.Id == id);
+        if (now == null || Inspect(id, out var again) != null || !Matches(now, again!) || !Matches(cur, again)) return DesktopCallResult.Fail("changed", "The plugin changed after your approval; nothing was granted.");
+        var granted = now.GrantedPermissions.Append(permission).Distinct().ToList();
+        fresh[fresh.IndexOf(now)] = now with { Granted = granted };
+        StoreApproved(fresh);
+        await AuditAsync("PluginPermissionGranted", ctx, id, $"{permission}; manifest {plugin.Files["plugin.json"]}");
+        _logger?.LogInformation("[Plugins] {Id}: {Permission} granted.", id, permission);
+        return DesktopCallResult.Ok(new { decision = "approved", consumed = true, executed = true, verified = true, id, permission, granted });
     }
 
     private async Task AuditAsync(string evt, DesktopActionContext ctx, string id, string reason)

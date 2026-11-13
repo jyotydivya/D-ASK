@@ -24,6 +24,16 @@ export interface NativeAgentHandlers {
   onFinished(taskId: string | null, result: NativeTaskResult): void;
   onCancelling(taskId: string): void;
   onCancelFailed(taskId: string, message: string): void;
+  /**
+   * The final result of a task this HUD did NOT submit (a scheduled workflow run started by the daemon). Delivered only while the HUD is idle and only once
+   * per task, so it can never disturb a task the user is running. Progress of such a task is not shown; its approval cards are (they have their own channel).
+   */
+  onExternalFinished?(taskId: string, result: NativeTaskResult): void;
+  /**
+   * Recovery after a HUD restart: the daemon's answer to recover(taskId). `result` is null when the daemon does not know the task (or it is not
+   * finished). Never treated as a new task: it only fills in the history entry that recorded that task id.
+   */
+  onRecovered?(taskId: string, result: NativeTaskResult | null): void;
 }
 
 export interface NativeAgentDeps {
@@ -136,6 +146,8 @@ export class NativeAgentClient {
   #lastSeq = 0;
   #early: { type: string; payload: Json }[] = [];
   #cancelOnAccept = false;
+  /** Task ids already finished or reported (a repeated notification must never create a second entry). */
+  #reported = new Set<string>();
 
   constructor(private readonly deps: NativeAgentDeps, private readonly handlers: NativeAgentHandlers) {}
 
@@ -172,6 +184,12 @@ export class NativeAgentClient {
     this.deps.post({ type: "AgentTaskCancel", payload: { request_id: this.deps.newId(), task_id: taskId } });
   }
 
+  /** Asks the daemon for the FINISHED result of a task this HUD submitted before it was closed (history recovery). Read-only. */
+  recover(taskId: string): void {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(taskId)) return;
+    this.deps.post({ type: "AgentTaskStatus", payload: { request_id: this.deps.newId(), task_id: taskId } });
+  }
+
   handleMessage(message: unknown): void {
     const m = asObject(message);
     const type = asString(m.type);
@@ -180,6 +198,13 @@ export class NativeAgentClient {
     switch (type) {
       case "AgentTaskSubmitResponse": this.#onSubmitResponse(asString(m.replyToId), payload); break;
       case "AgentTaskCancelResponse": this.#onCancelResponse(payload); break;
+      case "AgentTaskStatusResponse": {
+        const taskId = asString(payload.taskId);
+        if (!taskId) break;
+        const result = payload.found === true && payload.state === "finished" && payload.result ? toNativeResult(asObject(payload.result)) : null;
+        this.handlers.onRecovered?.(taskId, result);
+        break;
+      }
       case "AgentTaskProgressNotification":
       case "AgentTaskResultNotification": this.#onTaskMessage(type, payload); break;
       case "AgentConnection": if (payload.connected === false) this.#onDisconnected(); break;
@@ -236,7 +261,13 @@ export class NativeAgentClient {
     if (!taskId) return;
     if (taskId !== this.#activeTaskId) {
       // Only a pending submit can explain a task id we do not know yet. Anything else is not ours.
-      if (this.#submit && this.#early.length < MAX_EARLY_MESSAGES) this.#early.push({ type, payload: p });
+      if (this.#submit) { if (this.#early.length < MAX_EARLY_MESSAGES) this.#early.push({ type, payload: p }); return; }
+      // Idle HUD and a FINAL result for a task we never submitted: a scheduled run. Report it once.
+      if (this.#activeTaskId === null && type !== "AgentTaskProgressNotification" && !this.#reported.has(taskId)) {
+        this.#reported.add(taskId);
+        if (this.#reported.size > 200) this.#reported.delete(this.#reported.values().next().value as string);
+        this.handlers.onExternalFinished?.(taskId, toNativeResult(p));
+      }
       return;
     }
     if (type === "AgentTaskProgressNotification") {
@@ -248,6 +279,7 @@ export class NativeAgentClient {
       return;
     }
     this.#activeTaskId = null;
+    this.#reported.add(taskId);
     this.handlers.onFinished(taskId, toNativeResult(p));
   }
 

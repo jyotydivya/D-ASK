@@ -516,7 +516,8 @@ async function main() {
     const snap = await GET_TASK(authed(`http://localhost:3000/api/tasks/${taskId}`) as never, ctx(taskId));
     const body = (await snap.json()) as { task: { finalResponse: string }; nodes: { status: string }[] };
     check(snap.status === 200 && body.nodes.length === 3 && body.nodes.every((n) => n.status === "completed"), "H4 GET /api/tasks/[id] shows the 3 executed plan steps");
-    check(/\(17\+25\)\*2 = 84/.test(body.task.finalResponse) && /runtime\.ts/.test(body.task.finalResponse), "H4 final response contains the tools' observed results", body.task.finalResponse);
+    // brain.ts: an entry that stays among the first 15 shown (the listing is cut at 15; agent/runtime gains files over time).
+    check(/\(17\+25\)\*2 = 84/.test(body.task.finalResponse) && /brain\.ts/.test(body.task.finalResponse), "H4 final response contains the tools' observed results", body.task.finalResponse);
 
     const sse = await GET_EVENTS(authed(`http://localhost:3000/api/tasks/${taskId}/events`) as never, ctx(taskId));
     const text = await sse.text(); // terminal task → history replayed, then the stream closes

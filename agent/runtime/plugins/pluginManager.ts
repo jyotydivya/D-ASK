@@ -13,19 +13,36 @@
 
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { promises as fs, readFileSync } from "node:fs";
+import { appendFileSync, promises as fs, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { JsonSchema, ToolRequestCheck, ToolSpec } from "../types";
 import type { ToolRegistry } from "../toolRegistry";
 
-export interface ApprovedPlugin { id: string; version: string; files: Record<string, string>; approvedUtc?: string }
+export interface ApprovedPlugin {
+  id: string; version: string; files: Record<string, string>; approvedUtc?: string;
+  /** The permissions the user has granted, one by one. Absent (an older record) means only "compute". */
+  granted?: string[];
+  /** Approved but switched off: not offered, not run. */
+  disabled?: boolean;
+}
+/** The permissions a plugin may declare. "compute" is granted by installing; the others need their own approval (daemon PluginService.GrantAsync). */
+export type PluginPermission = "compute" | "files.read" | "memory.read";
+export const PLUGIN_PERMISSIONS: readonly PluginPermission[] = ["compute", "files.read", "memory.read"];
+/**
+ * What the host can do FOR a plugin, only when the plugin's request is permitted. Each function does its own policy (file roots, secret
+ * names, user-sourced memories only) so a granted permission is still bounded. Provided by stdioHost; absent in tests that do not need it.
+ */
+export interface PluginCapabilities {
+  readFile?(requested: string, signal: AbortSignal): Promise<{ ok: true; text: string } | { ok: false; reason: string }>;
+  searchMemory?(query: string): Promise<string[]>;
+}
 export interface PluginToolManifest { name: string; description: string; inputSchema: JsonSchema; keywords?: string[]; timeoutMs?: number }
 export interface PluginManifest { id: string; name: string; version: string; description?: string; entry: string; permissions: string[]; tools: PluginToolManifest[] }
 
 export const PLUGIN_ID = /^[a-z][a-z0-9_]{1,30}$/;
 export const PLUGIN_TOOL = /^[a-z][a-z0-9_]{1,30}$/;
-const ALLOWED_PERMISSIONS = new Set(["compute"]);
+const ALLOWED_PERMISSIONS = new Set<string>(PLUGIN_PERMISSIONS);
 const MAX_TIMEOUT_MS = 10_000;
 
 export interface PluginManagerOptions {
@@ -37,6 +54,10 @@ export interface PluginManagerOptions {
   runtimeDir: string;
   nodePath?: string;
   log?: (line: string) => void;
+  /** Host-mediated capabilities (files.read, memory.read). Without one, the matching request is refused as "not available". */
+  capabilities?: PluginCapabilities;
+  /** Append-only JSONL audit of every capability decision (default: next to the approved list). */
+  auditPath?: string;
 }
 
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
@@ -48,7 +69,8 @@ export function validateManifest(m: any): string | null {
   if (typeof m.name !== "string" || m.name.length < 1 || m.name.length > 60) return "name is 1-60 characters";
   if (typeof m.version !== "string" || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(m.version)) return "version is MAJOR.MINOR.PATCH";
   if (typeof m.entry !== "string" || !/^[\w-]{1,60}\.(c?js)$/.test(m.entry)) return "entry is one .js/.cjs file in the plugin folder";
-  if (!Array.isArray(m.permissions) || m.permissions.some((p: unknown) => typeof p !== "string" || !ALLOWED_PERMISSIONS.has(p))) return "the only permission a plugin may have is \"compute\"";
+  if (!Array.isArray(m.permissions) || m.permissions.some((p: unknown) => typeof p !== "string" || !ALLOWED_PERMISSIONS.has(p))) return `permissions are chosen from: ${PLUGIN_PERMISSIONS.join(", ")}`;
+  if (new Set(m.permissions).size !== m.permissions.length || !m.permissions.includes("compute")) return "permissions must include \"compute\" and list each permission once";
   if (!Array.isArray(m.tools) || m.tools.length < 1 || m.tools.length > 10) return "1 to 10 tools";
   for (const t of m.tools) {
     if (typeof t?.name !== "string" || !PLUGIN_TOOL.test(t.name)) return "tool names are 2-31 lowercase letters, digits or _";
@@ -97,6 +119,7 @@ export class PluginManager {
     const want = new Map<string, ToolSpec<any, any>>();
     const skipped: string[] = [];
     for (const p of this.approved()) {
+      if (p.disabled) { skipped.push(`${p.id}: disabled by the user`); continue; }
       const files = await this.verifiedFiles(p);
       if (!files) { skipped.push(`${p.id}: files missing or changed since approval`); continue; }
       let m: PluginManifest;
@@ -145,6 +168,54 @@ export class PluginManager {
     };
   }
 
+  /** Appends one decision to the audit log (JSON lines; never file contents, memory text or secrets). */
+  audit(entry: Record<string, unknown>): void {
+    try {
+      const file = this.opts.auditPath ?? path.join(path.dirname(this.opts.approvedPath), "plugins-audit.jsonl");
+      appendFileSync(file, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + "\n", "utf8");
+    } catch { /* the audit must never break a task; the caller also logs the decision */ }
+  }
+
+  /**
+   * Decides ONE capability request from a running plugin. The grant is read from the daemon's approved list at THIS moment (so a revocation
+   * takes effect on the very next request), the permission must also be declared in the plugin's manifest, and the capability itself is
+   * bounded by the host's own policy. Returns the reply line for the sandbox.
+   */
+  private async serveCapability(p: ApprovedPlugin, m: PluginManifest, t: PluginToolManifest, msg: any, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const id = msg?.id;
+    const cap = String(msg?.cap);
+    const deny = (code: string, text: string, detail: string) => {
+      this.opts.log?.(`plugin ${m.id}.${t.name}: ${cap} denied (${detail})`);
+      this.audit({ plugin: m.id, tool: t.name, permission: cap, decision: "denied", detail });
+      return { id, ok: false, code, error: text };
+    };
+    if (!(PLUGIN_PERMISSIONS as readonly string[]).includes(cap) || cap === "compute") return deny("ERR_PLUGIN_UNKNOWN_CAPABILITY", `The request ${cap} is not something a plugin can ask for.`, "unknown capability");
+    const now = this.approved().find((x) => x.id === p.id);
+    if (!now || now.disabled) return deny("ERR_PLUGIN_DISABLED", `The plugin ${m.id} is no longer installed or has been disabled.`, now ? "disabled" : "removed");
+    const granted = now.granted ?? ["compute"];
+    if (!m.permissions.includes(cap)) return deny("ERR_PLUGIN_PERMISSION_DENIED", `The plugin ${m.id} did not declare the ${cap} permission, so it cannot use it.`, "not declared in the manifest");
+    if (!granted.includes(cap))
+      return deny("ERR_PLUGIN_PERMISSION_DENIED", `The plugin ${m.id} does not have the ${cap} permission. You can allow it by saying: Grant the plugin ${m.id} the ${cap} permission.`, "not granted");
+    try {
+      if (cap === "files.read") {
+        const requested = String(msg?.args?.path ?? "");
+        if (!this.opts.capabilities?.readFile) return deny("ERR_PLUGIN_UNAVAILABLE", "Reading files is not available in this configuration.", "no provider");
+        const r = await this.opts.capabilities.readFile(requested, signal);
+        if (!r.ok) return deny("ERR_PLUGIN_FILE_REFUSED", `D-ASK did not read that file: ${r.reason}`, `file refused: ${r.reason}`);
+        this.audit({ plugin: m.id, tool: t.name, permission: cap, decision: "allowed", detail: `read ${requested.slice(0, 200)} (${r.text.length} chars)` });
+        return { id, ok: true, value: r.text };
+      }
+      // memory.read
+      const query = String(msg?.args?.query ?? "").slice(0, 200);
+      if (!this.opts.capabilities?.searchMemory) return deny("ERR_PLUGIN_UNAVAILABLE", "Local memory is not available in this configuration.", "no provider");
+      const hits = await this.opts.capabilities.searchMemory(query);
+      this.audit({ plugin: m.id, tool: t.name, permission: cap, decision: "allowed", detail: `memory search (${query.length} chars) -> ${hits.length} note(s)` });
+      return { id, ok: true, value: hits };
+    } catch (e) {
+      return deny("ERR_PLUGIN_CAPABILITY_FAILED", `The request could not be completed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300), "provider error");
+    }
+  }
+
   /** One sandboxed call. Public for tests. */
   async invoke(p: ApprovedPlugin, m: PluginManifest, t: PluginToolManifest, input: unknown, signal: AbortSignal): Promise<{ ok: true; output: unknown; text: string } | { ok: false; error: string }> {
     const files = await this.verifiedFiles(p);
@@ -159,18 +230,37 @@ export class PluginManager {
       const env = { SystemRoot: process.env.SystemRoot ?? "", NODE_OPTIONS: "" } as unknown as NodeJS.ProcessEnv;   // no tokens, no paths, no proxy settings
       const child = spawn(this.opts.nodePath ?? process.execPath, args, { cwd: sealed, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       const timeout = Math.min(t.timeoutMs ?? 5_000, MAX_TIMEOUT_MS);
-      let out = ""; let errOut = "";
-      child.stdout.setEncoding("utf8").on("data", (c) => { out += c; if (out.length > 40_000) child.kill(); });
+      let errOut = "";
+      let finalLine: string | null = null;
+      let buffered = "";
+      let total = 0;
+      const answer = (obj: unknown) => { if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(JSON.stringify(obj) + "\n"); };
+      // One line per message. A line with "cap" is a REQUEST the host decides on; the first other line is the plugin's final result.
+      const onLine = (line: string) => {
+        if (!line.trim() || finalLine !== null) return;
+        let msg: any;
+        try { msg = JSON.parse(line); } catch { finalLine = line; return; }
+        if (msg && typeof msg.cap === "string") { void this.serveCapability(p, m, t, msg, signal).then(answer); return; }
+        finalLine = line;
+      };
+      child.stdout.setEncoding("utf8").on("data", (c: string) => {
+        total += c.length; if (total > 400_000) { child.kill(); return; }
+        buffered += c;
+        let nl: number;
+        while ((nl = buffered.indexOf("\n")) >= 0) { const line = buffered.slice(0, nl); buffered = buffered.slice(nl + 1); onLine(line); }
+      });
       child.stderr.setEncoding("utf8").on("data", (c) => { errOut = (errOut + c).slice(-2000); });
       const done = new Promise<number | null>((res) => child.on("close", (code) => res(code)));
       const timer = setTimeout(() => child.kill(), timeout);
       const onAbort = () => child.kill();
       signal.addEventListener("abort", onAbort, { once: true });
-      child.stdin.end(JSON.stringify({ entry: path.join(sealed, m.entry), tool: t.name, input }));
+      child.stdin.on("error", () => {});   // the plugin may exit while the host is still answering
+      child.stdin.write(JSON.stringify({ entry: path.join(sealed, m.entry), tool: t.name, input }) + "\n");
       const code = await done;
       clearTimeout(timer); signal.removeEventListener("abort", onAbort);
       if (signal.aborted) return { ok: false, error: "cancelled" };
-      const line = out.split("\n").find((l) => l.trim());
+      if (finalLine === null && buffered.trim()) onLine(buffered);
+      const line = finalLine as string | null;
       if (!line) return { ok: false, error: code === null ? `stopped after ${timeout} ms` : `ended without a result (exit ${code})${errOut ? `: ${errOut.split("\n")[0]}` : ""}` };
       let r: any;
       try { r = JSON.parse(line); } catch { return { ok: false, error: "returned something that is not a result" }; }

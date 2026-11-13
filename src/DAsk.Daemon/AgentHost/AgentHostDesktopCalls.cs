@@ -27,7 +27,8 @@ public sealed partial class AgentHostManager
     public const int MaxInputRequestsPerTask = 6;
     // Browser stage 2 shares the input budget: each browser action is one step of a request, each separately approved.
     private static bool IsInputTool(string tool) => DAsk.Daemon.Automation.Input.GuardedInputTools.All.Contains(tool) ||
-        tool == DAsk.Daemon.Automation.Browser.BrowserActionRequestService.RequestAction;
+        tool == DAsk.Daemon.Automation.Browser.BrowserActionRequestService.RequestAction ||
+        tool == DAsk.Daemon.Automation.Desktop.AppLaunchRequestService.Launch;
     public const int DefaultCallDeadlineMs = 6_000;
     private static readonly Regex CallIdPattern = new(@"^c([0-9]{1,9})$");
     private static readonly HashSet<string> CallFields = new(StringComparer.Ordinal) { "v", "kind", "callId", "taskId", "tool", "args", "deadlineMs" };

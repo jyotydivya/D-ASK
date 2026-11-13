@@ -1,6 +1,7 @@
 # Issue: Emergency Stop is delayed behind in-flight daemon inference on the HUD session
 
-**Status:** open. Logged 2026-11-02; not fixed, by decision. The local-inference work does not touch the daemon.
+**Status (2026-11-13):** trigger removed, root cause remains. The native HUD's web bridge now REFUSES `ModelInference` from the page (`src/hud-native/src/main.rs`), so nothing in the product can start a long daemon generation on the HUD's pipe (the frontend never sent it; agent inference runs in the agent host's own llama-server). The daemon's serial per-session loop is unchanged: any future long-running handler on that pipe would reintroduce the delay. The acceptance test below was not written.
+**Original status:** open. Logged 2026-11-02; not fixed, by decision. The local-inference work does not touch the daemon.
 **Severity:** medium. The delay is bounded, and the HUD's own local stop still acts immediately.
 **Found during:** the read-only daemon-reuse inspection, before llama-server was chosen as the agent's model owner.
 

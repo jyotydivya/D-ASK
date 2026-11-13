@@ -67,7 +67,8 @@ public class GuardedInputLiveTests
 
             var recorder = new SqliteEvidenceRecorder(NullLogger<SqliteEvidenceRecorder>.Instance, db);
             await recorder.InitializeAsync();
-            var policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, recorder);
+            var os = new Win32WindowSource();   // Phase 4B-2A: the policy engine re-verifies the approved window against the same OS view
+            var policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, recorder, os);
             policy.SetSessionLivenessGate(_ => true);
             policy.ApprovalRequested += (_, r) => Task.Run(async () =>
             {
@@ -79,7 +80,7 @@ public class GuardedInputLiveTests
                 }, "live-session", () => false, () => 1);
             });
             using var uia = new WindowsUiAutomationService();
-            var reader = new DesktopReadService(new Win32WindowSource(), uia, new DesktopReadOptions { AllowedProcessIds = new HashSet<int> { fx.Id } });
+            var reader = new DesktopReadService(os, uia, new DesktopReadOptions { AllowedProcessIds = new HashSet<int> { fx.Id } });
             Func<int, Task>? between = null;
             var service = new GuardedInputRequestService(reader, uia, policy, () => false, () => 1, recorder, _ => true, new Win32DesktopInputPlatform(),
                 new GuardedInputOptions { MouseEnabled = true, KeyboardEnabled = true, InterEventDelayMs = 30, TestHookBetweenEvents = i => between?.Invoke(i) ?? Task.CompletedTask });

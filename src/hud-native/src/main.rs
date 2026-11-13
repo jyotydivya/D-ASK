@@ -7,6 +7,7 @@ pub mod state;
 pub mod tts;
 pub mod stt;
 pub mod whisper;
+pub mod voice_gate;
 #[cfg(feature = "approval-fixture")]
 mod approval_fixture;
 
@@ -109,6 +110,8 @@ pub enum WebBridgeMessage {
     ResumeExecution { reason: Option<String> },
     AgentTaskSubmit(ipc::agent_bridge::AgentSubmitPayload),
     AgentTaskCancel(ipc::agent_bridge::AgentCancelPayload),
+    /// Read-only recovery of a FINISHED task's result after a HUD restart (history that was not saved before the HUD closed).
+    AgentTaskStatus(ipc::agent_bridge::AgentStatusPayload),
     /// The page may only lower interaction: "ambient" or "hidden".
     SetInteraction { mode: String },
     HitRegions(HitRegionsPayload),
@@ -433,6 +436,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap();
                 if req.method() != "POST" { responder.respond(json(StatusCode::METHOD_NOT_ALLOWED, serde_json::json!({ "error": "POST a WAV" }))); return; }
                 let body = req.into_body();
+                let received = chrono::Utc::now();   // the end of the recorded segment (voice gate freshness)
                 if let Err(why) = stt::validate_wav(&body) { responder.respond(json(StatusCode::BAD_REQUEST, serde_json::json!({ "error": why }))); return; }
                 let stt_root = root_for_protocol.clone();
                 std::thread::spawn(move || {
@@ -441,15 +445,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let result = std::fs::write(&file, &body).map_err(|e| e.to_string()).and_then(|_| stt::transcribe(&stt_root, &file, &body));
                     // Acceptance evidence ONLY: DASK_STT_EVIDENCE_DIR (unset in normal use; set by scripts\hud\voice-live.ps1 for its own
                     // stack) keeps the recording and its transcript in that folder. Otherwise the recording is never kept.
+                    let stem = format!("utt-{}", chrono::Utc::now().format("%H%M%S%3f"));
                     if let Some(dir) = std::env::var_os("DASK_STT_EVIDENCE_DIR").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
-                        let stem = format!("utt-{}", chrono::Utc::now().format("%H%M%S%3f"));
                         let _ = std::fs::copy(&file, dir.join(format!("{stem}.wav")));
                         let note = match &result { Ok((t, e)) => format!("{e}\t{t}\n"), Err(e) => format!("error\t{e}\n") };
                         let _ = std::fs::write(dir.join(format!("{stem}.txt")), note);
                     }
                     let _ = std::fs::remove_file(&file);   // the temporary file is always deleted
                     match result {
-                        Ok((text, engine)) => { info!("[STT] Transcribed {} bytes of audio ({} characters) with {} in {} ms.", body.len(), text.len(), engine, t0.elapsed().as_millis()); responder.respond(json(StatusCode::OK, serde_json::json!({ "text": text, "engine": engine }))) }
+                        Ok((text, engine)) => {
+                            info!("[STT] Transcribed {} bytes of audio ({} characters) with {} in {} ms.", body.len(), text.len(), engine, t0.elapsed().as_millis());
+                            // Acceptance ONLY (DASK_VOICE_GATE_DIR, unset in normal use): the page gets the text only if the harness
+                            // released it for the open test step; otherwise "" (the page never submits an empty transcript).
+                            match voice_gate::gate_dir() {
+                                None => responder.respond(json(StatusCode::OK, serde_json::json!({ "text": text, "engine": engine }))),
+                                Some(gate) => match voice_gate::hold(&gate, &stem, &text, engine, &body, received, voice_gate::VERDICT_TIMEOUT) {
+                                    voice_gate::Outcome::Released(t) => responder.respond(json(StatusCode::OK, serde_json::json!({ "text": t, "engine": engine, "gate": "released" }))),
+                                    voice_gate::Outcome::Withheld(why) => responder.respond(json(StatusCode::OK, serde_json::json!({ "text": "", "engine": engine, "gate": "withheld", "reason": why }))),
+                                },
+                            }
+                        }
                         Err(e) => { warn!("[STT] Transcription failed: {}", e); responder.respond(json(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "error": "transcription failed" }))) }
                     }
                 });
@@ -785,22 +800,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             warn!("[IPC BRIDGE SECURITY] Rejected oversized state parameter: {}", trimmed);
                         }
                     }
-                    Ok(WebBridgeMessage::ModelInference { prompt, task_id, max_tokens }) => {
-                        if prompt.len() <= 8192 {
-                            let tid = task_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                            let tokens = max_tokens.unwrap_or(256).clamp(1, 2048);
-                            info!("[IPC BRIDGE] ModelInference requested: task_id={}, max_tokens={}", tid, tokens);
-                            let req = serde_json::json!({
-                                "taskId": tid,
-                                "prompt": prompt,
-                                "maxTokens": tokens,
-                            });
-                            if let Ok(envelope) = IpcEnvelope::new("ModelInferenceIpcRequest", &req, None) {
-                                let _ = outgoing_tx_for_events.try_send(envelope);
-                            }
-                        } else {
-                            warn!("[IPC BRIDGE SECURITY] Rejected oversized prompt in ModelInference: {} bytes", prompt.len());
-                        }
+                    Ok(WebBridgeMessage::ModelInference { prompt, .. }) => {
+                        // Refused, never forwarded (docs/issues/daemon-inference-estop-delay.md): the daemon handles one message per session at a
+                        // time, so a long generation on THIS pipe would hold back an Emergency Stop sent on it. The HUD frontend never sends this
+                        // message (agent inference runs in the agent host's own llama-server); only a page script could, so the bridge refuses it.
+                        warn!("[IPC BRIDGE SECURITY] Refused ModelInference from the web view ({} bytes): direct daemon inference is not offered to the page", prompt.len());
                     }
                     Ok(WebBridgeMessage::UserCommand { text }) => {
                         info!("[IPC BRIDGE] User command dispatched ({} chars)", text.chars().count());
@@ -840,9 +844,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let connected = matches!(state.lock().unwrap().connection, state::hud_state::ConnectionStatus::Connected);
                         let stopped = native_latch_for_events.is_latched();
                         info!("[IPC BRIDGE] Agent task requested ({} chars)", payload.objective.chars().count());
-                        match ipc::agent_bridge::build_submit(&payload, connected, stopped) {
-                            Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
-                            Err(message) => dispatch_to_frontend(&webview, &message),
+                        // Acceptance ONLY (DASK_VOICE_GATE_DIR, unset in normal use): once the harness enforces the gate, only the
+                        // transcript it released for the current test step is forwarded to the daemon (one-shot, exact).
+                        let gated = voice_gate::gate_dir().map(|gate| voice_gate::check_submit(&gate, &payload.objective));
+                        if let Some(Err(why)) = gated {
+                            dispatch_to_frontend(&webview, &ipc::agent_bridge::gate_rejection(&payload.request_id, &why));
+                        } else {
+                            match ipc::agent_bridge::build_submit(&payload, connected, stopped) {
+                                Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
+                                Err(message) => dispatch_to_frontend(&webview, &message),
+                            }
                         }
                     }
                     Ok(WebBridgeMessage::Speak { text }) => tts.speak(&text),
@@ -851,6 +862,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let connected = matches!(state.lock().unwrap().connection, state::hud_state::ConnectionStatus::Connected);
                         info!("[IPC BRIDGE] Agent task cancel requested: {}", payload.task_id);
                         match ipc::agent_bridge::build_cancel(&payload, connected) {
+                            Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
+                            Err(message) => dispatch_to_frontend(&webview, &message),
+                        }
+                    }
+                    Ok(WebBridgeMessage::AgentTaskStatus(payload)) => {
+                        let connected = matches!(state.lock().unwrap().connection, state::hud_state::ConnectionStatus::Connected);
+                        match ipc::agent_bridge::build_status(&payload, connected) {
                             Ok(envelope) => send_agent_request(&outgoing_tx_for_events, &webview, envelope),
                             Err(message) => dispatch_to_frontend(&webview, &message),
                         }

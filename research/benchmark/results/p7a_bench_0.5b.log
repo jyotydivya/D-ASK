@@ -1,0 +1,39 @@
+[bench] p7a_bench_qwen2.5-0.5b-instruct-q4_k_m_vulkan_product: 36 tasks
+[bench] ready in 2154 ms on vulkan (pid 20116)
+[bench] s01 completed  legacy=completed  success=true 6504ms tools=system.time
+[bench] s02 partial    legacy=partial    success=true 11364ms tools=filesystem.metadata+filesystem.read+math.evaluate+system.info+system.time+workspace.list_dir
+[bench] s03 partial    legacy=completed  success=false 5311ms tools=system.time
+[bench] s04 completed  legacy=completed  success=true 4123ms tools=math.evaluate
+[bench] s05 completed  legacy=completed  success=true 4367ms tools=math.evaluate
+[bench] s06 completed  legacy=completed  success=true 3751ms tools=math.evaluate
+[bench] s07 unverified legacy=completed  success=false 4262ms tools=system.time
+[bench] s08 completed  legacy=completed  success=true 4607ms tools=system.info
+[bench] s09 completed  legacy=completed  success=true 4671ms tools=workspace.list_dir
+[bench] s10 unverified legacy=completed  success=false 5642ms tools=system.info
+[bench] t01 completed  legacy=completed  success=true 4085ms tools=math.evaluate
+[bench] t02 unverified legacy=completed  success=true 7628ms tools=math.evaluate+system.info+system.time+workspace.list_dir
+[bench] t03 completed  legacy=completed  success=true 3909ms tools=math.evaluate
+[bench] t04 completed  legacy=completed  success=true 4679ms tools=system.time
+[bench] t05 unverified legacy=completed  success=false 4483ms tools=system.info
+[bench] p01 unverified legacy=completed  success=false 3855ms tools=system.time
+[bench] p02 unverified legacy=completed  success=false 7996ms tools=system.time
+[bench] p03 unverified legacy=completed  success=false 4260ms tools=system.time
+[bench] p04 partial    legacy=completed  success=false 3185ms tools=system.time
+[bench] p05 partial    legacy=partial    success=true 9729ms tools=math.evaluate+system.time
+[bench] m01 unverified legacy=completed  success=false 7199ms tools=math.evaluate
+[bench] m02 unverified legacy=completed  success=false 7574ms tools=math.evaluate
+[bench] m03 unverified legacy=completed  success=false 3606ms tools=system.time
+[bench] m04 unverified legacy=completed  success=false 4893ms tools=math.evaluate+system.time
+[bench] m05 unverified legacy=completed  success=false 3532ms tools=system.info
+[bench] m06 unverified legacy=completed  success=false 6043ms tools=math.evaluate+system.info
+[bench] u01 unverified legacy=completed  success=false 3001ms tools=system.time
+[bench] u02 unverified legacy=completed  success=false 7065ms tools=math.evaluate+system.info+system.time+workspace.list_dir
+[bench] u03 unverified legacy=completed  success=false 4329ms tools=system.time+workspace.list_dir
+[bench] u04 unverified legacy=completed  success=false 3707ms tools=system.time
+[bench] u05 failed     legacy=failed     success=false 2391ms tools=filesystem.read
+[bench] u06 unverified legacy=completed  success=false 1973ms tools=system.info
+[bench] f01 unverified legacy=completed  success=false 4020ms tools=system.time
+[bench] f02 failed     legacy=failed     success=false 5280ms tools=math.evaluate
+[bench] f03 failed     legacy=failed     success=false 1272ms tools=math.evaluate
+[bench] f04 failed     legacy=failed     success=false 5914ms tools=system.time
+[bench] wrote research\benchmark\results\p7a_bench_qwen2.5-0.5b-instruct-q4_k_m_vulkan_product.json

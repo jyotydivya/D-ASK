@@ -675,7 +675,13 @@ public class SafetyRemediationTests
     [Fact]
     public async Task Scenario29_ValidateConsumedApproval_Latency_Benchmark_N35()
     {
-        var (_, policy, _) = CreateTestEngine();
+        // Phase 4B-2A: a window-bound approval is re-verified against the OS at consumption, so the benchmark gives the policy
+        // engine an OS view holding the approved window, and the approval names its complete process instance. The measured
+        // latency therefore INCLUDES the live target check.
+        var windows = new Phase7B1bTests.FakeWindows();
+        windows.Windows.Add(Phase7B1bTests.W(1000, 5000, "process.exe", "Bench"));
+        var started = new DateTimeOffset(DateTime.FromFileTimeUtc(Phase7B1bTests.T0), TimeSpan.Zero);
+        var policy = new ActionPolicyEngine(NullLogger<ActionPolicyEngine>.Instance, null, windows);
         int n = 35;
         var latenciesMs = new double[n];
         var paramsMap = new Dictionary<string, string> { ["target"] = "process.exe", ["arg"] = "value" };
@@ -696,6 +702,7 @@ public class SafetyRemediationTests
                 TargetProcessName = "process.exe",
                 TargetHwnd = 1000,
                 TargetProcessId = 5000,
+                TargetProcessCreationTime = started,
                 SessionId = "session_bench",
                 StopGeneration = 1,
                 ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(1)
@@ -722,7 +729,7 @@ public class SafetyRemediationTests
                 "process.exe",
                 1000,
                 5000,
-                null,
+                started,
                 "session_bench",
                 1,
                 false);

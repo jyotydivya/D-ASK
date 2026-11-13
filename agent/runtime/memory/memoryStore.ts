@@ -59,6 +59,9 @@ export function secretIn(text: string): string | null {
 }
 
 export function defaultMemoryPath(): string {
+  // DASK_MEMORY_DB (set by the daemon's AgentHost:MemoryPath, e.g. an acceptance run's own folder) overrides the default location.
+  const override = process.env.DASK_MEMORY_DB;
+  if (override && path.isAbsolute(override)) return override;
   return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "D-ASK", "memory.db");
 }
 

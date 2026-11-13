@@ -15,6 +15,7 @@ import { DENY_ALL_APPROVALS, ToolRegistry, errMessage } from "./toolRegistry";
 import { Verifier, decideOutcome, evidenceLines, judgeStep } from "./verifier";
 import { checkArguments, clarificationFor, detectFacets, type ArgumentDomains } from "./grounding";
 import { assessCapability } from "./capabilityCheck";
+import { acceptAnswer, classifyConversation } from "./conversation";
 import {
   DEFAULT_LIMITS,
   type ApprovalGate,
@@ -58,6 +59,11 @@ export interface RuntimeConfig {
    * EXPERIMENTAL switches, all OFF by default until a benchmark shows they help.
    * Fail-closed completion verification is NOT among them: it is always on.
    */
+  /**
+   * Answer plain informational questions that need no tool with the local model itself (conversation.ts), reported as "answered".
+   * Off unless the host enables it: it never applies to anything a tool, an action or a permission is involved in.
+   */
+  conversation?: boolean;
   experimental?: {
     /** Planner rejects plans with "contradicted" steps and spends its repair round on them. */
     planGrounding?: boolean;
@@ -118,6 +124,7 @@ export class AgentRuntime {
     let error: string | undefined;
     let refused = false;
     let memoryContext: { lines: string[]; ids: string[] } | null = null;
+    let conversation: { outcome: "answered" | "failed"; response: string } | null = null;
 
     try {
       emit({ type: "phase", phase: "understanding" });
@@ -159,12 +166,28 @@ export class AgentRuntime {
         }
       }
 
-      if (!refused && this.config.memory && this.config.granted.has("memory:read")) {
+      // Informational question, no tool involved: answered by the local model itself. The gate is deterministic (conversation.ts).
+      if (!refused && this.config.conversation && classifyConversation(this.config.registry, opts.objective).conversational) {
+        const plan: Plan = { intent: "question", goal: opts.objective.slice(0, 300), successCriteria: [], steps: [] };
+        firstPlan = plan; lastPlan = plan; iterations = 1;
+        emit({ type: "plan", plan, iteration: 1 });
+        emit({ type: "phase", phase: "executing" });
+        let accepted: ReturnType<typeof acceptAnswer>;
+        try {
+          accepted = acceptAnswer(await this.brain.answerQuestion(opts.objective, run.signal));
+        } catch (err) {
+          if (run.signal.aborted) throw err;
+          accepted = { ok: false, error: `I couldn't reach the local model to answer that (${errMessage(err)}).` };
+        }
+        conversation = accepted.ok ? { outcome: "answered", response: accepted.text } : { outcome: "failed", response: accepted.error };
+      }
+
+      if (!refused && !conversation && this.config.memory && this.config.granted.has("memory:read")) {
         try { memoryContext = this.config.memory.contextFor(opts.objective); } catch { memoryContext = null; }
         if (memoryContext && memoryContext.lines.length === 0) memoryContext = null;
       }
 
-      for (let iteration = 1; iteration <= this.limits.maxIterations && !refused; iteration++) {
+      for (let iteration = 1; iteration <= this.limits.maxIterations && !refused && !conversation; iteration++) {
         if (run.signal.aborted) break;
         iterations = iteration;
         emit({ type: "phase", phase: iteration === 1 ? "planning" : "replanning" });
@@ -254,8 +277,9 @@ export class AgentRuntime {
     const cancelled = !timedOut && (opts.signal?.aborted ?? false);
     if (timedOut) error ??= `Run time limit (${this.limits.runTimeoutMs} ms) reached`;
 
-    let outcome: RunOutcome = refused ? "refused" : decideOutcome(steps, verification, cancelled);
-    if (!refused && !cancelled && steps.length === 0) outcome = "failed";
+    let outcome: RunOutcome = refused ? "refused" : conversation ? conversation.outcome : decideOutcome(steps, verification, cancelled);
+    if (!refused && !conversation && !cancelled && steps.length === 0) outcome = "failed";
+    if (conversation && cancelled) outcome = "cancelled";
 
     const report: RunReport = {
       taskId: opts.taskId,
@@ -263,7 +287,7 @@ export class AgentRuntime {
       plan: lastPlan ?? firstPlan,
       steps,
       verification,
-      response: composeResponse(outcome, firstPlan ?? lastPlan, steps, verification, error) +
+      response: (conversation && outcome !== "cancelled" ? conversation.response : composeResponse(outcome, firstPlan ?? lastPlan, steps, verification, error)) +
         (memoryContext && !refused ? `\n(Considered ${memoryContext.ids.length} of your saved note${memoryContext.ids.length === 1 ? "" : "s"} while planning.)` : ""),
       iterations,
       toolCalls,
@@ -392,6 +416,7 @@ export function composeResponse(
     partial: `Partially done: ${ok.length} of ${steps.length} step${steps.length === 1 ? "" : "s"} succeeded.`,
     failed: "I couldn't complete this.",
     cancelled: `Cancelled after ${ok.length} of ${steps.length} step${steps.length === 1 ? "" : "s"}.`,
+    answered: "",   // an answered question's response is the answer itself (conversation.ts); never composed here
   };
   const lines: string[] = [header[outcome]];
   for (const s of steps) {

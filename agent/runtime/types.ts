@@ -180,7 +180,15 @@ export interface ToolRequestCheck<I = Record<string, unknown>, O = unknown> {
    * workflow being saved). Then only claiming tools' facets, clarifications and offer apply (grounding.claimingTools).
    */
   claims?(objective: string): boolean;
+  /**
+   * Puts a proposed plan into the order the REQUEST dictates, when the request fully determines it (an application session:
+   * "open X, then type Y"). Pure and deterministic: it uses only the request text, never the model's values for the steps it
+   * adds, and every step (added or not) then goes through the same validation, argument domains, grounding and approvals.
+   */
+  arrangeSteps?(steps: ProposedStep[], objective: string): ProposedStep[];
 }
+
+export interface ProposedStep { id: string; description?: string; tool: string; input: Record<string, unknown>; dependsOn?: string[] }
 
 /** Public description of a tool, safe to show to a model or a UI. */
 export interface ToolDescriptor {
@@ -215,7 +223,7 @@ export interface ApprovalGate {
 export type ModelOutputSchema = Readonly<Record<string, unknown>>;
 
 export interface StructuredRequest {
-  purpose: "plan" | "assess";
+  purpose: "plan" | "assess" | "answer";
   system: string;
   user: string;
   signal: AbortSignal;
@@ -289,7 +297,10 @@ export type RunOutcome =
   | "partial"      // some steps succeeded, some did not
   | "failed"       // nothing useful was achieved, or planning failed
   | "refused"      // the request is outside what the available tools can do
-  | "cancelled";
+  | "cancelled"
+  // An informational question that needs no tool and no computer action, answered by the local model itself (conversation.ts).
+  // Never "completed" and never independently verified: nothing was checked against a source, and the HUD says so.
+  | "answered";
 
 export interface VerificationReport {
   stepsSucceeded: number;
@@ -327,6 +338,41 @@ export interface RunReport {
   error?: string;
   /** Ids of the user's saved memories offered to the planner as context (transparency); absent when none were. */
   memoryContext?: { ids: string[] };
+  /** The typed result of this run that a LATER step may use (compose.ts). Set by the knowledge engine, or derived from a tool's typed output (artifact.ts). */
+  artifact?: Artifact;
+}
+
+// ── Typed intermediate results ───────────────────────────────────────────────
+
+/** Where one piece of an artifact came from: a document (path, page), a web page (URL), a window, a memory. */
+export interface ArtifactSource { label: string; ref: string; page?: number | null }
+
+/**
+ * A typed, provenance-preserving result. Produced deterministically from what a tool returned (never from model text alone), it can be
+ * passed to a later step only through an ordinary request whose text contains it, so grammars, grounding, approvals and Emergency Stop
+ * apply exactly as if the user had typed it.
+ */
+export interface Artifact {
+  kind: "answer" | "passages" | "report" | "page" | "file-summary" | "file-text" | "window-text" | "memory" | "list" | "plugin-output" | "text";
+  /** The content to pass on (already redacted by the producing tool where it redacts). */
+  text: string;
+  sources: ArtifactSource[];
+  provenance: {
+    /** The tool or engine that produced it (e.g. "knowledge.answer", "browser.read_page"). */
+    tool: string;
+    objective: string;
+    outcome: RunOutcome;
+    /** Whether the producing run was independently verified (null: no verification applies, e.g. a model-written answer). */
+    verified: boolean | null;
+    /** True when the content came from the internet (a page the user named). */
+    online: boolean;
+    at: string;
+    /** Knowledge answers only: the code's citation check of the answer (knowledge/ground.ts validate), and the question it answers. */
+    grounding?: "grounded" | "partially-grounded" | "insufficient" | "extractive";
+    question?: string;
+  };
+  /** A file the result lives in (a saved research report, the file that was read). */
+  file?: string;
 }
 
 /** Source of advisory planning context from the user's saved local memories (agent/runtime/memory/planningContext.ts). */

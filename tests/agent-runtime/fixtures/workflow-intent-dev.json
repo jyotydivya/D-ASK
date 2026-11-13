@@ -1,0 +1,60 @@
+{
+  "_readme": "DEV set: the illustrative examples from the task brief plus further paraphrases. This is the ONLY set used to develop and tune the interpreter prompt and validator. It is disjoint from workflow-intent-heldout.json, which is run for the final measurement.",
+  "world": [
+    { "name": "nightly", "steps": ["What is 2+3?", "Organize the files"], "schedule": "daily 21:00" },
+    { "name": "morning check", "steps": ["What time is it?"], "schedule": "weekly monday 08:00" },
+    { "name": "backup", "steps": ["What is 1+1?"], "schedule": "daily 02:00" },
+    { "name": "backup-weekly", "steps": ["What is 1+1?"], "schedule": "weekly sunday 03:00" },
+    { "name": "dropme", "steps": ["What is 7+8?"], "schedule": null }
+  ],
+  "cases": [
+    { "id": "u1", "cat": "unschedule", "text": "Unschedule the workflow nightly.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "nightly" } },
+    { "id": "u2", "cat": "unschedule", "text": "Stop running nightly automatically.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "nightly" } },
+    { "id": "u3", "cat": "unschedule", "text": "I don't want nightly to run every day anymore.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "nightly" } },
+    { "id": "u4", "cat": "unschedule", "text": "Remove the daily trigger from nightly.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "nightly" } },
+    { "id": "u5", "cat": "unschedule", "text": "Cancel the scheduled execution of nightly.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "nightly" } },
+    { "id": "u6", "cat": "unschedule", "text": "Disable the automatic runs of backup.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "backup" } },
+    { "id": "u7", "cat": "unschedule", "text": "Don't run the morning check on a schedule anymore.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "morning check" } },
+    { "id": "u8", "cat": "unschedule", "text": "Turn off the schedule for backup-weekly.", "accept": ["call"], "tool": "workflows.unschedule", "args": { "name": "backup-weekly" } },
+
+    { "id": "l1", "cat": "list", "text": "List my workflows.", "accept": ["call"], "tool": "workflows.list", "args": {} },
+    { "id": "l2", "cat": "list", "text": "What workflows have I saved?", "accept": ["call"], "tool": "workflows.list", "args": {} },
+    { "id": "l3", "cat": "list", "text": "Show me my existing automations.", "accept": ["call"], "tool": "workflows.list", "args": {} },
+    { "id": "l4", "cat": "list", "text": "What scheduled workflows do I have?", "accept": ["call"], "tool": "workflows.list", "args": {} },
+    { "id": "l5", "cat": "list", "text": "Which routines are set up?", "accept": ["call"], "tool": "workflows.list", "args": {} },
+
+    { "id": "d1", "cat": "delete", "text": "Delete the workflow dropme.", "accept": ["call"], "tool": "workflows.delete", "args": { "name": "dropme" } },
+    { "id": "d2", "cat": "delete", "text": "Remove my old dropme workflow.", "accept": ["call"], "tool": "workflows.delete", "args": { "name": "dropme" } },
+    { "id": "d3", "cat": "delete", "text": "I no longer need the dropme workflow.", "accept": ["call"], "tool": "workflows.delete", "args": { "name": "dropme" } },
+    { "id": "d4", "cat": "delete", "text": "Please delete the morning check automation for good.", "accept": ["call"], "tool": "workflows.delete", "args": { "name": "morning check" } },
+    { "id": "d5", "cat": "delete", "text": "Can you get rid of backup-weekly?", "accept": ["call"], "tool": "workflows.delete", "args": { "name": "backup-weekly" } },
+
+    { "id": "s1", "cat": "schedule", "text": "Schedule dropme every day at 9 PM.", "accept": ["call"], "tool": "workflows.schedule", "args": { "name": "dropme", "kind": "daily", "time": "21:00" } },
+    { "id": "s2", "cat": "schedule", "text": "Make dropme run every weekday at 9 AM.", "accept": ["clarify"] },
+    { "id": "s3", "cat": "schedule", "text": "I want dropme to execute every Monday morning.", "accept": ["clarify"] },
+    { "id": "s4", "cat": "schedule", "text": "I want dropme to execute every Monday at 6 in the evening.", "accept": ["call"], "tool": "workflows.schedule", "args": { "name": "dropme", "kind": "weekly", "day": "monday", "time": "18:00" } },
+    { "id": "s5", "cat": "schedule", "text": "Please run dropme daily at 07:45.", "accept": ["call"], "tool": "workflows.schedule", "args": { "name": "dropme", "kind": "daily", "time": "07:45" } },
+    { "id": "s6", "cat": "schedule", "text": "Could you set dropme to start on 2027-03-01 at 10:30?", "accept": ["call"], "tool": "workflows.schedule", "args": { "name": "dropme", "kind": "once", "date": "2027-03-01", "time": "10:30" } },
+
+    { "id": "c1", "cat": "save", "text": "Create a workflow called reportcheck that checks my reports.", "accept": ["call"], "tool": "workflows.save", "args": { "name": "reportcheck" }, "minSteps": 1 },
+    { "id": "c2", "cat": "save", "text": "Create a workflow called nightly that checks my reports.", "accept": ["clarify"] },
+    { "id": "c3", "cat": "save", "text": "Save these steps as a reusable workflow.", "accept": ["clarify"] },
+    { "id": "c4", "cat": "save", "text": "Make an automation that performs these tasks every morning.", "accept": ["clarify"] },
+    { "id": "c5", "cat": "save", "text": "Make an automation called greeter that tells me the time and then says hello.", "accept": ["call"], "tool": "workflows.save", "args": { "name": "greeter" }, "minSteps": 2 },
+    { "id": "c6", "cat": "save", "text": "I need a new routine named sweep which lists my downloads and then summarizes my notes.", "accept": ["call"], "tool": "workflows.save", "args": { "name": "sweep" }, "minSteps": 2 },
+
+    { "id": "a1", "cat": "ambiguous", "text": "Delete my morning automation.", "accept": ["clarify"] },
+    { "id": "a2", "cat": "ambiguous", "text": "Stop it from running automatically.", "accept": ["clarify"] },
+    { "id": "a3", "cat": "ambiguous", "text": "Remove nightly or backup.", "accept": ["clarify"] },
+    { "id": "m1", "cat": "missing", "text": "Schedule the dropme workflow.", "accept": ["clarify"] },
+    { "id": "i1", "cat": "invalid", "text": "Run dropme every 30 minutes.", "accept": ["clarify"] },
+    { "id": "i2", "cat": "invalid", "text": "Schedule dropme at 31:00 every day.", "accept": ["clarify"] },
+    { "id": "x1", "cat": "contradictory", "text": "Delete dropme and also create a workflow called dropme that checks the time.", "accept": ["clarify"] },
+    { "id": "x2", "cat": "contradictory", "text": "Schedule dropme every day at 8 AM and also every Friday at 9 PM.", "accept": ["clarify"] },
+
+    { "id": "n1", "cat": "not_workflow", "text": "What time is it?", "accept": ["none"] },
+    { "id": "n2", "cat": "not_workflow", "text": "Read me my calendar for every day this week.", "accept": ["none", "clarify"] },
+    { "id": "n3", "cat": "not_workflow", "text": "What does the word routine mean?", "accept": ["none", "clarify"] },
+    { "id": "n4", "cat": "not_workflow", "text": "Summarize the file notes.txt.", "accept": ["none"] }
+  ]
+}

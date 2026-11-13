@@ -10,10 +10,14 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { canonicalJson } from "../runtime/planner";
 import type { AgentRuntime } from "../runtime/runtime";
+import type { LanguageModel } from "../runtime/types";
 import type { DaemonCallBridge } from "./desktopBridge";
 import { runWorkflow } from "./workflowRun";
+import { announceRefusal, fetchKnown, interpretWorkflowRequest, manageWorkflow, parseManageRequest, refusedManage } from "./workflowManage";
 import { runWorkflowName } from "../runtime/tools/workflows";
-import type { RunOutcome, RunReport, RuntimeEvent } from "../runtime/types";
+import type { Artifact, ConversationTurn, RunOutcome, RunReport, RuntimeEvent } from "../runtime/types";
+import { artifactOf } from "../runtime/artifact";
+import { parseChain, prefixEvents, runChain, withPrefix } from "./compose";
 import {
   MAX_LINE_BYTES, ProtocolError, encodeError, encodeEvent, encodeResult, parseReply, parseRequest,
   type GenerationParams, type HelloParams, type Request, type SubmitParams, type TaskRefParams,
@@ -27,6 +31,12 @@ export interface HostDeps {
   /** The per-launch token the first request must present. */
   token: string;
   runtime: Pick<AgentRuntime, "run">;
+  /**
+   * Deterministic: true when the local knowledge engine (runtime/knowledge/service.ts) claims the request ("index …", "according to my
+   * documents, …", "prepare a literature review …"). Such a request goes to the runtime directly and is never offered to workflow-management
+   * interpretation, so a collection and a workflow that share a name cannot be confused. Absent: no knowledge engine.
+   */
+  knowledgeClaims?(objective: string): boolean;
   /** Safe model/supervisor status for `health` (must not contain credentials). */
   modelStatus?(): unknown;
   /** Release the model server. Called once on shutdown. */
@@ -37,6 +47,17 @@ export interface HostDeps {
   shutdownGraceMs?: number;
   /** Phase 7B.1b: read-only desktop calls to the daemon (protocol v2). Absent: v1 only. */
   desktop?: DaemonCallBridge;
+  /**
+   * The local model, used ONLY to describe a natural-language workflow-management request as untrusted JSON (workflowIntent.ts). The host validates
+   * that description deterministically before any daemon call; the model has no authority and no tool access. Absent: only exact requests are understood.
+   */
+  model?: LanguageModel;
+  /**
+   * TEST-ONLY, opt-in (DASK_AGENT_INTENT_TRACE=1 via AgentHost:ExtraEnvironment): receives, for each task that reaches workflow-management routing, the request text,
+   * the model's raw description and the host's decision, so an acceptance run can show exactly how a request was understood. Off by default (the host's log
+   * never carries request text otherwise); it changes no behaviour and cannot influence the decision.
+   */
+  intentTrace?: (event: Record<string, unknown>) => void;
   /**
    * Phase 7B.3 diagnostics (test-only, off unless DASK_AGENT_DIAGNOSTICS=1): adds a `diag` object to progress events
    * with ids, tool names, salted input fingerprints and structured verification flags. Never inputs, text or titles.
@@ -64,9 +85,11 @@ export interface TaskResult {
     facets: { id: string; satisfied: boolean }[];
     grounding: { stepId: string; status: string }[];
   } | null;
+  /** HOST-SIDE ONLY (never sent: stripped before task.finished): the typed result a later step may use (compose.ts). */
+  artifact?: Artifact;
 }
 
-export function toTaskResult(r: RunReport): TaskResult {
+export function toTaskResult(r: RunReport, objective = ""): TaskResult {
   return {
     taskId: r.taskId,
     outcome: r.outcome,
@@ -83,6 +106,7 @@ export function toTaskResult(r: RunReport): TaskResult {
       facets: r.verification.facets.map((f) => ({ id: f.id, satisfied: f.satisfied })),
       grounding: r.verification.grounding.map((g) => ({ stepId: g.stepId, status: g.status })),
     },
+    artifact: artifactOf(r, objective),
   };
 }
 
@@ -110,6 +134,9 @@ export class AgentHost {
   private readonly seenTaskIds = new Set<string>();
   private active: TaskRecord | null = null;
   private readonly startedAt = Date.now();
+  /** This conversation's recent turns (typed, spoken, scheduled): planner context and the source of "save that …" / "remember that". In memory only. */
+  private readonly turns: ConversationTurn[] = [];
+  private lastTurn: { objective: string; result: TaskResult } | null = null;
 
   private pending: Buffer[] = [];
   private pendingBytes = 0;
@@ -264,10 +291,15 @@ export class AgentHost {
     };
     let result: TaskResult;
     try {
-      // "Run the workflow X": its steps (read from the daemon) run one by one through the same runtime.
-      const workflow = runWorkflowName(objective);
-      if (workflow !== null) result = await runWorkflow(workflow, { runtime: this.deps.runtime, desktop: this.deps.desktop }, rec.taskId, rec.controller.signal, emit);
-      else result = toTaskResult(await this.deps.runtime.run({ taskId: rec.taskId, objective, signal: rec.controller.signal, sink: { emit } }));
+      // "<request>, then save it as a note called T" / "... and remember it" / "save that as ..." (compose.ts). The first part runs through execute(), exactly
+      // as if typed. The saving part (always a note or memory request built by compose.ts) goes straight to the runtime: the workflow-management router
+      // must never read the quoted note CONTENT as an instruction (found in the real HUD: an answer citing "§ … > Schedule" was refused as a workflow request).
+      const chain = parseChain(objective);
+      result = chain
+        ? await runChain(chain, { taskId: rec.taskId, previous: this.lastTurn, signal: rec.controller.signal, run: (o, prefix) => prefix
+            ? (async () => withPrefix(toTaskResult(await this.deps.runtime.run({ taskId: rec.taskId, objective: o, signal: rec.controller.signal, sink: { emit: prefixEvents(emit, prefix) }, history: this.history() }), o), prefix))()
+            : this.execute(rec, o, emit, "") })
+        : await this.execute(rec, objective, emit, "");
     } catch (err) {
       // AgentRuntime.run does not throw by design. Never report this as anything but a failure.
       this.deps.log(`task ${rec.taskId} runtime failure: ${err instanceof Error ? err.stack : String(err)}`);
@@ -275,13 +307,44 @@ export class AgentHost {
     }
     rec.result = result;
     rec.state = "finished";
+    this.turns.push({ objective, outcome: result.outcome, response: result.response.slice(0, 600) });
+    if (this.turns.length > 10) this.turns.shift();
+    this.lastTurn = { objective, result };
     if (this.active === rec) this.active = null;
-    this.deps.writeLine(encodeEvent("task.finished", rec.requestId, rec.taskId, ++rec.seq, result));
+    this.deps.writeLine(encodeEvent("task.finished", rec.requestId, rec.taskId, ++rec.seq, { ...result, artifact: undefined }));
     this.deps.log(`task ${rec.taskId} finished: ${result.outcome} in ${Date.now() - rec.startedAt} ms` +
       // Diagnostics (opt-in): where it stopped and the error's leading category only (never its body, which may quote the request).
       (this.deps.diagnostics === true ? ` [diag lastPhase=${lastPhase} plans=${plans} errorKind=${result.error ? JSON.stringify(result.error.split(":")[0]!.slice(0, 60)) : "none"}]` : ""));
     this.prune();
   }
+
+
+  /** One request through the normal routing (workflow run, knowledge, workflow management, runtime). Used for typed requests and for each part of a chain. */
+  private async execute(rec: TaskRecord, objective: string, emit: (e: RuntimeEvent) => void, prefix: string): Promise<TaskResult> {
+      // "Run the workflow X": its steps (read from the daemon) run one by one through the same runtime.
+      const workflow = runWorkflowName(objective);
+      if (workflow !== null) return withPrefix(await runWorkflow(workflow, { runtime: this.deps.runtime, desktop: this.deps.desktop }, rec.taskId, rec.controller.signal, emit, this.lastTurn), prefix);
+      if (this.deps.knowledgeClaims?.(objective) === true) return withPrefix(toTaskResult(await this.deps.runtime.run({ taskId: rec.taskId, objective, signal: rec.controller.signal, sink: { emit }, history: this.history() }), objective), prefix);
+      {
+        // Save / list / delete / schedule / unschedule a workflow. Exact requests are the one call they state; other natural phrasings are described by
+        // the local model, validated by the host, and only then turned into the same daemon call. Nothing here asks the planner to plan these.
+        const signal = rec.controller.signal;
+        const known = await fetchKnown(this.deps.desktop, rec.taskId, signal);
+        const manage = parseManageRequest(objective, known ?? []);
+        const trace = this.deps.intentTrace ? (e: Record<string, unknown>) => { try { this.deps.intentTrace!({ taskId: rec.taskId, objective, ...e }); } catch { /* tracing never affects a task */ } } : undefined;
+        trace?.({ stage: "exact-parse", knownWorkflows: known === null ? null : known.length, parse: manage.kind === "route" ? { kind: "route", op: manage.op, name: manage.name } : manage.kind === "refuse" ? { kind: "refuse", soft: manage.soft === true, reason: manage.reason } : { kind: "none" } });
+        if (manage.kind === "route") return withPrefix(await manageWorkflow(manage.op, manage.name, objective, { desktop: this.deps.desktop }, rec.taskId, signal, emit), prefix);
+        if (manage.kind === "refuse" && !manage.soft) { announceRefusal(emit, manage.reason); return refusedManage(manage.reason, rec.taskId); }
+        {
+          const nl = known ? await interpretWorkflowRequest(objective, known, { desktop: this.deps.desktop, model: this.deps.model, trace, emit }, rec.taskId, signal) : null;
+          if (!nl && manage.kind !== "refuse") trace?.({ stage: "runtime", note: "not claimed as workflow management: sent to the normal runtime" });
+          return withPrefix(nl ?? (manage.kind === "refuse" ? (announceRefusal(emit, manage.reason), refusedManage(manage.reason, rec.taskId)) : toTaskResult(await this.deps.runtime.run({ taskId: rec.taskId, objective, signal, sink: { emit }, history: this.history() }), objective)), prefix);
+        }
+      }
+  }
+
+  /** The recent turns of this conversation, offered to the planner as context (advisory; grounding still uses only the request). */
+  private history(): ConversationTurn[] { return this.turns.slice(-5); }
 
   private prune(): void {
     if (this.tasks.size <= MAX_RETAINED) return;
@@ -390,3 +453,4 @@ function progressBase(e: RuntimeEvent): unknown {
     case "finished": return null; // reported by task.finished
   }
 }
+

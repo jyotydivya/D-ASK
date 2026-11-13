@@ -76,7 +76,56 @@ function Assert-HudForeground([IntPtr]$Hwnd) {
         Start-Sleep -Milliseconds 100
         [void][HudInput]::SetForegroundWindow($Hwnd)
     }
-    throw "The HUD is not the foreground window; refusing to send input."
+    throw "The HUD is not the foreground window; refusing to send input. Foreground: $(Get-ForegroundOwner)."
+}
+
+if (-not ('HudForeground' -as [type])) {
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices; using System.Text;
+public static class HudForeground {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  public static uint OwnerPid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
+}
+'@
+}
+
+# Who owns the foreground window right now, for the record when the HUD is not in front: "process (pid N)".
+# The window title is deliberately NOT recorded: another application's title can hold personal content.
+function Get-ForegroundOwner {
+    $h = [HudForeground]::GetForegroundWindow()
+    if ($h -eq [IntPtr]::Zero) { return 'no foreground window' }
+    $fgPid = [HudForeground]::OwnerPid($h)
+    $name = (Get-Process -Id $fgPid -ErrorAction SilentlyContinue).ProcessName
+    return "$(if ($name) { $name } else { 'unknown process' }) (pid $fgPid)"
+}
+
+# The decision loop of Confirm-HudForeground, over injected actions so it can be tested without a HUD. Each attempt:
+# done if the HUD is in front; otherwise cycle the HUD's own hotkey (interactive -> ambient -> interactive), so the HUD
+# activates ITSELF in response to the hotkey, and wait for the foreground to be the HUD. Never sends any other input.
+function Invoke-HudForegroundAttempts {
+    param([scriptblock]$IsForeground, [scriptblock]$Recycle, [scriptblock]$Wait, [scriptblock]$Owner, [int]$Attempts = 3)
+    $log = New-Object System.Collections.ArrayList
+    for ($a = 0; $a -le $Attempts; $a++) {
+        if (& $IsForeground) { return [pscustomobject]@{ ok = $true; attempts = $a; owners = @($log) } }
+        if ($a -eq $Attempts) { break }
+        [void]$log.Add((& $Owner))
+        & $Recycle
+        & $Wait
+    }
+    return [pscustomobject]@{ ok = $false; attempts = $Attempts; owners = @($log); reason = "the HUD could not be brought to the foreground after $Attempts attempt(s); foreground: $(& $Owner)" }
+}
+
+# Immediately before input: establish AND verify that the HUD is the foreground window, or report who holds it.
+# This only prepares; every keystroke and click is still guarded by Assert-HudForeground / the typing guard.
+function Confirm-HudForeground([IntPtr]$Hwnd, [int]$Attempts = 3) {
+    Invoke-HudForegroundAttempts -Attempts $Attempts -Owner { Get-ForegroundOwner } `
+        -IsForeground { [HudForeground]::GetForegroundWindow() -eq $Hwnd -and (Get-HudMode $Hwnd) -eq 'interactive' } `
+        -Recycle {
+            if ((Get-HudMode $Hwnd) -eq 'interactive') { Send-HudToggleHotkey; try { [void](Wait-HudMode $Hwnd 'ambient' 3000) } catch { } }
+            Send-HudToggleHotkey; try { [void](Wait-HudMode $Hwnd 'interactive' 3000) } catch { }
+        } `
+        -Wait { $sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 1500 -and [HudForeground]::GetForegroundWindow() -ne $Hwnd) { Start-Sleep -Milliseconds 50 } }
 }
 
 function Get-HudRoot([IntPtr]$Hwnd) { [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd) }
@@ -169,7 +218,7 @@ function Find-HudButton([IntPtr]$Hwnd, [string]$Pattern, [int]$TimeoutMs = 8000)
 
 # The panel's final outcome as text, or null while the task is running.
 function Get-HudOutcome([IntPtr]$Hwnd) {
-    $m = [regex]::Match((Get-HudText $Hwnd), '(?m)^RESULT[^\n]*\n(COMPLETED|UNVERIFIED|PARTIAL|FAILED|REFUSED|CANCELLED)', 'IgnoreCase')
+    $m = [regex]::Match((Get-HudText $Hwnd), '(?m)^RESULT[^\n]*\n(COMPLETED|ANSWERED|UNVERIFIED|PARTIAL|FAILED|REFUSED|CANCELLED)', 'IgnoreCase')
     if ($m.Success) { return $m.Groups[1].Value.ToUpper() }
     return $null
 }
