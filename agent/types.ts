@@ -77,7 +77,8 @@ export type AgentType =
   | "data"
   | "verifier"
   | "memory"
-  | "pc";
+  | "pc"
+  | "tool"; // D-ASK 2.0 agent runtime steps (agent/runtime): one validated tool call per step
 
 export interface AgentResult {
   status: "completed" | "failed" | "needs_approval";
@@ -328,7 +329,15 @@ export interface CreateTaskRequest {
   sessionId?: string;
   priority?: TaskPriority;
   context?: Record<string, unknown>;
+  /**
+   * Execution engine. "legacy" = the existing multi-agent orchestrator (default);
+   * "runtime" = the D-ASK 2.0 agent runtime (agent/runtime). When omitted, the
+   * server default applies (env DASK_AGENT_ENGINE=runtime selects the new runtime).
+   */
+  engine?: TaskEngine;
 }
+
+export type TaskEngine = "legacy" | "runtime";
 
 export interface CreateTaskResponse {
   taskId: string;

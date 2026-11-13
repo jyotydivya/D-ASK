@@ -1,12 +1,26 @@
 "use client";
 
+/**
+ * Original ULTRON Holographic Orb & UI
+ * Copyright (c) 2026 Sagar Tamang
+ * Source: https://github.com/SAGAR-TAMANG/ultron-by-sagar-builds
+ * Licensed under the MIT License
+ *
+ * Integrated into D-ASK Native Windows Host (Rust + WebView2)
+ */
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi, type TelemetryData } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import { soundFx, speechFx, type ThemeColor } from "@/lib/soundEngine";
+import { PcmRecorder } from "@/lib/pcmRecorder";
 import DevicePanel from "@/components/DevicePanel";
+import ApprovalSurface from "@/components/ApprovalSurface";
 import { AgentStatusPanel } from "@/components/AgentStatusPanel";
 import { useTask } from "@/hooks/useTask";
+import { isNativeHud } from "@/hooks/nativeAgent";
+import { requestMode, useHudInteraction } from "@/hooks/hudInteraction";
 import type { DeviceInfo } from "@/app/api/devices/route";
 
 type CameraState = "off" | "starting" | "on" | "error";
@@ -139,6 +153,31 @@ function matchLocalCommand(normalized: string, hasPhone: boolean = false): Local
 }
 
 
+
+export type DaemonTelemetry = {
+  cpu: number;
+  ramAvailMb: number;
+  ramLoadPct: number;
+  gpuName: string;
+  state: string;
+};
+
+export function postToNativeHost(msg: unknown) {
+  try {
+    const json = typeof msg === "string" ? msg : JSON.stringify(msg);
+    if (typeof window !== "undefined") {
+      const w = window as any;
+      if (w.ipc && typeof w.ipc.postMessage === "function") {
+        w.ipc.postMessage(json);
+      } else if (w.chrome && w.chrome.webview && typeof w.chrome.webview.postMessage === "function") {
+        w.chrome.webview.postMessage(json);
+      }
+    }
+  } catch (e) {
+    console.warn("postToNativeHost error:", e);
+  }
+}
+
 export default function JarvisOrb() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -155,7 +194,7 @@ export default function JarvisOrb() {
   const isSpeakingRef = useRef<boolean>(false);
 
   // Groq STT Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderRef = useRef<PcmRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isRecordingRef = useRef(false);
@@ -168,6 +207,31 @@ export default function JarvisOrb() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [aiThinking, setAiThinking] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
+
+  // ── Operational Safety & Emergency Stop State ─────────────────────────────
+  const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
+  // Native HUD only; null until the host has reported it.
+  const [daemonConnected, setDaemonConnected] = useState<boolean | null>(null);
+  // Desktop overlay mode (ambient / interactive / hidden), or "browser" outside the native HUD.
+  const hud = useHudInteraction();
+
+  const handleEmergencyStop = useCallback(() => {
+    setIsEmergencyStopped(true);
+    soundFx.playAlertSound();
+    postToNativeHost({
+      type: "EmergencyStop",
+      payload: { reason: "User clicked Emergency Stop button in HUD" },
+    });
+  }, []);
+
+  const handleResumeExecution = useCallback(() => {
+    soundFx.playLockSound();
+    postToNativeHost({
+      type: "ResumeExecution",
+      payload: { reason: "User clicked Resume button in HUD" },
+    });
+  }, []);
+
 
   // ── Agentic Task System ──────────────────────────────────────────────────
   // Callbacks update history ONCE when the task terminates
@@ -206,6 +270,7 @@ export default function JarvisOrb() {
     nodes: taskNodes,
     progressPct,
     taskId: activeTaskId,
+    result: taskResult,
     submitTask,
     cancelTask,
   } = useTask({
@@ -223,6 +288,83 @@ export default function JarvisOrb() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeechEnabled, setIsSpeechEnabled] = useState(true);
   const [audioLevel, setAudioLevel] = useState(0);
+  
+  const [daemonTelemetry, setDaemonTelemetry] = useState<DaemonTelemetry | null>(null);
+  const [activeOrbState, setActiveOrbState] = useState<string>("idle");
+
+
+  useEffect(() => {
+    const handleHostMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (!data || !data.type) return;
+
+        if (data.type === "EmergencyStopTriggered" || data.type === "EmergencyStopResponse") {
+          setIsEmergencyStopped(true);
+          speechFx.stop();
+          soundFx.playAlertSound();
+        } else if (data.type === "ExecutionResumed" || data.type === "ResumeExecutionResponse") {
+          // A refused resume leaves execution stopped, so the HUD must keep saying so.
+          if (data.payload?.success === false) {
+            soundFx.playAlertSound();
+          } else {
+            setIsEmergencyStopped(false);
+            soundFx.playLockSound();
+          }
+        } else if (data.type === "AgentConnection" && data.payload) {
+          setDaemonConnected(data.payload.connected === true);
+          if (data.payload.emergencyStopped === true) setIsEmergencyStopped(true);
+        } else if (data.type === "TelemetryUpdate" && data.payload) {
+          const t = data.payload;
+          setDaemonTelemetry({
+            cpu: Math.round(t.cpu?.totalUsagePercent ?? 0),
+            ramAvailMb: Math.round((t.systemRam?.availableBytes ?? 0) / (1024 * 1024)),
+            ramLoadPct: Math.round(t.systemRam?.loadPercentage ?? 0),
+            gpuName: t.gpu?.adapterName ?? "Integrated",
+            state: t.resourceStatus ?? "Normal",
+          });
+        } else if (data.type === "StateUpdate" && data.payload) {
+          const s = data.payload;
+          const targetStatus = s.activeStatus || s.orbMode || "idle";
+          if (sceneRef.current) {
+            sceneRef.current.setState(targetStatus);
+            setActiveOrbState(sceneRef.current.getState());
+          }
+          if (s.activeStatus) {
+            setDaemonTelemetry((prev) => prev ? { ...prev, state: s.activeStatus } : null);
+          }
+        } else if (data.type === "ResourceAlert" && data.payload) {
+          if (data.payload.severity === "Critical") {
+            sceneRef.current?.setState("error");
+            setActiveOrbState("error");
+          } else if (data.payload.severity === "Warning") {
+            sceneRef.current?.setState("waiting_for_approval");
+            setActiveOrbState("waiting_for_approval");
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      postToNativeHost({ type: "CameraIntent", payload: { enabled: false } });
+      trackerRef.current?.stop();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("message", handleHostMessage);
+    (window as any).__DASK_IPC_DISPATCH__ = (msg: unknown) => {
+      window.postMessage(msg, "*");
+    };
+
+    postToNativeHost({ type: "FrontendReady" });
+
+    return () => {
+      window.removeEventListener("message", handleHostMessage);
+      delete (window as any).__DASK_IPC_DISPATCH__;
+    };
+  }, []);
+
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     rotXDeg: 0,
     rotYDeg: 0,
@@ -338,7 +480,13 @@ export default function JarvisOrb() {
 
     try {
       const parsed = JSON.parse(savedHistory) as CommandEntry[];
-      if (Array.isArray(parsed)) setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES));
+      if (Array.isArray(parsed)) {
+        // A saved placeholder belongs to a request from an earlier run: nothing will ever fill it in now.
+        setHistory(parsed.slice(0, MAX_HISTORY_ENTRIES).map((entry) =>
+          typeof entry?.response === "string" && entry.response.startsWith("⏳")
+            ? { ...entry, response: "⚠ RESULT UNKNOWN: D-ASK CLOSED BEFORE THIS FINISHED." }
+            : entry));
+      }
     } catch {
       window.localStorage.removeItem(COMMAND_HISTORY_KEY);
     }
@@ -370,6 +518,7 @@ export default function JarvisOrb() {
   }, []);
 
   const stopGestures = useCallback(() => {
+    postToNativeHost({ type: "CameraIntent", payload: { enabled: false } });
     trackerRef.current?.stop();
     trackerRef.current = null;
     setCamera("off");
@@ -385,6 +534,9 @@ export default function JarvisOrb() {
     setCamera("starting");
     setError(null);
     soundFx.playProcessSound();
+
+    // Signal native host: explicit user action to request camera access
+    postToNativeHost({ type: "CameraIntent", payload: { enabled: true } });
 
     const tracker = new HandTracker(video, overlay, {
       onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
@@ -407,6 +559,15 @@ export default function JarvisOrb() {
           : "TRACKING INIT FAILED",
       );
       soundFx.playAlertSound();
+    }
+  }, []);
+
+
+  const handleSelectOrbState = useCallback((stateName: string) => {
+    if (sceneRef.current) {
+      sceneRef.current.setState(stateName);
+      setActiveOrbState(sceneRef.current.getState());
+      postToNativeHost({ type: "SetState", payload: { state: stateName } });
     }
   }, []);
 
@@ -462,7 +623,10 @@ export default function JarvisOrb() {
   const askAssistant = useCallback(
     async (prompt: string) => {
       // Guard: don't submit a new task while one is already in progress
-      if (aiThinking || taskActive) return;
+      if (aiThinking || taskActive) {
+        if (isNativeHud()) addHistoryEntry(prompt.toUpperCase(), "⚠ A TASK IS ALREADY RUNNING. THIS REQUEST WAS NOT SENT.");
+        return;
+      }
       soundFx.playProcessSound();
       const normalized = prompt.trim().toLowerCase();
 
@@ -542,6 +706,20 @@ export default function JarvisOrb() {
             return;
           }
         }
+      }
+
+      // Desktop HUD: anything that isn't a local command is a task for the local agent, through the
+      // daemon. The result callbacks replace this placeholder with what the daemon reports.
+      if (isNativeHud()) {
+        setAiThinking(true);
+        setHistory((current) => [{
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          command: prompt.toUpperCase(),
+          response: "⏳ LOCAL AGENT WORKING...",
+          time: new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()),
+        }, ...current].slice(0, MAX_HISTORY_ENTRIES));
+        void submitTask(prompt);
+        return;
       }
 
       // Lightweight path: /api/assistant (ONE Gemini call — only for unknown/conversational input)
@@ -698,7 +876,7 @@ export default function JarvisOrb() {
     addHistoryEntry("WAKE WORD DETECTED", "YES BOSS? D-ASK IS ONLINE AND LISTENING...");
   }, [addHistoryEntry]);
 
-  // Voice Recognition via Groq Whisper + VAD
+  // Offline voice input: 16 kHz WAV -> the native HUD's local recognizer (/api/stt, Windows SAPI). No cloud STT.
   const toggleVoiceInput = useCallback(async () => {
     soundFx.playClickSound();
     if (mediaRecorderRef.current) {
@@ -706,6 +884,7 @@ export default function JarvisOrb() {
         mediaRecorderRef.current.stop();
       }
       mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current.dispose();
       mediaRecorderRef.current = null;
       micStreamRef.current = null;
       setVoiceState("idle");
@@ -714,6 +893,8 @@ export default function JarvisOrb() {
       return;
     }
 
+    // The user is about to speak: D-ASK stops talking (interruption).
+    speechFx.stop();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
@@ -726,7 +907,7 @@ export default function JarvisOrb() {
       analyser.fftSize = 256;
       source.connect(analyser);
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mediaRecorder = new PcmRecorder(stream, audioCtx, source);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -736,7 +917,7 @@ export default function JarvisOrb() {
 
       mediaRecorder.onstop = async () => {
         if (audioChunksRef.current.length === 0) return;
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         audioChunksRef.current = [];
 
         // Skip tiny blips
@@ -744,9 +925,8 @@ export default function JarvisOrb() {
 
         setCommand("Processing audio...");
         try {
-          const formData = new FormData();
-          formData.append('file', blob);
-          const res = await fetch('/api/stt', { method: 'POST', body: formData });
+          // Raw 16-bit PCM WAV to the native HUD's local recognizer; the recording is deleted after transcription.
+          const res = await fetch('/api/stt', { method: 'POST', body: blob, headers: { 'Content-Type': 'audio/wav' } });
           if (res.ok) {
             const data = await res.json();
             const transcript = data.text?.trim();
@@ -879,6 +1059,8 @@ export default function JarvisOrb() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
+      {/* Where the orb takes drag and scroll while interactive; it draws nothing and takes no pointer events itself. */}
+      <div className="orb-core-region" data-hud-region aria-hidden="true" />
 
       {/* Holographic Overlay Layers */}
       <div className="overlay-vignette" />
@@ -901,15 +1083,117 @@ export default function JarvisOrb() {
 
       {/* Top Left Title & Telemetry Header */}
       <header className="hud hud-header">
-        <div className="hud-title">D-ASK</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div className="hud-title">D-ASK</div>
+          <button
+            onClick={isEmergencyStopped ? handleResumeExecution : handleEmergencyStop}
+            style={{
+              // .hud-header sets pointer-events: none, so without this clicks pass straight through the button.
+              pointerEvents: "auto",
+              background: isEmergencyStopped ? "rgba(0, 229, 255, 0.2)" : "rgba(255, 34, 68, 0.3)",
+              border: isEmergencyStopped ? "1px solid #00e5ff" : "1px solid #ff2244",
+              color: isEmergencyStopped ? "#00e5ff" : "#ff4466",
+              padding: "4px 12px",
+              borderRadius: "4px",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "1px",
+              cursor: "pointer",
+              boxShadow: isEmergencyStopped ? "0 0 10px rgba(0, 229, 255, 0.3)" : "0 0 14px rgba(255, 34, 68, 0.5)",
+              transition: "all 0.2s ease",
+            }}
+            title={isEmergencyStopped ? "Resume system operations" : "Emergency Stop (Ctrl+Shift+F12)"}
+          >
+            {isEmergencyStopped ? "▶ RESUME" : "🛑 STOP [Ctrl+Shift+F12]"}
+          </button>
+        </div>
+        {hud.mode !== "browser" && (
+          <div className="hud-mode-bar" data-mode={hud.mode} aria-live="polite">
+            {hud.mode === "interactive" ? (
+              <>
+                <span className="hud-mode-label">INTERACTIVE · ESC TO RELEASE</span>
+                {hud.toggleAvailable && (
+                  <button type="button" className="hud-mode-btn" onClick={() => requestMode("ambient")} title={`Let clicks through to the desktop (${hud.toggleHotkey})`}>
+                    AMBIENT
+                  </button>
+                )}
+                {(hud.hideAvailable || hud.toggleAvailable) && (
+                  <button type="button" className="hud-mode-btn" onClick={() => requestMode("hidden")} title={`Hide D-ASK (${hud.hideHotkey}); it keeps running`}>
+                    HIDE
+                  </button>
+                )}
+              </>
+            ) : (
+              <span className="hud-mode-label">
+                {hud.toggleAvailable
+                  ? `AMBIENT · ${hud.toggleHotkey.toUpperCase()} TO INTERACT`
+                  : `AMBIENT · ${hud.toggleHotkey.toUpperCase()} IS IN USE BY ANOTHER PROGRAM — RESTART D-ASK TO INTERACT`}
+              </span>
+            )}
+          </div>
+        )}
         <div className="hud-telemetry" aria-label="Orb Telemetry Readout">
           <div><span>PITCH:</span> {telemetry.rotXDeg}°</div>
           <div><span>YAW:</span> {telemetry.rotYDeg}°</div>
           <div><span>ZOOM:</span> {telemetry.zoomDist}x</div>
           <div><span>FPS:</span> {telemetry.fps}</div>
-          <div><span>PARTICLES:</span> {telemetry.particleCount}</div>
+          {daemonTelemetry && (
+            <>
+              <div><span>DAEMON CPU:</span> {daemonTelemetry.cpu}%</div>
+              <div><span>SYS RAM:</span> {daemonTelemetry.ramAvailMb} MB ({daemonTelemetry.ramLoadPct}%)</div>
+              <div><span>GPU:</span> {daemonTelemetry.gpuName}</div>
+              <div><span>DAEMON STATE:</span> {daemonTelemetry.state}</div>
+            </>
+          )}
         </div>
       </header>
+
+      {/* Emergency Stop Active Banner */}
+      {isEmergencyStopped && (
+        <div
+          data-hud-interactive
+          style={{
+            position: "fixed",
+            top: "80px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(255, 34, 68, 0.2)",
+            border: "1px solid #ff2244",
+            boxShadow: "0 0 20px rgba(255, 34, 68, 0.5)",
+            backdropFilter: "blur(12px)",
+            padding: "8px 24px",
+            borderRadius: "6px",
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+            zIndex: 9999,
+            color: "#fff",
+            fontFamily: "monospace",
+          }}
+        >
+          <span style={{ color: "#ff4466", fontWeight: "bold", letterSpacing: "1px" }}>
+            ⚠ EMERGENCY STOP ACTIVE — ACTIONS FROZEN
+          </span>
+          <button
+            onClick={handleResumeExecution}
+            style={{
+              background: "#ff2244",
+              color: "#fff",
+              border: "none",
+              padding: "4px 14px",
+              borderRadius: "4px",
+              fontWeight: 700,
+              fontSize: "11px",
+              cursor: "pointer",
+            }}
+          >
+            RESUME
+          </button>
+        </div>
+      )}
+
+      {/* Phase 7B.1a: approval panel showing the exact daemon-authorized action; clickable in Ambient mode */}
+      <ApprovalSurface />
 
       {/* Connected Devices HUD Panel */}
       <DevicePanel
@@ -926,7 +1210,7 @@ export default function JarvisOrb() {
       />
 
       {/* Top Right Main Console */}
-      <section className="hud command-console" aria-label="Ultron command console">
+      <section className="hud command-console" aria-label="Ultron command console" data-hud-interactive>
         <div className="console-header">
           <span>D-ASK // CORE CONSOLE</span>
           <div className="console-statuses">
@@ -1035,7 +1319,7 @@ export default function JarvisOrb() {
       </div>
 
       {/* Bottom Right Controls & Webcam HUD */}
-      <div className="hud hud-controls">
+      <div className="hud hud-controls" data-hud-interactive>
         {/* Theme Switcher Palette Selector */}
         <div className="theme-selector" aria-label="Color Themes">
           {THEMES.map((th) => (
@@ -1119,6 +1403,7 @@ export default function JarvisOrb() {
         progressPct={progressPct}
         taskId={activeTaskId}
         onCancel={cancelTask}
+        result={taskResult}
       />
     </>
   );

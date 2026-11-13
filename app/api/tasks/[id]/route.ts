@@ -5,11 +5,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { taskService } from "../../../../services/taskService";
 import { eventService } from "../../../../services/eventService";
+import { requireAuth } from "../../../../lib/security/apiAuth";
+import { cancelRuntimeTask } from "../../../../agent/runtime";
 
 export const runtime = "nodejs";
 
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const { id } = await params;
   const snapshot = taskService.getTaskSnapshot(id);
 
@@ -27,7 +31,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 // ── DELETE /api/tasks/[id] — Cancel a task ────────────────────────────────────
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const { id } = await params;
   const task = taskService.getTask(id);
 
@@ -45,6 +51,9 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   taskService.updateTaskStatus(id, "cancelled");
   eventService.publish(id, "task.cancelled", { taskId: id, reason: "User cancelled" });
+  // Agent-runtime tasks stop for real: the abort reaches the in-flight model/tool call.
+  // (Legacy orchestrator tasks keep their previous behaviour: status only.)
+  cancelRuntimeTask(id);
 
   return NextResponse.json({ success: true, taskId: id, status: "cancelled" });
 }

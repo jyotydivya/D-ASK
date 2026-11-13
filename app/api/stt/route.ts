@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '../../../lib/security/apiAuth';
+import { inferenceMode } from '../../../agent/runtime/inference/policy';
 
 export async function POST(req: NextRequest) {
+  const denied = requireAuth(req, 'task');
+  if (denied) return denied;
   try {
     const formData = await req.formData();
     const file = formData.get('file') as Blob | null;
 
     if (!file) {
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 });
+    }
+
+    // Hosted STT (Groq Whisper) is refused in offline-first mode; no local STT exists yet.
+    if (inferenceMode() !== 'cloud') {
+      return NextResponse.json(
+        { error: 'Speech-to-text is unavailable offline: no local STT engine is installed, and cloud STT is disabled (DASK_INFERENCE=local).', unavailable: 'cloud-inference-disabled' },
+        { status: 503 }
+      );
     }
 
     const groqFormData = new FormData();

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.agent-host.json",
+  "compilerOptions": { "outDir": "dist/agent-host-test" },
+  "files": ["tests/agent-host/fixtures/scriptedHost.ts"]
+}

@@ -5,6 +5,7 @@
 import { NextRequest } from "next/server";
 import { eventService } from "../../../../../services/eventService";
 import { taskService } from "../../../../../services/taskService";
+import { requireAuth } from "../../../../../lib/security/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   const { id: taskId } = await params;
 
   if (!taskId) {
@@ -41,7 +44,6 @@ export async function GET(
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
-      "Access-Control-Allow-Origin": "*",
     },
   });
 }

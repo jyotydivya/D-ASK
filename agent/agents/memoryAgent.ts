@@ -2,7 +2,12 @@ import { BaseAgent } from "./baseAgent";
 import { modelRouter } from "../modelRouter";
 import { blackboard } from "../blackboard";
 import { memoryService } from "../../lib/agent/memory/memoryService";
-import { embeddingService } from "../../lib/agent/memory/embeddingService";
+// Local memory (SQLite FTS5 on this computer): replaces the cloud embedding service for store/search.
+import { MemoryStore, type MemoryKind } from "../runtime/memory/memoryStore";
+
+let localMemory: MemoryStore | null = null;
+const memoryStore = () => (localMemory ??= new MemoryStore());
+const KIND_OF: Record<string, MemoryKind> = { identity: "preference", preferences: "preference", relationships: "person", projects: "project", session: "task_summary" };
 import type { AgentContext, AgentResult, AgentType } from "../types";
 
 export class MemoryAgent extends BaseAgent {
@@ -100,18 +105,15 @@ Return JSON array of tool calls:
       case "memory.store_memory":
         const storeText = String(args.text);
         const storeCategory = args.category ? String(args.category) as any : "notes";
-        const storeVec = await embeddingService.generateEmbedding(storeText);
-        memoryService.storeMemory(storeText, storeVec, storeCategory);
+        memoryStore().remember({ kind: KIND_OF[storeCategory] ?? "note", content: storeText, source: "agent", tags: [String(storeCategory)] });
         return { status: "success", text: storeText, category: storeCategory };
       
       case "memory.search_memories":
         const queryText = String(args.query);
         const limit = args.limit ? Number(args.limit) : 5;
         const searchCategory = args.category ? String(args.category) as any : undefined;
-        // In case embeddings fail or are missing, we could fallback, but embeddingService is used here
-        const queryVec = await embeddingService.generateEmbedding(queryText);
-        const results = memoryService.searchMemories(queryVec, limit, searchCategory);
-        return { query: queryText, results: results.map(r => ({ text: r.text, category: r.category, similarity: r.similarity })) };
+        const results = memoryStore().recall(queryText, { limit, ...(searchCategory ? { tags: [String(searchCategory)] } : {}) });
+        return { query: queryText, results: results.map(r => ({ text: r.content, category: r.tags[0] ?? r.kind, similarity: r.score })) };
       
       default:
         throw new Error(`MemoryAgent cannot route tool: ${toolName}`);

@@ -20,7 +20,7 @@ async function createWindow() {
     handle(req, res, parsedUrl);
   });
   
-  server.listen(port, (err) => {
+  server.listen(port, '127.0.0.1', (err) => {
     if (err) throw err;
     console.log(`> Ready on http://localhost:${port}`);
   });

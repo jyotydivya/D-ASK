@@ -5,6 +5,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { NativeAgentClient, isNativeHud, postToHud, rejectionMessage, type NativeTaskResult } from "./nativeAgent";
 import type {
   Task,
   TaskNode,
@@ -25,6 +26,16 @@ export interface TaskState {
   isActive: boolean;
   progressPct: number;
   lastMessage: string;
+  /** Final outcome as reported by the server (agent runtime: completed | unverified | partial | failed | refused | cancelled). */
+  result: TaskResultView | null;
+}
+
+export interface TaskResultView {
+  outcome: string;
+  response: string;
+  /** Native HUD only: the daemon's verification report, shown as reported. null means none was reported. */
+  independentlyVerified?: boolean | null;
+  interrupted?: boolean;
 }
 
 const INITIAL_STATE: TaskState = {
@@ -37,7 +48,46 @@ const INITIAL_STATE: TaskState = {
   isActive: false,
   progressPct: 0,
   lastMessage: "",
+  result: null,
 };
+
+/**
+ * Derive the step list from the event stream. Plans arrive as task.planned /
+ * task.replanned (payload.steps); step progress as node.started / node.completed /
+ * node.failed. Pure, so the panel only ever shows what the server reported.
+ */
+export function applyNodeEvent(nodes: TaskNode[], event: TaskEvent, taskId: string): TaskNode[] {
+  const p = event.payload;
+  if ((event.type === "task.planned" || event.type === "task.replanned") && Array.isArray(p.steps)) {
+    const known = new Set(nodes.map((n) => n.id));
+    const added: TaskNode[] = (p.steps as { id?: unknown; description?: unknown; tool?: unknown; dependsOn?: unknown }[])
+      .filter((s) => typeof s.id === "string" && !known.has(s.id))
+      .map((s) => ({
+        id: String(s.id),
+        taskId,
+        name: String(s.description ?? s.tool ?? s.id),
+        description: String(s.tool ?? ""),
+        agentType: "tool",
+        status: "pending",
+        dependencies: Array.isArray(s.dependsOn) ? s.dependsOn.map(String) : [],
+        attempts: 0,
+        maxAttempts: 1,
+      }));
+    return added.length ? [...nodes, ...added] : nodes;
+  }
+  const nodeId = typeof p.nodeId === "string" ? p.nodeId : null;
+  if (!nodeId) return nodes;
+  const update = (patch: Partial<TaskNode>) => nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } : n));
+  switch (event.type) {
+    case "node.started": return update({ status: "running" });
+    case "node.completed": return update({ status: "completed", result: p.evidence !== undefined ? { evidence: String(p.evidence) } : undefined });
+    case "node.failed": return update({
+      status: p.status === "skipped" || p.status === "cancelled" ? "skipped" : "failed",
+      error: p.error !== undefined ? String(p.error) : undefined,
+    });
+    default: return nodes;
+  }
+}
 
 // Map task status → orb state
 function taskStatusToOrbState(status: string): OrbState {
@@ -63,9 +113,11 @@ export function eventToMessage(event: TaskEvent): string {
   const { type, payload } = event;
   switch (type) {
     case "task.created":          return `Task created`;
-    case "task.planned":          return `Plan ready — ${payload.nodeCount} steps`;
+    case "task.planned":          return payload.intent === "unsupported"
+                                    ? `Cannot plan: ${String(payload.refusalReason ?? "no suitable tool").slice(0, 80)}`
+                                    : `Plan ready — ${payload.nodeCount} steps`;
     case "task.started":          return "Execution started";
-    case "task.completed":        return "✓ Task completed";
+    case "task.completed":        return outcomeLabel(payload.outcome);
     case "task.failed":           return `✗ ${String(payload.error ?? "Task failed").slice(0, 80)}`;
     case "task.cancelled":        return "Task cancelled";
     case "task.replanned":        return `Replanning...`;
@@ -78,11 +130,118 @@ export function eventToMessage(event: TaskEvent): string {
     case "tool.failed":           return `✗ ${String(payload.tool ?? "")} — ${String(payload.error ?? "").slice(0, 60)}`;
     case "approval.required":     return `⚠ Approval required for: ${String(payload.tool ?? "")}`;
     case "verification.started":  return "Verifying...";
-    case "verification.completed": return `Verification ${payload.passed ? "✓ passed" : "✗ failed"}`;
+    case "verification.completed": return `Verification ${payload.passed ? "✓ passed" : "✗ not confirmed"}`;
     case "node.completed":        return `✓ ${String(payload.name ?? "")}`;
-    case "node.failed":           return `✗ ${String(payload.name ?? "")}`;
+    case "node.failed":           return `${payload.status === "skipped" ? "⊘" : "✗"} ${String(payload.name ?? "")}`;
     default:                      return "";
   }
+}
+
+/** Honest label for a finished task: the runtime reports partial/unverified results distinctly. */
+export function outcomeLabel(outcome: unknown): string {
+  switch (outcome) {
+    case "unverified": return "⚠ Finished — result not confirmed";
+    case "partial":    return "⚠ Partially completed";
+    case "refused":    return "⊘ Not possible with available tools";
+    case "completed":
+    case undefined:    return "✓ Task completed";
+    default:           return `Task finished: ${String(outcome)}`;
+  }
+}
+
+/** One task event applied to the panel state. Shared by the browser and native transports. */
+export function reduceTaskEvent(prev: TaskState, event: TaskEvent, taskId: string): TaskState {
+  // Deduplicate events by ID
+  if (prev.events.some((ex) => ex.id === event.id)) return prev;
+
+  const message = eventToMessage(event);
+  const events = [...prev.events, event].slice(-150);
+
+  let orbState = prev.orbState;
+  let isActive = prev.isActive;
+  let progressPct = prev.progressPct;
+  let pendingApproval = prev.pendingApproval;
+  let result = prev.result;
+  const nodes = applyNodeEvent(prev.nodes, event, taskId);
+
+  if (event.type === "task.completed" || event.type === "task.failed" || event.type === "task.cancelled") {
+    const response = event.payload.finalResponse ?? event.payload.error;
+    if (response !== undefined || event.payload.outcome !== undefined) {
+      result = {
+        outcome: String(event.payload.outcome ?? event.type.slice("task.".length)),
+        response: String(response ?? ""),
+      };
+    }
+  }
+
+  if (event.type === "task.status_changed") {
+    orbState = taskStatusToOrbState(String(event.payload.status ?? ""));
+  }
+  if (event.type === "task.completed") {
+    isActive = false; orbState = "completed";
+  }
+  if (event.type === "task.failed") {
+    isActive = false; orbState = "error";
+  }
+  if (event.type === "task.cancelled") {
+    isActive = false; orbState = "standby";
+  }
+  if (event.type === "agent.progress" && event.payload.progressPct !== undefined) {
+    progressPct = Number(event.payload.progressPct);
+  }
+  if (event.type === "approval.required") {
+    pendingApproval = {
+      id: String(event.payload.approvalId ?? ""),
+      taskId,
+      nodeId: String(event.payload.nodeId ?? ""),
+      description: `Approval required for: ${String(event.payload.tool ?? "")}`,
+      riskLevel: "high",
+      toolName: String(event.payload.tool ?? ""),
+      toolArguments: {},
+      status: "pending",
+      createdAt: new Date(),
+    };
+  }
+  if (event.type === "approval.completed") {
+    pendingApproval = null;
+  }
+
+  return {
+    ...prev,
+    events,
+    nodes,
+    result,
+    orbState,
+    isActive,
+    progressPct,
+    pendingApproval,
+    lastMessage: message || prev.lastMessage,
+  };
+}
+
+/** The end of a native task: every field shown comes from the daemon's report. */
+export function reduceNativeResult(prev: TaskState, result: NativeTaskResult): TaskState {
+  const reported = new Map(result.steps.map((s) => [s.id, s]));
+  const nodes = prev.nodes.map((n): TaskNode => {
+    const step = reported.get(n.id);
+    if (!step) return n.status === "running" || n.status === "pending" ? { ...n, status: "skipped" } : n;
+    if (step.status === "succeeded") return { ...n, status: "completed", result: step.detail ? { evidence: step.detail } : n.result };
+    return { ...n, status: step.status === "failed" ? "failed" : "skipped", error: step.detail ?? n.error };
+  });
+  const orbState: OrbState = result.outcome === "completed" ? "completed" : result.outcome === "failed" ? "error" : "standby";
+  return {
+    ...prev,
+    nodes,
+    orbState,
+    isActive: false,
+    lastMessage: result.outcome === "cancelled" ? "Task cancelled" : outcomeLabel(result.outcome),
+    result: {
+      outcome: result.outcome,
+      response: result.response,
+      independentlyVerified: result.independentlyVerified,
+      interrupted: result.interrupted,
+    },
+  };
 }
 
 export type TaskCallbacks = {
@@ -99,6 +258,53 @@ export function useTask(callbacks?: TaskCallbacks) {
   // Keep callbacks ref stable so subscribeToEvents closure is always fresh
   const callbacksRef = useRef<TaskCallbacks | undefined>(callbacks);
   callbacksRef.current = callbacks;
+  // Set only inside the desktop HUD. A browser always takes the HTTP path below.
+  const nativeRef = useRef<NativeAgentClient | null>(null);
+
+  useEffect(() => {
+    if (!isNativeHud()) return;
+    const client = new NativeAgentClient(
+      {
+        post: postToHud,
+        newId: () => crypto.randomUUID().replace(/-/g, ""),
+        setTimer: (fn, ms) => window.setTimeout(fn, ms),
+        clearTimer: (handle) => window.clearTimeout(handle as number),
+        now: () => new Date(),
+      },
+      {
+        onAccepted: (taskId) => {
+          activeTaskIdRef.current = taskId;
+          setState((prev) => ({ ...prev, lastMessage: "Accepted by the local agent" }));
+        },
+        onEvent: (taskId, event) => setState((prev) => reduceTaskEvent(prev, event, taskId)),
+        onCancelling: () => setState((prev) => ({ ...prev, lastMessage: "Cancelling..." })),
+        onCancelFailed: (_taskId, message) => setState((prev) => ({ ...prev, lastMessage: message })),
+        onFinished: (taskId, result) => {
+          setState((prev) => reduceNativeResult(prev, result));
+          const id = taskId ?? "";
+          if (result.outcome === "failed" || !taskId) {
+            callbacksRef.current?.onFail?.(result.response || result.errorCode || "Task failed.", id);
+          } else if (result.outcome === "cancelled") {
+            callbacksRef.current?.onComplete?.("Task cancelled", id);
+          } else {
+            const label = result.outcome === "completed" ? "" : `${outcomeLabel(result.outcome)}\n`;
+            callbacksRef.current?.onComplete?.(`${label}${result.response}`, id);
+          }
+        },
+      },
+    );
+    nativeRef.current = client;
+    const onMessage = (e: MessageEvent) => {
+      // Dispatched by the host into this page only; nothing from another window is believed.
+      if (e.source !== window) return;
+      client.handleMessage(e.data);
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      nativeRef.current = null;
+    };
+  }, []);
 
   // ── Submit a new task objective ─────────────────────────────────────────────
 
@@ -112,61 +318,8 @@ export function useTask(callbacks?: TaskCallbacks) {
       try {
         const event = JSON.parse(data) as TaskEvent;
         event.timestamp = new Date(event.timestamp);
-        const message = eventToMessage(event);
 
-        setState((prev) => {
-          // Deduplicate events by ID
-          if (prev.events.some((ex) => ex.id === event.id)) return prev;
-
-          const events = [...prev.events, event].slice(-150);
-
-          let orbState = prev.orbState;
-          let isActive = prev.isActive;
-          let progressPct = prev.progressPct;
-          let pendingApproval = prev.pendingApproval;
-
-          if (event.type === "task.status_changed") {
-            orbState = taskStatusToOrbState(String(event.payload.status ?? ""));
-          }
-          if (event.type === "task.completed") {
-            isActive = false; orbState = "completed";
-          }
-          if (event.type === "task.failed") {
-            isActive = false; orbState = "error";
-          }
-          if (event.type === "task.cancelled") {
-            isActive = false; orbState = "standby";
-          }
-          if (event.type === "agent.progress" && event.payload.progressPct !== undefined) {
-            progressPct = Number(event.payload.progressPct);
-          }
-          if (event.type === "approval.required") {
-            pendingApproval = {
-              id: String(event.payload.approvalId ?? ""),
-              taskId,
-              nodeId: String(event.payload.nodeId ?? ""),
-              description: `Approval required for: ${String(event.payload.tool ?? "")}`,
-              riskLevel: "high",
-              toolName: String(event.payload.tool ?? ""),
-              toolArguments: {},
-              status: "pending",
-              createdAt: new Date(),
-            };
-          }
-          if (event.type === "approval.completed") {
-            pendingApproval = null;
-          }
-
-          return {
-            ...prev,
-            events,
-            orbState,
-            isActive,
-            progressPct,
-            pendingApproval,
-            lastMessage: message || prev.lastMessage,
-          };
-        });
+        setState((prev) => reduceTaskEvent(prev, event, taskId));
 
         // Fire callbacks ONCE per task for terminal events (outside setState)
         if (!processedTerminalRef.current.has(taskId)) {
@@ -209,6 +362,23 @@ export function useTask(callbacks?: TaskCallbacks) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitTask = useCallback(async (objective: string, sessionId?: string): Promise<string | null> => {
+    const native = nativeRef.current;
+    if (native) {
+      if (native.isBusy) {
+        callbacksRef.current?.onFail?.(rejectionMessage("busy"), "");
+        return null;
+      }
+      activeTaskIdRef.current = null;
+      setState({
+        ...INITIAL_STATE,
+        orbState: "understanding",
+        isActive: true,
+        lastMessage: `Received: "${objective.slice(0, 60)}"`,
+      });
+      native.submit(objective);
+      return null;
+    }
+
     // Close any existing stream before starting a new task
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
@@ -270,6 +440,13 @@ export function useTask(callbacks?: TaskCallbacks) {
   // ── Cancel ──────────────────────────────────────────────────────────────────
 
   const cancelTask = useCallback(async (): Promise<void> => {
+    const native = nativeRef.current;
+    if (native) {
+      // Stays active until the daemon reports how the task actually ended.
+      native.cancel();
+      setState((prev) => ({ ...prev, lastMessage: "Cancelling..." }));
+      return;
+    }
     const taskId = activeTaskIdRef.current;
     if (!taskId) return;
     await fetch(`/api/tasks/${taskId}`, { method: "DELETE" }).catch(() => {});

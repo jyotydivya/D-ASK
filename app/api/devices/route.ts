@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { deviceService } from "../../../tools/device/deviceService";
+import { requireAuth } from "../../../lib/security/apiAuth";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,9 @@ export type { DeviceInfo, HardwareDiagnostics, ScanResult } from "../../../tools
 
 // ── GET /api/devices — Scan all devices ──────────────────────────────────────
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   try {
     const result = await deviceService.scanAllDevices();
 
@@ -40,6 +43,8 @@ export async function GET() {
 // ── POST /api/devices — Device commands ──────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const denied = requireAuth(request, "task");
+  if (denied) return denied;
   try {
     const body = await request.json() as {
       command?: string;

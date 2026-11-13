@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { assertCloudInferenceAllowed } from "../../../agent/runtime/inference/policy";
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 
@@ -27,6 +28,8 @@ class EmbeddingService {
    * Converts a string into a dense vector (array of numbers)
    */
   async generateEmbedding(text: string): Promise<number[]> {
+    // Hosted embeddings: refused in offline-first mode (DASK_INFERENCE=local, the default).
+    assertCloudInferenceAllowed("Cloud embeddings");
     const response = await this.getClient().embeddings.create({
       model: EMBEDDING_MODEL,
       input: text,
