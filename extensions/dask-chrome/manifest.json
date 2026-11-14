@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "D-ASK Browser Control",
+  "version": "1.0.0",
+  "description": "Lets your local D-ASK assistant read and act in this Chrome profile after you approve it in the D-ASK HUD. Talks only to the D-ASK native host on this computer (no network, no debugging port).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoMWzkN8ggL/KnnsWo8qfVIySECQEyi9jMh1o+iTNjN3PqSfu+FCo9LWVOTSV+XJOfnqhII+cf9B4OQFauleYlxe+n/doHML3f1IpS0wg04XEEhbq5zss/9xOotxUslopMWx48F+zH8oryk30FtwNMI8gUudXLH1P+UjI6DgqQ+AoC1JMuf2D1scmljwSdaWOFBPF5EqbhziQESMVwQqQ2vcu7AKDZNLpWO0qzqcQCsNDmyNeR/jdjzUnJq6/dqp0jS0acDiIV52HPA2KV3rxu69XdySFxeOWvMq7cN+5Wt7Sl+lSr25rsAwGlmqa+LqA7NyNeDTledPGB4DPLc70WwIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "D-ASK",
+    "default_popup": "popup.html"
+  },
+  "minimum_chrome_version": "116"
+}

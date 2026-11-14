@@ -67,11 +67,17 @@ const DESKTOP_TOOL = /^desktop\.[a-z_]{1,40}$/;
 /** Browser stage 2: the daemon's approval authority for browser actions is offered on the same v2 channel (exact name). */
 const OTHER_OFFERED_TOOLS: ReadonlySet<string> = new Set(["browser.request_action", "files.organize", "files.undo_organize", "files.copy", "files.rename", "files.undo_copy_rename", "notes.create",
   "workflows.save", "workflows.list", "workflows.get", "workflows.delete", "workflows.schedule", "workflows.unschedule",
-  "plugins.list", "plugins.approve", "plugins.revoke", "plugins.grant", "plugins.revoke_permission", "plugins.disable", "plugins.enable"]);
+  "plugins.list", "plugins.approve", "plugins.revoke", "plugins.grant", "plugins.revoke_permission", "plugins.disable", "plugins.enable", "dev.run_task", "dev.edit_file",
+  // Windows administration and the user's Chrome (2026-11-14): exact names only.
+  "system.list_processes", "system.process_info", "system.end_process", "system.list_services", "system.service_info", "system.service_control",
+  "system.network_status", "system.set_radio", "system.audio_status", "system.set_volume", "system.display_status", "system.set_brightness",
+  "system.startup_apps", "system.startup_toggle", "system.power", "system.cancel_power",
+  "chrome.status", "chrome.authorize", "chrome.revoke", "chrome.open", "chrome.list_tabs", "chrome.open_tab", "chrome.navigate", "chrome.switch_tab",
+  "chrome.close_tab", "chrome.read_page", "chrome.click", "chrome.fill", "chrome.search"]);
 // desktop.read_text matches DESKTOP_TOOL (desktop.*) already.
 // The full product profile offers every capability at once (about 35 names after copy/rename were added; found when the host refused to start in
 // the real HUD with everything enabled). Names stay exact (allowlist above); only the count bound grows.
-const MAX_OFFERED_TOOLS = 64;
+const MAX_OFFERED_TOOLS = 128;   // 2026-11-14: + 7 input/clipboard, 16 system, ~12 chrome, dev.edit_file
 
 /** Validates the optional `desktop` offer in hello. Strict: unknown fields, other protocols or odd names are refused. */
 function parseDesktopOffer(v: unknown, id: string): DesktopOffer {

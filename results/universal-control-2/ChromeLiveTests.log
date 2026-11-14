@@ -1,0 +1,45 @@
+Test run for D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.7+8f2703126a (64-bit .NET 8.0.33)
+[xUnit.net 00:00:00.19]   Discovering: DAsk.Daemon.Tests
+[xUnit.net 00:00:00.33]   Discovered:  DAsk.Daemon.Tests
+[xUnit.net 00:00:00.34]   Starting:    DAsk.Daemon.Tests
+[xUnit.net 00:00:07.18]   Finished:    DAsk.Daemon.Tests
+  Passed DAsk.Daemon.Tests.ChromeLiveTests.Live_UsersChrome_Navigate_Read_Click_Tabs_Fill_Sensitive_Security_Stop [6 s]
+  Standard Output Messages:
+ chrome.list_tabs {}: error {"Code":"not_connected","Message":"Chrome with the D-ASK extension is not running. Ask D-ASK to open Chrome, or open it yourself (the D-ASK extension must be installed: see the setup steps).","Candidates":null}
+ harness: READY 0 lkiheaganheamabgecpnafiefeiadlpi
+ connected: chrome pid 23800 (C:\Program Files\Google\Chrome\Application\chrome.exe)
+ chrome.list_tabs {}: error {"Code":"approval_denied","Message":"You declined. Nothing was done.","Candidates":null}
+ chrome.open_tab {"url":"http://127.0.0.1:19758/page1"}: ok {"executed":true,"verified":true,"tabId":1185434344,"url":"http://127.0.0.1:19758/page1","title":"D-ASK Test Page 1","observed":"Chrome shows \u0022D-ASK Test Page 1\u0022 at http://127.0.0.1:19758/page1"}
+ chrome.read_page {"tabId":1185434344}: ok {"verified":true,"tabId":1185434344,"page":{"buttons":["Buy now"],"fields":[{"label":"Your name","name":"name","type":"text","value":""},{"label":"Password","name":"pw","type":"password","value":""}],"hasPasswordField":true,"hasPaymentField":false,"links":[{"href":"http://127.0.0.1:19758/page2","text":"Go to page two"}],"text":"Hello from page one\n\nGo to page two\n\nYour name  Password \nBuy now\n\nnothing bought","title":"D-ASK Test Page 1","truncated":false,"url":"http://127.0.0.1:19758/page…
+ chrome.click {"tabId":1185434344,"text":"Go to page two"}: ok {"executed":true,"verified":true,"clicked":"Go to page two","urlBefore":"http://127.0.0.1:19758/page1","urlAfter":"http://127.0.0.1:19758/page2","title":"D-ASK Test Page 2","observed":"clicked once; Chrome now shows \u0022D-ASK Test Page 2\u0022 at http://127.0.0.1:19758/page2"}
+ chrome.open_tab {"url":"http://127.0.0.1:19758/page1"}: ok {"executed":true,"verified":true,"tabId":1185434345,"url":"http://127.0.0.1:19758/page1","title":"D-ASK Test Page 1","observed":"Chrome shows \u0022D-ASK Test Page 1\u0022 at http://127.0.0.1:19758/page1"}
+ chrome.list_tabs {}: ok {"verified":true,"count":2,"tabs":[{"tabId":1185434344,"title":"D-ASK Test Page 2","url":"http://127.0.0.1:19758/page2","active":false},{"tabId":1185434345,"title":"D-ASK Test Page 1","url":"http://127.0.0.1:19758/page1","active":true}],"observed":"2 open tab(s)"}
+ chrome.switch_tab {"title":"Page 2"}: ok {"executed":true,"verified":true,"tabId":1185434344,"title":"D-ASK Test Page 2","url":"http://127.0.0.1:19758/page2","observed":"that tab is now the active tab"}
+ chrome.fill {"tabId":1185434345,"field":"Your name","text":"Test User"}: ok {"executed":true,"verified":true,"field":"Your name","textLength":9,"observed":"the field now holds exactly the text (read back); nothing was submitted"}
+ chrome.read_page {"tabId":1185434345}: ok {"verified":true,"tabId":1185434345,"page":{"buttons":["Buy now"],"fields":[{"label":"Your name","name":"name","type":"text","value":"Test User"},{"label":"Password","name":"pw","type":"password","value":""}],"hasPasswordField":true,"hasPaymentField":false,"links":[{"href":"http://127.0.0.1:19758/page2","text":"Go to page two"}],"text":"Hello from page one\n\nGo to page two\n\nYour name  Password \nBuy now\n\nnothing bought","title":"D-ASK Test Page 1","truncated":false,"url":"http://127.0.0.1:1…
+ chrome.fill {"tabId":1185434345,"field":"Password","text":"abc12345"}: error {"Code":"not_filled","Message":"Nothing was filled: password, payment-card and one-time-code fields are never filled by D-ASK.","Candidates":null}
+ chrome.fill {"tabId":1185434345,"field":"Your name","text":"password = hunter2hunter2"}: error {"Code":"secret_refused","Message":"That text looks like a password, key or token; D-ASK does not type it into web pages.","Candidates":null}
+ chrome.click {"tabId":1185434345,"text":"Buy now"}: error {"Code":"approval_denied","Message":"You declined. Nothing was done.","Candidates":null}
+ chrome.read_page {"tabId":1185434345}: ok {"verified":true,"tabId":1185434345,"page":{"buttons":["Buy now"],"fields":[{"label":"Your name","name":"name","type":"text","value":"Test User"},{"label":"Password","name":"pw","type":"password","value":""}],"hasPasswordField":true,"hasPaymentField":false,"links":[{"href":"http://127.0.0.1:19758/page2","text":"Go to page two"}],"text":"Hello from page one\n\nGo to page two\n\nYour name  Password \nBuy now\n\nnothing bought","title":"D-ASK Test Page 1","truncated":false,"url":"http://127.0.0.1:1…
+ chrome.click {"tabId":1185434345,"text":"Buy now"}: ok {"executed":true,"verified":true,"clicked":"Buy now","urlBefore":"http://127.0.0.1:19758/page1","urlAfter":"http://127.0.0.1:19758/page1","title":"D-ASK Test Page 1","observed":"clicked once; the page stayed at the same address"}
+ chrome.read_page {"tabId":1185434345}: ok {"verified":true,"tabId":1185434345,"page":{"buttons":["Buy now"],"fields":[{"label":"Your name","name":"name","type":"text","value":"Test User"},{"label":"Password","name":"pw","type":"password","value":""}],"hasPasswordField":true,"hasPaymentField":false,"links":[{"href":"http://127.0.0.1:19758/page2","text":"Go to page two"}],"text":"Hello from page one\n\nGo to page two\n\nYour name  Password \nBuy now\n\nBOUGHT","title":"D-ASK Test Page 1","truncated":false,"url":"http://127.0.0.1:19758/pag…
+ chrome.search {"query":"weather"}: error {"Code":"web_search_off","Message":"Web searches are switched off (offline-first; AgentHost:WebSearch). Nothing was searched.","Candidates":null}
+ chrome.navigate {"tabId":1185434345,"url":"https://example.com"}: error {"Code":"offline","Message":"This computer is offline, so the web page cannot be loaded. Nothing was changed.","Candidates":null}
+ listening sockets owned by chrome/host: 0 
+ chrome.list_tabs {}: error {"Code":"emergency_stopped","Message":"Emergency Stop is active; Chrome control is suspended. Nothing was done.","Candidates":null}
+ chrome.list_tabs {}: ok {"verified":true,"count":2,"tabs":[{"tabId":1185434344,"title":"D-ASK Test Page 2","url":"http://127.0.0.1:19758/page2","active":true},{"tabId":1185434345,"title":"D-ASK Test Page 1","url":"http://127.0.0.1:19758/page1","active":false}],"observed":"2 open tab(s)"}
+ chrome.revoke {}: ok {"executed":true,"verified":true,"extensionConfirmed":true,"observed":"D-ASK\u0027s control of your Chrome was revoked"}
+ approvals asked: Chrome.AuthorizeSession,Chrome.AuthorizeSession,Chrome.SensitiveAction,Chrome.SensitiveAction,Chrome.AuthorizeSession
+
+
+
+Test Run Successful.
+Total tests: 1
+     Passed: 1
+ Total time: 7.9921 Seconds

@@ -80,6 +80,28 @@ const ACTION_LABELS: Record<string, string> = {
   "Desktop.ClickElement": "Click one control once (mouse, left button)",
   "Desktop.TypeText": "Type text into one field (keyboard)",
   "Desktop.PressKeys": "Press one key combination (keyboard)",
+  // Complete desktop input (2026-11-14), same element-bound pathway.
+  "Desktop.RightClick": "Right-click one control once (opens its context menu)",
+  "Desktop.DoubleClick": "Double-click one control once (mouse)",
+  "Desktop.Scroll": "Scroll over one control (mouse wheel)",
+  "Desktop.Drag": "Drag one control onto another (mouse)",
+  "Desktop.SelectText": "Select text in one field (no keys pressed)",
+  "Desktop.ClipboardRead": "Read the text on your clipboard",
+  "Desktop.ClipboardWrite": "Put text on your clipboard",
+  // Windows administration (2026-11-14).
+  "System.EndProcess": "End a running program",
+  "System.ServiceControl": "Start or stop a Windows service",
+  "System.StartupToggle": "Turn a startup app on or off",
+  "System.RadioToggle": "Turn Wi-Fi or Bluetooth on or off",
+  "System.SetVolume": "Change the volume",
+  "System.SetBrightness": "Change the screen brightness",
+  "System.Power": "Sleep, restart, sign out or shut down",
+  "System.CancelPower": "Cancel a scheduled restart or shutdown",
+  // Your own Chrome (2026-11-14).
+  "Chrome.AuthorizeSession": "Let D-ASK control your Chrome",
+  "Chrome.SensitiveAction": "A sensitive action in your Chrome",
+  // Developer code edits (2026-11-14).
+  "Dev.EditFile": "Apply an exact code change to one file",
   // Browser stage 2: D-ASK's private browser (local Chromium), performed once after approval and verified.
   "Browser.Click": "Click one element on a web page (D-ASK browser)",
   "Browser.Fill": "Fill one field on a web page (D-ASK browser)",
@@ -152,7 +174,11 @@ function browserSummary(actionType: string, params: ApprovalParameter[]): { summ
   return { summary: `Fill the ${role} "${name}" on ${site} with exactly the ${text.length} character(s) shown below, once. Nothing is submitted.` };
 }
 
-const INPUT_TYPES = new Set(["Desktop.ClickElement", "Desktop.TypeText", "Desktop.PressKeys"]);
+const INPUT_TYPES = new Set(["Desktop.ClickElement", "Desktop.TypeText", "Desktop.PressKeys",
+  "Desktop.RightClick", "Desktop.DoubleClick", "Desktop.Scroll", "Desktop.Drag", "Desktop.SelectText"]);
+/** 2026-11-14 non-window actions: the daemon's own "operation" sentence is the summary; every parameter is listed below it. */
+const OPERATION_TYPES = new Set(["Desktop.ClipboardRead", "Desktop.ClipboardWrite", "System.EndProcess", "System.ServiceControl", "System.StartupToggle",
+  "System.RadioToggle", "System.SetVolume", "System.SetBrightness", "System.Power", "System.CancelPower", "Chrome.AuthorizeSession", "Chrome.SensitiveAction", "Dev.EditFile"]);
 
 /**
  * P1/P2: the exact action in one sentence, from the digest-bound parameters only. Returns an error string when a
@@ -165,10 +191,28 @@ function inputSummary(actionType: string, params: ApprovalParameter[]): { summar
   const name = p("controlName") ? ` "${p("controlName")}"` : "";
   const id = p("controlAutomationId") ? ` (#${p("controlAutomationId")})` : "";
   const target = `${controlType}${name}${id}`;
-  if (actionType === "Desktop.ClickElement") {
+  if (actionType === "Desktop.ClickElement" || actionType === "Desktop.RightClick" || actionType === "Desktop.DoubleClick") {
     const point = p("point");
     if (!point || !/^-?\d+,-?\d+$/.test(point)) return { error: "The click point is not given exactly." };
-    return { summary: `Left-click ONCE on ${target}, at screen point ${point}.` };
+    const how = actionType === "Desktop.RightClick" ? "Right-click" : actionType === "Desktop.DoubleClick" ? "Double-click" : "Left-click";
+    return { summary: `${how} ONCE on ${target}, at screen point ${point}.` };
+  }
+  if (actionType === "Desktop.Scroll") {
+    const point = p("point"), dir = p("direction"), amount = p("amount");
+    if (!point || !/^-?\d+,-?\d+$/.test(point) || !dir || !/^(up|down|left|right)$/.test(dir) || !amount || !/^\d{1,2}$/.test(amount)) return { error: "The scroll is not given exactly." };
+    return { summary: `Scroll ${dir} ${amount} wheel notch(es) over ${target}, at screen point ${point}. Nothing is clicked.` };
+  }
+  if (actionType === "Desktop.Drag") {
+    const point = p("point"), drop = p("dropPoint"), dt = p("dropControlType");
+    if (!point || !drop || !dt || !/^-?\d+,-?\d+$/.test(point) || !/^-?\d+,-?\d+$/.test(drop)) return { error: "The drag or its drop target is not given exactly." };
+    const dn = p("dropControlName") ? ` "${p("dropControlName")}"` : "";
+    return { summary: `Drag ${target} from ${point} and drop it ONCE on ${dt}${dn} at ${drop}.` };
+  }
+  if (actionType === "Desktop.SelectText") {
+    const text = p("text"), len = p("textLength"), all = p("selection");
+    if (all === "all" && text === undefined) return { summary: `Select all the text in ${target}. No keys are pressed and nothing is changed.` };
+    if (text === undefined || len === undefined || String(text.length) !== len) return { error: "The text to select is not given exactly." };
+    return { summary: `Select exactly the ${text.length} character(s) shown below in ${target}. No keys are pressed and nothing is changed.` };
   }
   if (actionType === "Desktop.PressKeys") {
     const keys = p("keys");
@@ -277,6 +321,12 @@ export function parseApprovalRequest(payload: unknown): { view: ApprovalView } |
     const s = copyRenameSummary(actionType, parameters);
     if ("error" in s) return fail(s.error);
     summary = s.summary;
+  } else if (OPERATION_TYPES.has(actionType)) {
+    const op = parameters.find((x) => x.name === "operation")?.value;
+    if (!op) return fail("The action is not described exactly; it will not be offered.");
+    const text = parameters.find((x) => x.name === "text")?.value, len = parameters.find((x) => x.name === "textLength")?.value;
+    if (text !== undefined && (len === undefined || String(text.length) !== len)) return fail("The text is not given exactly; it will not be offered.");
+    summary = `${op}.`;
   }
   const display = [str(t.processName), str(t.windowTitle), str(a.reason)];
   if (display.some((s) => s !== null && UNDISPLAYABLE.test(s))) return fail("The target cannot be shown exactly.");

@@ -964,7 +964,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // foreground process hand on the foreground, so grant it to the VERIFIED daemon process only, for
                         // these input types only; the daemon still checks the foreground before every input event.
                         if approved
-                            && matches!(action_type.as_deref(), Some("Desktop.ClickElement") | Some("Desktop.TypeText") | Some("Desktop.PressKeys"))
+                            && matches!(action_type.as_deref(), Some("Desktop.ClickElement") | Some("Desktop.TypeText") | Some("Desktop.PressKeys")
+                                | Some("Desktop.RightClick") | Some("Desktop.DoubleClick") | Some("Desktop.Scroll") | Some("Desktop.Drag"))
                         {
                             let pid = ipc::client::VERIFIED_DAEMON_PID.load(std::sync::atomic::Ordering::SeqCst);
                             if pid != 0 {

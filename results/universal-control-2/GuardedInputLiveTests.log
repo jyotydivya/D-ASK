@@ -1,0 +1,25 @@
+Test run for D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.7+8f2703126a (64-bit .NET 8.0.33)
+[xUnit.net 00:00:00.12]   Discovering: DAsk.Daemon.Tests
+[xUnit.net 00:00:00.23]   Discovered:  DAsk.Daemon.Tests
+[xUnit.net 00:00:00.24]   Starting:    DAsk.Daemon.Tests
+[xUnit.net 00:00:06.44]   Finished:    DAsk.Daemon.Tests
+  Passed DAsk.Daemon.Tests.GuardedInputLiveTests.Live_Click_Type_Keys_OnTheFixture_AndForeignInputStopsTyping [6 s]
+  Standard Output Messages:
+ click: ok {"decision":"approved","approvalId":"1e3f69d4403c4175873e90f1a886fc2e","actionType":"Desktop.ClickElement","consumed":true,"identityRevalidated":true,"executed":true,"verified":true,"observed":"the window\u0027s content changed after the input","control":{"controlType":"Button","automationId":"go","name":"Go"},"keys":null,"textLength":null,"direction":null,"amount":null,"dropTarget":null,"target":{"process":"powershell.exe","title":"DASK Input Fixture 17721a4c4","pid":26068},"timings":{"decisionMs":262,"executeMs":249,"verifyMs":29}}
+ type: ok {"decision":"approved","approvalId":"8b9258214afc49cd972cc125c29cebac","actionType":"Desktop.TypeText","consumed":true,"identityRevalidated":true,"executed":true,"verified":true,"observed":"the field now contains exactly the typed text, inserted once","control":{"controlType":"Edit","automationId":"notes","name":""},"keys":null,"textLength":11,"direction":null,"amount":null,"dropTarget":null,"target":{"process":"powershell.exe","title":"DASK Input Fixture 17721a4c4","pid":26068},"timings":{"decisionMs":220,"executeMs":544,"verifyMs":22}}
+ keys: ok {"decision":"approved","approvalId":"b68796489f264885945059d790a37578","actionType":"Desktop.PressKeys","consumed":true,"identityRevalidated":true,"executed":true,"verified":true,"observed":"the control\u0027s text changed after the keys","control":{"controlType":"Edit","automationId":"notes","name":""},"keys":"Backspace","textLength":null,"direction":null,"amount":null,"dropTarget":null,"target":{"process":"powershell.exe","title":"DASK Input Fixture 17721a4c4","pid":26068},"timings":{"decisionMs":232,"executeMs":82,"verifyMs":27}}
+ interrupted: error {"Code":"user_interrupted","Message":"Stopped after 1 of 4 input steps: Stopped because another program sent keyboard input. It will not be retried.","Candidates":null}
+ audit: DesktopInputRequested,ApprovalRequested,ApprovalGranted,DesktopInputExecutionAdmitted,DesktopInputSent,DesktopInputVerified,DesktopInputRequested,ApprovalRequested,ApprovalGranted,DesktopInputExecutionAdmitted,DesktopInputSent,DesktopInputVerified,DesktopInputRequested,ApprovalRequested,ApprovalGranted,DesktopInputExecutionAdmitted,DesktopInputSent,DesktopInputVerified,DesktopInputRequested,ApprovalRequested,ApprovalGranted,DesktopInputExecutionAdmitted,DesktopInputStopped,DesktopInputUnverified
+
+
+
+Test Run Successful.
+Total tests: 1
+     Passed: 1
+ Total time: 6.9672 Seconds

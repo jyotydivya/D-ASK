@@ -1,0 +1,59 @@
+Test run for D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+D:\D-ASK\D-ASK\tests\DAsk.Daemon.Tests\bin\Debug\net8.0\DAsk.Daemon.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.5.7+8f2703126a (64-bit .NET 8.0.33)
+[xUnit.net 00:00:00.10]   Discovering: DAsk.Daemon.Tests
+[xUnit.net 00:00:00.22]   Discovered:  DAsk.Daemon.Tests
+[xUnit.net 00:00:00.23]   Starting:    DAsk.Daemon.Tests
+[xUnit.net 00:00:42.72]   Finished:    DAsk.Daemon.Tests
+  Passed DAsk.Daemon.Tests.SystemAdminLiveTests.Live_Processes_Services_Network_Audio_Display_Startup_Power [42 s]
+  Standard Output Messages:
+ system.list_processes {}: ok {"verified":true,"count":266,"shown":40,"processes":[{"name":"Antigravity IDE","pid":4936,"memoryMb":789,"window":"","session":3},{"name":"claude","pid":6864,"memoryMb":572,"window":"","session":3},{"name":"Antigravity IDE","pid":9320,"memoryMb":496,"window":"","session":3},{"name":"explorer","pid":26600,"memoryMb":422,"window":"","session":3},{"name":"Antigravity IDE","pid":11576,"memoryMb":398,"window":"","session":3},{"name":"MsMpEng","pid":5204,"memoryMb":353,"window":"","session":0},{"name":"pyrefly","pid":24712,"memoryMb":348,"window":"","session":3},{"name":"agy","pid":5404,"memoryMb":2…
+ system.process_info {"pid":17768}: ok {"verified":true,"count":1,"processes":[{"name":"PING","pid":17768,"path":"C:\\Windows\\system32\\PING.EXE","started":"2026-11-14T14:51:02.3599699\u002B05:30","memoryMb":5,"window":"","session":3,"responding":true}],"observed":"1 matching process(es)"}
+ system.end_process {"pid":17768}: ok {"executed":true,"verified":true,"process":"PING","pid":17768,"observed":"PING (process 17768) is no longer running"}
+ system.end_process {"pid":1160}: error {"Code":"target_forbidden","Message":"csrss is part of Windows, security software or D-ASK itself; D-ASK never ends it.","Candidates":null}
+ system.end_process {"pid":26600}: error {"Code":"target_forbidden","Message":"explorer is part of Windows, security software or D-ASK itself; D-ASK never ends it.","Candidates":null}
+ system.end_process {"pid":14264}: error {"Code":"approval_denied","Message":"You declined. Nothing was done.","Candidates":null}
+ system.list_services {}: ok {"verified":true,"count":307,"running":138,"services":[{"name":"AarSvc_1df92174","display":"Agent Activation Runtime_1df92174","status":"Stopped","start":"Manual"},{"name":"ADPSvc","display":"Aggregated Data Platform Service","status":"Stopped","start":"Manual"},{"name":"ALG","display":"Application Layer Gateway Service","status":"Stopped","start":"Manual"},{"name":"AppIDSvc","display":"Application Identity","status":"Stopped","start":"Manual"},{"name":"Appinfo","display":"Application Information","status":"Running","start":"Manual"},{"name":"AppReadiness","display":"App Readiness","status":"S…
+ system.service_info {"name":"Spooler"}: ok {"verified":true,"service":{"name":"Spooler","display":"Print Spooler","status":"Running","start":"Automatic","canStop":true,"account":"LocalSystem","path":"C:\\Windows\\System32\\spoolsv.exe","pid":4092,"dependents":["Fax"]},"controllable":false,"observed":"Spooler is Running"}
+ system.service_control {"name":"Spooler","action":"stop"}: error {"Code":"service_not_allowed","Message":"Spooler is not one of the services D-ASK may start or stop (AgentHost:SystemAdminServices). It can only be listed and inspected.","Candidates":null}
+ system.service_info {"name":"Fax"}: ok {"verified":true,"service":{"name":"Fax","display":"Fax","status":"Stopped","start":"Manual","canStop":false,"account":"NT AUTHORITY\\NetworkService","path":"C:\\Windows\\system32\\fxssvc.exe","pid":0,"dependents":[]},"controllable":true,"observed":"Fax is Stopped"}
+ system.service_control {"name":"Fax","action":"start"}: error {"Code":"execution_unverified","Message":"D-ASK asked Windows once to start Fax, but it is Stopped (Failed to start service \u0027Fax (Fax)\u0027.).","Candidates":null}
+ system.service_info {"name":"Fax"}: ok {"verified":true,"service":{"name":"Fax","display":"Fax","status":"Stopped","start":"Manual","canStop":false,"account":"NT AUTHORITY\\NetworkService","path":"C:\\Windows\\system32\\fxssvc.exe","pid":0,"dependents":[]},"controllable":true,"observed":"Fax is Stopped"}
+ system.network_status {}: ok {"verified":true,"adapters":[{"name":"Local Area Connection* 1","description":"Microsoft Wi-Fi Direct Virtual Adapter","type":"Wireless80211","status":"Down","speedMbps":0,"ipv4":[]},{"name":"Local Area Connection* 2","description":"Microsoft Wi-Fi Direct Virtual Adapter #2","type":"Wireless80211","status":"Down","speedMbps":0,"ipv4":[]},{"name":"Wi-Fi","description":"Intel(R) Wi-Fi 6 AX201 160MHz","type":"Wireless80211","status":"Up","speedMbps":287,"ipv4":["192.168.137.77"]},{"name":"Ethernet","description":"Realtek PCIe GbE Family Controller","type":"Ethernet","status":"Down","speedMbps":0,…
+ radios: [{"kind":"WiFi","name":"Wi-Fi","state":"On"},{"kind":"Bluetooth","name":"Bluetooth","state":"Off"}]
+ system.set_radio {"radio":"bluetooth","state":"on"}: ok {"executed":true,"verified":true,"radio":"Bluetooth","state":"On","observed":"Bluetooth is now On (read back from Windows)"}
+ system.set_radio {"radio":"bluetooth","state":"off"}: ok {"executed":true,"verified":true,"radio":"Bluetooth","state":"Off","observed":"Bluetooth is now Off (read back from Windows)"}
+ system.set_radio {"radio":"wifi","state":"off"}: ok {"executed":true,"verified":true,"radio":"WiFi","state":"Off","observed":"WiFi is now Off (read back from Windows)"}
+ system.set_radio {"radio":"wifi","state":"on"}: ok {"executed":true,"verified":true,"radio":"WiFi","state":"On","observed":"WiFi is now On (read back from Windows)"}
+ system.audio_status {}: ok {"verified":true,"hasOutput":true,"volumePercent":26,"muted":false,"devices":[{"name":"Realtek High Definition Audio","status":"OK"},{"name":"Intel\u00AE Smart Sound Technology for Digital Microphones","status":"OK"},{"name":"Intel\u00AE Smart Sound Technology for Bluetooth\u00AE Audio","status":"OK"}],"observed":"volume 26%"}
+ system.set_volume {"percent":37}: ok {"executed":true,"verified":true,"volumePercent":37,"muted":false,"observed":"the volume is now 37% (read back)"}
+ system.set_volume {"mute":true}: ok {"executed":true,"verified":true,"volumePercent":37,"muted":true,"observed":"the volume is now 37% (muted) (read back)"}
+ system.display_status {}: ok {"verified":true,"displays":[{"device":"\\\\.\\DISPLAY1","adapter":"Intel(R) Iris(R) Xe Graphics","monitor":"Generic PnP Monitor","primary":true,"width":1920,"height":1080,"refreshHz":60,"bitsPerPixel":32,"x":0,"y":0}],"brightnessSupported":true,"brightnessPercent":30,"observed":"displays and brightness read from Windows"}
+ system.set_brightness {"percent":40}: ok {"executed":true,"verified":true,"brightnessPercent":40,"observed":"the brightness is now 40% (read back)"}
+ system.set_brightness {"percent":30}: ok {"executed":true,"verified":true,"brightnessPercent":30,"observed":"the brightness is now 30% (read back)"}
+ system.startup_apps {}: ok {"verified":true,"count":5,"enabled":5,"apps":[{"name":"OneDrive","source":"HKCU Run","command":"\u0022C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe\u0022 /background","enabled":true,"canToggle":true},{"name":"Teams","source":"HKCU Run","command":"\u0022C:\\Users\\divya\\AppData\\Local\\Microsoft\\WindowsApps\\MSTeams_8wekyb3d8bbwe\\ms-teams.exe\u0022 msteams:system-initiated","enabled":true,"canToggle":true},{"name":"GoogleChromeAutoLaunch_51827B29F6FC83008B2BC302127F1548","source":"HKCU Run","command":"\u0022C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\u0022 --no-startup-…
+ system.startup_toggle {"name":"DASK-Test-Startup-Entry","enabled":false}: ok {"executed":true,"verified":true,"name":"DASK-Test-Startup-Entry","enabled":false,"observed":"\u0022DASK-Test-Startup-Entry\u0022 is now disabled at startup (read back)"}
+ system.startup_toggle {"name":"DASK-Test-Startup-Entry","enabled":true}: ok {"executed":true,"verified":true,"name":"DASK-Test-Startup-Entry","enabled":true,"observed":"\u0022DASK-Test-Startup-Entry\u0022 is now enabled at startup (read back)"}
+ system.power {"action":"restart","delaySeconds":600}: ok {"executed":true,"verified":true,"action":"restart","scheduledFor":"2026-11-14T15:01:31.7185332\u002B05:30","delaySeconds":600,"observed":"Windows recorded the scheduled restart (System event 1074); it happens at 15:01:31 unless cancelled"}
+ restart verified by event log: True
+ system.cancel_power {}: ok {"executed":true,"verified":true,"cancelled":"restart","observed":"cancelled (you asked to cancel it); Windows reports nothing pending any more"}
+ system.power {"action":"shutdown","delaySeconds":600}: ok {"executed":true,"verified":true,"action":"shutdown","scheduledFor":"2026-11-14T15:01:34.4095240\u002B05:30","delaySeconds":600,"observed":"Windows recorded the scheduled shutdown (System event 1074); it happens at 15:01:34 unless cancelled"}
+ shutdown verified by event log: True
+ system.cancel_power {}: ok {"executed":true,"verified":true,"cancelled":"shutdown","observed":"cancelled (you asked to cancel it); Windows reports nothing pending any more"}
+ system.power {"action":"restart","delaySeconds":600}: ok {"executed":true,"verified":true,"action":"restart","scheduledFor":"2026-11-14T15:01:35.1667550\u002B05:30","delaySeconds":600,"observed":"Windows recorded the scheduled restart (System event 1074); it happens at 15:01:35 unless cancelled"}
+ system.power {"action":"restart","delaySeconds":600}: error {"Code":"emergency_stopped","Message":"Emergency Stop is active; nothing can be requested.","Candidates":null}
+ system.power {"action":"signout","delaySeconds":3}: ok {"executed":true,"verified":true,"action":"signout","scheduledFor":"2026-11-14T14:51:39.7923692\u002B05:30","delaySeconds":3,"observed":"the signout is scheduled inside D-ASK for 14:51:39 unless cancelled"}
+ system.cancel_power {}: ok {"executed":true,"verified":true,"cancelled":"signout","observed":"cancelled (you asked to cancel it); Windows reports nothing pending any more"}
+ system.power {"action":"sleep","delaySeconds":2}: ok {"executed":true,"verified":true,"action":"sleep","scheduledFor":"2026-11-14T14:51:42.9999657\u002B05:30","delaySeconds":2,"observed":"the sleep is scheduled inside D-ASK for 14:51:42 unless cancelled"}
+ system.power {"action":"shutdown","delaySeconds":1}: error {"Code":"invalid_args","Message":"delaySeconds must be 2-3600 (power actions are always scheduled so they can be cancelled)","Candidates":null}
+
+
+
+Test Run Successful.
+Total tests: 1
+     Passed: 1
+ Total time: 43.2257 Seconds

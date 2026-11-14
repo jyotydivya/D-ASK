@@ -46,19 +46,21 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
     }
 
     /// <summary>Only the enabled kinds are offered to the agent, so the model never sees a tool that would be refused.</summary>
-    public IReadOnlyList<string> Tools => GuardedInputTools.All.Where(t => Enabled(t == GuardedInputTools.ClickElement ? InputKind.Mouse : InputKind.Keyboard)).ToArray();
+    public IReadOnlyList<string> Tools => GuardedInputTools.All.Where(t => Enabled(GuardedInputTools.IsMouse(t) ? InputKind.Mouse : InputKind.Keyboard)).ToArray();
     public int MaxCallMs => (int)Math.Min(_options.ApprovalTtl.TotalMilliseconds, ActionPolicyEngine.MaxApprovalTtl.TotalMilliseconds) + 15_000;
 
     private bool Enabled(InputKind k) => (k == InputKind.Mouse ? _options.MouseEnabled : _options.KeyboardEnabled) && _evidence != null && _isSessionLive != null;
 
-    private sealed record Request(string Tool, string ActionType, InputKind Kind, string? Process, string? TitleContains, ControlSelector Control, string? Text, KeyChords.Chord? Chord);
+    private sealed record Request(string Tool, string ActionType, InputKind Kind, string? Process, string? TitleContains, ControlSelector Control, string? Text, KeyChords.Chord? Chord,
+        ControlSelector? To = null, string? Direction = null, int Amount = 0);
 
     private string? Parse(string tool, JsonElement args, out Request req)
     {
         req = null!;
         if (args.ValueKind != JsonValueKind.Object) return "arguments must be an object";
-        string? process = null, title = null, text = null, keys = null;
-        ControlSelector? control = null;
+        string? process = null, title = null, text = null, keys = null, direction = null;
+        int amount = 3;
+        ControlSelector? control = null, to = null;
         foreach (var p in args.EnumerateObject())
         {
             switch (p.Name)
@@ -66,7 +68,8 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
                 case "process": if (p.Value.ValueKind != JsonValueKind.String) return "process must be text"; process = p.Value.GetString()!.Trim(); break;
                 case "titleContains": if (p.Value.ValueKind != JsonValueKind.String) return "titleContains must be text"; title = p.Value.GetString(); break;
                 case "element":
-                    if (p.Value.ValueKind != JsonValueKind.Object) return "element must be an object { controlType, automationId?, name? }";
+                case "to" when tool == GuardedInputTools.Drag:
+                    if (p.Value.ValueKind != JsonValueKind.Object) return $"{p.Name} must be an object {{ controlType, automationId?, name? }}";
                     string? ct = null, aid = null, nm = null;
                     foreach (var e in p.Value.EnumerateObject())
                     {
@@ -77,8 +80,16 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
                     }
                     if (string.IsNullOrWhiteSpace(ct)) return "element.controlType is required";
                     if (string.IsNullOrEmpty(aid) && string.IsNullOrEmpty(nm)) return "element needs an automationId or a name";
-                    control = new ControlSelector(ct!, aid, nm);
+                    if (p.Name == "to") to = new ControlSelector(ct!, aid, nm); else control = new ControlSelector(ct!, aid, nm);
                     break;
+                case "direction" when tool == GuardedInputTools.Scroll:
+                    if (p.Value.ValueKind != JsonValueKind.String || p.Value.GetString() is not ("up" or "down" or "left" or "right")) return "direction must be up, down, left or right";
+                    direction = p.Value.GetString(); break;
+                case "amount" when tool == GuardedInputTools.Scroll:
+                    if (p.Value.ValueKind != JsonValueKind.Number || !p.Value.TryGetInt32(out amount) || amount < 1 || amount > GuardedInputSequencer.MaxScrollNotches)
+                        return $"amount must be a whole number of wheel notches from 1 to {GuardedInputSequencer.MaxScrollNotches}";
+                    break;
+                case "text" when tool == GuardedInputTools.SelectText: if (p.Value.ValueKind != JsonValueKind.String) return "text must be text"; text = p.Value.GetString(); break;
                 case "text" when tool == GuardedInputTools.TypeText: if (p.Value.ValueKind != JsonValueKind.String) return "text must be text"; text = p.Value.GetString(); break;
                 case "keys" when tool == GuardedInputTools.PressKeys: if (p.Value.ValueKind != JsonValueKind.String) return "keys must be text"; keys = p.Value.GetString(); break;
                 default: return $"unknown argument '{(p.Name.Length > 40 ? p.Name[..40] : p.Name)}'"; // never coordinates, handles, key codes or approvals
@@ -89,8 +100,16 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         KeyChords.Chord? chord = null;
         if (tool == GuardedInputTools.TypeText && TextRules.Validate(text, _options.MaxTextLength) is { } tbad) return tbad;
         if (tool == GuardedInputTools.PressKeys && KeyChords.Parse(keys, out chord) is { } kbad) return kbad;
+        if (tool == GuardedInputTools.SelectText && text != null && TextRules.Validate(text, _options.MaxTextLength) is { } sbad) return sbad;
+        if (tool == GuardedInputTools.Scroll && direction == null) return "direction is required (up, down, left or right)";
+        if (tool == GuardedInputTools.Drag && to == null) return "to (the control to drop on) is required";
         req = tool switch
         {
+            GuardedInputTools.RightClick => new Request(tool, DesktopActionTypes.RightClick, InputKind.Mouse, process, title, control, null, null),
+            GuardedInputTools.DoubleClick => new Request(tool, DesktopActionTypes.DoubleClick, InputKind.Mouse, process, title, control, null, null),
+            GuardedInputTools.Scroll => new Request(tool, DesktopActionTypes.Scroll, InputKind.Mouse, process, title, control, null, null, null, direction, amount),
+            GuardedInputTools.Drag => new Request(tool, DesktopActionTypes.Drag, InputKind.Mouse, process, title, control, null, null, to),
+            GuardedInputTools.SelectText => new Request(tool, DesktopActionTypes.SelectText, InputKind.Keyboard, process, title, control, text, null),
             GuardedInputTools.ClickElement => new Request(tool, DesktopActionTypes.ClickElement, InputKind.Mouse, process, title, control, null, null),
             GuardedInputTools.TypeText => new Request(tool, DesktopActionTypes.TypeText, InputKind.Keyboard, process, title, control, text, null),
             _ => new Request(tool, DesktopActionTypes.PressKeys, InputKind.Keyboard, process, title, control, null, chord),
@@ -151,10 +170,21 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
         var wb = target.Bounds;
         if (wb.Length != 4 || cx < wb[0] || cx >= wb[2] || cy < wb[1] || cy >= wb[3])
             return DesktopCallResult.Fail("target_unusable", "The control is not inside its window's visible area.");
-        if (r.Kind == InputKind.Keyboard)
+        if (r.Kind == InputKind.Keyboard || (control.IsPassword && r.Tool is GuardedInputTools.Drag or GuardedInputTools.DoubleClick or GuardedInputTools.RightClick))
         {
-            if (control.IsPassword) return DesktopCallResult.Fail("target_forbidden", "D-ASK never types into, or sends keys to, a password field.");
-            if (!control.IsKeyboardFocusable) return DesktopCallResult.Fail("target_unusable", "The control cannot take keyboard focus.");
+            if (control.IsPassword) return DesktopCallResult.Fail("target_forbidden", "D-ASK never types into, sends keys to, selects in, or drags from a password field.");
+            if (r.Tool != GuardedInputTools.SelectText && !control.IsKeyboardFocusable) return DesktopCallResult.Fail("target_unusable", "The control cannot take keyboard focus.");
+        }
+        if (r.Tool == GuardedInputTools.SelectText && !control.Patterns.Contains("Text"))
+            return DesktopCallResult.Fail("target_unusable", "The control does not expose its text to UI Automation (no TextPattern), so a selection could not be made or verified; nothing was asked.");
+        ControlIdentity? dest = null;
+        if (r.To != null)
+        {
+            if (ControlResolver.Resolve(insp, r.To, out dest) is { } rt) return DesktopCallResult.Fail(rt.Code, $"Drop target: {rt.Message}");
+            if (ControlResolver.Revalidate(dest!, insp, out _) is { } du) return DesktopCallResult.Fail(du.Code, $"Drop target: {du.Message}");
+            if (dest!.RuntimeId.AsSpan().SequenceEqual(control.RuntimeId)) return DesktopCallResult.Fail("invalid_args", "The control to drag and the drop target are the same control.");
+            var (dx, dy) = dest.Center;
+            if (dx < wb[0] || dx >= wb[2] || dy < wb[1] || dy >= wb[3]) return DesktopCallResult.Fail("target_unusable", "The drop target is not inside the window's visible area.");
         }
         if (r.Tool == GuardedInputTools.TypeText)
         {
@@ -170,6 +200,11 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             ["operation"] = r.Tool switch
             {
                 GuardedInputTools.ClickElement => "Click this control once (left button)",
+                GuardedInputTools.RightClick => "Right-click this control once (opens its context menu)",
+                GuardedInputTools.DoubleClick => "Double-click this control once (left button)",
+                GuardedInputTools.Scroll => $"Scroll {r.Direction} {r.Amount} wheel notch(es) over this control",
+                GuardedInputTools.Drag => "Drag this control and drop it on the drop target (left button held during the move)",
+                GuardedInputTools.SelectText => r.Text == null ? "Select all the text in this control (no keys are pressed)" : "Select the exact text shown below in this control (no keys are pressed)",
                 GuardedInputTools.TypeText => "Type this text into this control",
                 _ => $"Press {r.Chord!.Canonical} in this control",
             },
@@ -187,12 +222,29 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             ["controlPath"] = control.ControlPathHash[..16],
             ["controlBounds"] = string.Join(",", control.Bounds),
             ["display"] = $"display {target.DisplayIndex + 1}{(target.DisplayIsPrimary ? " (primary)" : "")}, {target.Dpi} DPI",
-            ["reversible"] = r.Tool == GuardedInputTools.TypeText ? "Usually: typed text can be deleted or undone (Ctrl+Z) in most applications." : "It depends on what this control does in that application.",
+            ["reversible"] = r.Tool switch
+            {
+                GuardedInputTools.TypeText => "Usually: typed text can be deleted or undone (Ctrl+Z) in most applications.",
+                GuardedInputTools.SelectText or GuardedInputTools.Scroll => "Yes: selecting text or scrolling changes no content.",
+                GuardedInputTools.RightClick => "Yes: a context menu only opens (Escape closes it); nothing in it is chosen.",
+                _ => "It depends on what this control does in that application.",
+            },
             ["execution"] = Performed,
         };
-        if (r.Tool == GuardedInputTools.ClickElement) parameters["point"] = $"{cx},{cy}";
+        if (GuardedInputTools.IsMouse(r.Tool)) parameters["point"] = $"{cx},{cy}";
+        if (r.Tool == GuardedInputTools.Scroll) { parameters["direction"] = r.Direction!; parameters["amount"] = r.Amount.ToString(); }
+        if (dest != null)
+        {
+            parameters["dropTarget"] = r.To!.Describe();
+            parameters["dropControlType"] = dest.ControlType;
+            parameters["dropControlName"] = dest.Name;
+            parameters["dropControlAutomationId"] = dest.AutomationId;
+            parameters["dropControlPath"] = dest.ControlPathHash[..16];
+            parameters["dropPoint"] = $"{dest.Center.X},{dest.Center.Y}";
+        }
         if (titleMayFollowContent) parameters[TitleFollowsContentKey] = "This window was opened by D-ASK for this request; its title may change as it fills with the typed text (the part after the last ' - ' must stay the same). Window identity is still checked before every key.";
         if (r.Text != null) { parameters["text"] = r.Text; parameters["textLength"] = r.Text.Length.ToString(); }
+        if (r.Tool == GuardedInputTools.SelectText && r.Text == null) parameters["selection"] = "all";
         if (r.Chord != null) parameters["keys"] = r.Chord.Canonical;
 
         ulong generation = _generation();
@@ -212,7 +264,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             RiskLevel = risk.ToString(),
             CreatedAtUtc = DateTimeOffset.UtcNow,
             ExpiresAtUtc = DateTimeOffset.UtcNow + _options.ApprovalTtl,
-            Reason = $"D-ASK asks to {(r.Kind == InputKind.Mouse ? "click a control" : r.Tool == GuardedInputTools.TypeText ? "type text into a control" : "press keys in a control")} of {target.ImageName}.",
+            Reason = $"D-ASK asks to {VerbFor(r.Tool)} of {target.ImageName}.",
         };
 
         await AuditAsync("DesktopInputRequested", request, ctx, r, control, "Pending", $"agent call {ctx.CallId}", target);
@@ -258,11 +310,29 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             await AuditAsync("DesktopInputTargetChanged", request, ctx, r, control, "Refused", "control moved", target);
             return DesktopCallResult.Fail("target_changed", "You approved it, but the control moved afterwards. Nothing was done.");
         }
+        if (dest != null && (ControlResolver.Revalidate(dest, insp2, out var dest2) is not null || !dest2!.Bounds.AsSpan().SequenceEqual(dest.Bounds)))
+        {
+            await AuditAsync("DesktopInputTargetChanged", request, ctx, r, control, "Refused", "drop target changed", target);
+            return DesktopCallResult.Fail("target_changed", "You approved it, but the drop target changed or moved afterwards. Nothing was done.");
+        }
 
-        return await ExecuteApprovedAsync(request, ctx, r, target, control, insp2, decidedMs, ct);
+        if (r.Tool == GuardedInputTools.SelectText) return await ExecuteSelectAsync(request, ctx, r, target, control, decidedMs);
+        return await ExecuteApprovedAsync(request, ctx, r, target, control, insp2, decidedMs, ct, dest);
     }
 
     public const string TitleFollowsContentKey = "titleNote";
+
+    private static string VerbFor(string tool) => tool switch
+    {
+        GuardedInputTools.ClickElement => "click a control",
+        GuardedInputTools.RightClick => "right-click a control",
+        GuardedInputTools.DoubleClick => "double-click a control",
+        GuardedInputTools.Scroll => "scroll a control",
+        GuardedInputTools.Drag => "drag a control onto another",
+        GuardedInputTools.SelectText => "select text in a control",
+        GuardedInputTools.TypeText => "type text into a control",
+        _ => "press keys in a control",
+    };
 
     /// <summary>
     /// The title of a window that holds a document is "[*]<document> - <application>": typing changes the document part (and adds the
@@ -300,7 +370,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
     }
 
     private async Task<DesktopCallResult> ExecuteApprovedAsync(ActionApprovalRequest request, DesktopActionContext ctx, Request r, WindowIdentity target,
-        ControlIdentity control, UiaInspection before, long decidedMs, CancellationToken ct)
+        ControlIdentity control, UiaInspection before, long decidedMs, CancellationToken ct, ControlIdentity? dest = null)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -323,6 +393,11 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
 
         SequenceOutcome outcome;
         string beforeSignature = ControlResolver.Signature(before);
+        string beforeLayout = ControlResolver.LayoutSignature(before);
+        bool menuBefore = _platform.MenuOpen();
+        string? selectionBefore = r.Tool == GuardedInputTools.DoubleClick ? _platform.ReadSelection(target.Hwnd, control.RuntimeId) : null;
+        var fgBefore = _platform.ForegroundInfo();
+        int windowsBefore = _platform.VisibleWindowsOf(target.ProcessId);
         string valueBefore = "";
         var (cx, cy) = control.Center;
         try
@@ -366,12 +441,37 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             var steps = r.Tool switch
             {
                 GuardedInputTools.ClickElement => GuardedInputSequencer.Click((cx, cy)),
+                GuardedInputTools.RightClick => GuardedInputSequencer.RightClick((cx, cy)),
+                GuardedInputTools.DoubleClick => GuardedInputSequencer.DoubleClick((cx, cy)),
+                GuardedInputTools.Scroll => GuardedInputSequencer.Scroll((cx, cy), r.Direction!, r.Amount),
+                GuardedInputTools.Drag => GuardedInputSequencer.Drag((cx, cy), dest!.Center),
                 GuardedInputTools.TypeText => GuardedInputSequencer.Type(r.Text!),
                 _ => GuardedInputSequencer.Chord(r.Chord!),
             };
             InputRefusal? Gate(int i)
             {
                 if (CommonGate(request, target, monitor, ct) is { } g) return g;
+                if (r.Tool is GuardedInputTools.Scroll or GuardedInputTools.Drag)
+                {
+                    string label = steps[i].Label;
+                    if (label is "move" or "drag") return null;
+                    // Wheel notches and the drag press: the pointer is still where it was put, over the approved window (content may move under it).
+                    if (label is "wheel" or "press")
+                    {
+                        if (_platform.CursorPos() is not { } wp || Math.Abs(wp.X - cx) > 1 || Math.Abs(wp.Y - cy) > 1) return new("pointer_moved", "The pointer is not on the control.");
+                        if (_platform.RootWindowAt(cx, cy) != target.Hwnd) return new("target_obscured", "Another window covers the control.");
+                        if (label == "press" && !_platform.PointIsOnControl(target.Hwnd, cx, cy, control.RuntimeId))
+                            return new("target_obscured", "The element under the pointer is not the approved control.");
+                        return null;
+                    }
+                    if (label == "release")
+                    {
+                        var (dx, dy) = dest!.Center;
+                        if (_platform.CursorPos() is not { } rp || Math.Abs(rp.X - dx) > 1 || Math.Abs(rp.Y - dy) > 1) return new("pointer_moved", "The pointer is not on the drop target.");
+                        if (_platform.RootWindowAt(dx, dy) != target.Hwnd) return new("target_obscured", "Another window covers the drop target.");
+                    }
+                    return null;
+                }
                 if (r.Kind == InputKind.Mouse)
                 {
                     if (i != 1) return null; // the pointer move: common gate only
@@ -379,14 +479,14 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
                     // hit-testable only while the pointer is over one of their controls (e.g. on APPROVE). The move presses nothing.
                     if (_platform.RootWindowAt(cx, cy) != target.Hwnd) return new("target_obscured", "Another window covers the control.");
                     if (_platform.CursorPos() is not { } p || Math.Abs(p.X - cx) > 1 || Math.Abs(p.Y - cy) > 1) return new("pointer_moved", "The pointer is not on the control.");
-                    if (_platform.RuntimeIdAt(cx, cy) is not { } hit || !hit.AsSpan().SequenceEqual(control.RuntimeId)) return new("target_obscured", "The element under the pointer is not the approved control.");
+                    if (!_platform.PointIsOnControl(target.Hwnd, cx, cy, control.RuntimeId)) return new("target_obscured", "The element under the pointer is not the approved control.");
                 }
                 else if (_platform.FocusedRuntimeId() is not { } f || !f.AsSpan().SequenceEqual(control.RuntimeId))
                     return new("focus_changed", "Keyboard focus left the approved control.");
                 return null;
             }
             outcome = await GuardedInputSequencer.RunAsync(_platform.Injector, steps, Gate,
-                r.Tool == GuardedInputTools.TypeText ? _options.InterEventDelayMs : r.Kind == InputKind.Mouse ? _options.PointerSettleMs : 0,
+                r.Tool == GuardedInputTools.TypeText ? _options.InterEventDelayMs : r.Tool == GuardedInputTools.Drag ? 40 : r.Tool == GuardedInputTools.Scroll ? 80 : r.Kind == InputKind.Mouse ? _options.PointerSettleMs : 0,
                 _options.TestHookBetweenEvents, ct);
         }
         finally { monitor.Dispose(); }
@@ -409,6 +509,27 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
                 var v = _platform.ReadValue(target.Hwnd, control.RuntimeId);
                 if (v.Ok && TextRules.IsExactInsertion(valueBefore, v.Value, r.Text!)) { verified = true; observed = "the field now contains exactly the typed text, inserted once"; break; }
                 if (v.Ok) observed = "the field's text does not show the typed text inserted exactly once";
+            }
+            else if (r.Tool == GuardedInputTools.RightClick)
+            {
+                if (!menuBefore && _platform.MenuOpen()) { verified = true; observed = "a context menu opened"; break; }
+                if (_platform.VisibleWindowsOf(target.ProcessId) > windowsBefore) { verified = true; observed = "a popup (context menu) of the application opened"; break; }
+                var fg = _platform.ForegroundInfo();
+                if (fg.Hwnd != 0 && fg.Hwnd != fgBefore.Hwnd) { verified = true; observed = "a new window came to the front"; break; }
+                var now = await Inspect(target.Hwnd, ct);
+                if (now.Status == "ok" && ControlResolver.Signature(now) != beforeSignature) { verified = true; observed = "the window's content changed after the right-click"; break; }
+            }
+            else if (r.Tool is GuardedInputTools.Scroll or GuardedInputTools.Drag or GuardedInputTools.DoubleClick)
+            {
+                if (r.Tool == GuardedInputTools.DoubleClick)
+                {
+                    var fg = _platform.ForegroundInfo();
+                    if (fg.Hwnd != 0 && fg.Hwnd != fgBefore.Hwnd) { verified = true; observed = "a new window came to the front"; break; }
+                    if (_platform.ReadSelection(target.Hwnd, control.RuntimeId) is { Length: > 0 } sel && sel != selectionBefore) { verified = true; observed = $"the double-click selected {sel.Length} character(s)"; break; }
+                }
+                var now = await Inspect(target.Hwnd, ct);
+                if (now.Status == "ok" && ControlResolver.Signature(now) != beforeSignature) { verified = true; observed = r.Tool == GuardedInputTools.Drag ? "the window's content changed after the drop" : "the window's content changed"; break; }
+                if (now.Status == "ok" && r.Tool != GuardedInputTools.DoubleClick && ControlResolver.LayoutSignature(now) != beforeLayout) { verified = true; observed = r.Tool == GuardedInputTools.Scroll ? "the content moved (scrolled)" : "the layout changed after the drop"; break; }
             }
             else
             {
@@ -442,10 +563,54 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
             control = new { controlType = control.ControlType, automationId = control.AutomationId, name = control.Name },
             keys = r.Chord?.Canonical,
             textLength = r.Text?.Length,
+            direction = r.Direction,
+            amount = r.Tool == GuardedInputTools.Scroll ? r.Amount : (int?)null,
+            dropTarget = dest == null ? null : new { controlType = dest.ControlType, automationId = dest.AutomationId, name = dest.Name },
             target = new { process = target.ImageName, title = target.Title, pid = target.ProcessId },
             timings = new { decisionMs = decidedMs, executeMs, verifyMs },
         });
     }
+
+    /// <summary>
+    /// desktop.select_text: ONE TextPattern call on the approved control (no synthetic input, so no foreground or input monitor is needed),
+    /// after the same Stop / generation / lease / window checks; verified by reading the selection back.
+    /// </summary>
+    private async Task<DesktopCallResult> ExecuteSelectAsync(ActionApprovalRequest request, DesktopActionContext ctx, Request r, WindowIdentity target, ControlIdentity control, long decidedMs)
+    {
+        try { await RecordRequiredAsync("DesktopInputExecutionAdmitted", request, ctx, r, control, "approval consumed; window and control revalidated", target); }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "[DesktopInput] Write-ahead audit failed; refusing to act.");
+            return DesktopCallResult.Fail("journal_unavailable", "The action could not be recorded before acting, so it was not performed. Nothing was done.");
+        }
+        if (_isStopped() || _generation() != request.StopGeneration) return DesktopCallResult.Fail("emergency_stopped", "Emergency Stop is active. Nothing was done.");
+        if (!_isSessionLive!(request.SessionId)) return DesktopCallResult.Fail("hud_unavailable", "The HUD that approved this is no longer live. Nothing was done.");
+        if (WindowCheck(target) is { } w) return DesktopCallResult.Fail(w.Code, $"Just before selecting, {w.Message}. Nothing was done.");
+        var sw = Stopwatch.StartNew();
+        bool done = _platform.SelectText(target.Hwnd, control.RuntimeId, r.Text);
+        long executeMs = sw.ElapsedMilliseconds;
+        string expected = r.Text ?? (_platform.ReadValue(target.Hwnd, control.RuntimeId) is { Ok: true } v ? v.Value : "");
+        string? got = done ? _platform.ReadSelection(target.Hwnd, control.RuntimeId) : null;
+        bool verified = got != null && (r.Text != null ? got == r.Text : expected.Length > 0 ? NormLines(got) == NormLines(expected) : got.Length > 0);
+        string observed = !done ? (r.Text != null ? "the text was not found in the control" : "the control refused the selection")
+            : verified ? $"the control's selection now holds exactly the {(r.Text != null ? "requested text" : "whole text")} ({got!.Length} characters)"
+            : "the selection read back differs from what was requested";
+        await AuditAsync(verified ? "DesktopInputVerified" : "DesktopInputUnverified", request, ctx, r, control, verified ? "Verified" : "Unverified", observed, target);
+        if (!done) return DesktopCallResult.Fail("execution_failed", $"Nothing was selected: {observed}.");
+        if (!verified) return DesktopCallResult.Fail("execution_unverified", $"D-ASK made the selection once, but could not confirm it ({observed}). It will not be retried.");
+        return DesktopCallResult.Ok(new
+        {
+            decision = "approved", approvalId = request.ApprovalId, actionType = request.ActionType, consumed = true, identityRevalidated = true,
+            executed = true, verified = true, observed, selectedLength = got!.Length,
+            control = new { controlType = control.ControlType, automationId = control.AutomationId, name = control.Name },
+            textLength = r.Text?.Length,
+            target = new { process = target.ImageName, title = target.Title, pid = target.ProcessId },
+            timings = new { decisionMs = decidedMs, executeMs, verifyMs = 0 },
+        });
+    }
+
+    /// <summary>Rich edit controls report "\r" where the value has "\r\n".</summary>
+    private static string NormLines(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
 
     private InputRefusal? CommonGateNoForeground(ActionApprovalRequest request, WindowIdentity target, IUserInputMonitor monitor, CancellationToken ct)
     {
@@ -461,7 +626,7 @@ public sealed class GuardedInputRequestService : IDesktopActionRequestService
     {
         actionType = r.ActionType, inputPolicy = q.Kind.ToString(), taskId = ctx.TaskId, callId = ctx.CallId, hwnd = t.Hwnd, pid = t.ProcessId,
         processCreationFileTime = t.ProcessCreationFileTime, image = AuditJson.Bound(t.ImagePath), windowClass = AuditJson.Bound(t.WindowClass), session = t.SessionId,
-        controlType = c.ControlType, controlPath = c.ControlPathHash, keys = q.Chord?.Canonical,
+        controlType = c.ControlType, controlPath = c.ControlPathHash, keys = q.Chord?.Canonical, direction = q.Direction, dropTarget = q.To?.Describe(),
         textLength = q.Text?.Length, textSha256 = q.Text != null ? TextRules.Sha256(q.Text) : null,   // never the text itself
     };
 

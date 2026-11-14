@@ -277,6 +277,12 @@ export class Planner {
 // plan; without this each copy would ask the user for another approval of the same text.
 export const DEDUPLICATED_TOOLS: ReadonlySet<string> = new Set(["desktop.focus_window", "desktop.set_window_state",
   "desktop.click_element", "desktop.type_text", "desktop.press_keys",
+  "desktop.right_click_element", "desktop.double_click_element", "desktop.scroll", "desktop.drag_element", "desktop.select_text",
+  "desktop.clipboard_write", "desktop.clipboard_read",
+  // Windows administration changes (2026-11-14): each approved separately; a repeat would only ask again for the same change.
+  "system.end_process", "system.service_control", "system.set_radio", "system.set_volume", "system.set_brightness", "system.startup_toggle", "system.power", "system.cancel_power",
+  "dev.edit_file", "chrome.click", "chrome.fill", "chrome.open", "chrome.open_tab", "chrome.authorize", "chrome.revoke",
+  "system.list_processes", "system.list_services", "system.network_status", "system.audio_status", "system.display_status", "system.startup_apps",
   // Browser stage 2: each is separately approved too (a repeat would only be refused by the tool's order gate).
   "browser.click_element", "browser.fill_field",
   // Found in the real-HUD feature run (2026-11-10): the local model planned filesystem.undo_organize 8 times; the daemon refuses

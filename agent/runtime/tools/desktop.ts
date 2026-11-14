@@ -7,6 +7,8 @@
 
 import { contentWords } from "../grounding";
 import { requestedBrowserActions } from "./browserActions";
+import { systemRequest } from "./systemAdmin";
+import { chromeRequest } from "./chrome";
 import type { ArgumentDomain, GroundingVerdict, RequestFacet, ToolOutcome, ToolRequestCheck, ToolSpec } from "../types";
 
 /** The daemon's answer to a call (agent/host/desktopBridge.ts carries it over protocol v2). */
@@ -97,6 +99,12 @@ const ACTUATION_IMPERATIVE =
   /^\s*(please\s+|can you\s+|could you\s+)?(click|double[- ]click|right[- ]click|tap|press|type|enter|fill( in)?|close|minimi[sz]e|maximi[sz]e|restore|focus|activate|switch to|bring|launch|start|run|kill|terminate|quit|drag|scroll|select|resize|move|toggle|tick|untick)\b/i;
 const ACTUATION_ANYWHERE = /\b(click|double[- ]click|right[- ]click|scroll (up|down)|type (into|in)|drag)\b/i;
 export function actuationRefusal(o: string, inputOffered: (tool: string) => boolean = () => true): string | null {
+  // Windows administration (2026-11-14): "kill notepad", "turn off wifi", "restart the computer in 5 minutes" belong to the system tools
+  // (approved by the daemon), not refused here, but ONLY when the daemon offers that tool.
+  const sys = systemRequest(o);
+  if (sys && inputOffered(sys.tool)) return null;
+  const chr = chromeRequest(o);
+  if (chr && inputOffered(chr.tool)) return null;
   // "Open Notepad [and type …]" is an approval request (desktop.launch_app, then the guarded typing), not refused here, but ONLY
   // when the daemon offers the tools it needs. Otherwise it falls through to the refusal below, exactly as before.
   const session = appSession(o);
@@ -493,39 +501,65 @@ function createWindowActionTool(bridge: DesktopBridge, tool: WindowActionRequest
 // request and must match the element the plan uses. Anything else (drag, scroll, right/double click, close, launch, …)
 // is still refused by actuationRefusal.
 
+export type InputTool = "desktop.click_element" | "desktop.type_text" | "desktop.press_keys"
+  | "desktop.right_click_element" | "desktop.double_click_element" | "desktop.scroll" | "desktop.drag_element" | "desktop.select_text";
+export const INPUT_TOOLS: readonly InputTool[] = ["desktop.click_element", "desktop.type_text", "desktop.press_keys",
+  "desktop.right_click_element", "desktop.double_click_element", "desktop.scroll", "desktop.drag_element", "desktop.select_text"];
 export interface InputActionRequest {
-  tool: "desktop.click_element" | "desktop.type_text" | "desktop.press_keys";
+  tool: InputTool;
+  /** type_text: the text to type; select_text: the exact text to select (null: all of it). */
   text: string | null;
   keys: string | null;
   target: string;
   /** The UI Automation control type the request's noun names ("button" -> Button, "field" -> Edit, ...). */
   controlType: string;
+  /** drag_element: the control to drop on. */
+  to?: { target: string; controlType: string } | null;
+  /** scroll: direction and wheel notches. */
+  direction?: "up" | "down" | "left" | "right" | null;
+  amount?: number | null;
 }
 
-const CONTROL_NOUN = "(button|checkbox|check box|link|tab|menu item|radio button|field|text box|textbox|edit box|box|input)";
+const CONTROL_NOUN = "(button|checkbox|check box|link|tab|menu item|radio button|list item|tree item|item|list|document|pane|field|text box|textbox|edit box|box|input)";
 const POLITE = "^\\s*(?:please\\s+|can you\\s+|could you\\s+)?";
 const CLICK_REQ = new RegExp(`${POLITE}click\\s+(?:on\\s+)?(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
 const TYPE_REQ = new RegExp(`${POLITE}(?:type|enter|write)\\s+["“'‘]([^"”'’]{1,200})["”'’]\\s+(?:into|in)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
-const KEY_TOKEN = "((?:(?:ctrl|control|shift)\\s*\\+\\s*)*(?:enter|tab|escape|esc|backspace|delete|space|up|down|left|right|home|end|page ?up|page ?down|f2|[acvxyz]))";
+const KEY_TOKEN = "((?:(?:ctrl|control|shift)\\s*\\+\\s*)*(?:enter|tab|escape|esc|backspace|delete|insert|space|up|down|left|right|home|end|page ?up|page ?down|f10|f2|f3|f5|f6|[abcfilnpstuvxyz]))";
 const PRESS_REQ = new RegExp(`${POLITE}press\\s+${KEY_TOKEN}\\s+(?:in|into|on)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+// Complete desktop input (2026-11-14).
+const RIGHT_CLICK_REQ = new RegExp(`${POLITE}right[- ]?click\\s+(?:on\\s+)?(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+const DOUBLE_CLICK_REQ = new RegExp(`${POLITE}double[- ]?click\\s+(?:on\\s+)?(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+const NUMBER_WORDS: Record<string, number> = { once: 1, one: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+const SCROLL_REQ = new RegExp(`${POLITE}scroll\\s+(up|down|left|right)(?:\\s+(?:by\\s+)?(\\d{1,2}|once|twice|one|two|three|four|five|six|seven|eight|nine|ten)(?:\\s+(?:times|notches|steps|clicks))?)?\\s+(?:in|on|over|inside)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+const DRAG_REQ = new RegExp(`${POLITE}(?:drag(?:\\s+and\\s+drop)?|move)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\s+(?:to|onto|into|over\\s+to)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+const SELECT_ALL_REQ = new RegExp(`${POLITE}select\\s+(?:all(?:\\s+(?:of\\s+)?the)?(?:\\s+text)?|everything|the\\s+whole\\s+text)\\s+(?:in|of)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
+const SELECT_TEXT_REQ = new RegExp(`${POLITE}(?:select|highlight)\\s+(?:the\\s+(?:text|word|words)\\s+)?["“'‘]([^"”'’]{1,200})["”'’]\\s+(?:in|of)\\s+(?:the\\s+)?(.{1,60}?)\\s+${CONTROL_NOUN}\\b`, "i");
 const NOUN_TYPE: Record<string, string> = {
   button: "Button", checkbox: "CheckBox", "check box": "CheckBox", link: "Hyperlink", tab: "TabItem", "menu item": "MenuItem",
   "radio button": "RadioButton", field: "Edit", "text box": "Edit", textbox: "Edit", "edit box": "Edit", box: "Edit", input: "Edit",
+  "list item": "ListItem", item: "ListItem", "tree item": "TreeItem", list: "List", document: "Document", pane: "Pane",
 };
 const typeOf = (noun: string) => NOUN_TYPE[noun.toLowerCase().replace(/\s+/g, " ")] ?? "Edit";
-const INPUT_FORBIDDEN = /\b(double[- ]?click|right[- ]?click|drag|scroll|close|launch|kill|terminate|quit|shut ?down|uninstall|format)\b/i;
+const INPUT_FORBIDDEN = /\b(close|launch|kill|terminate|quit|shut ?down|uninstall|format)\b/i;
 const QUOTED_ANY = /["“'‘][^"”'’]{1,200}["”'’]/g;
-const SECOND_ACTION = /\b(?:and|then)\b\s+(?:then\s+)?(?:click|type|enter|write|press|minimi[sz]e|maximi[sz]e|restore|focus|bring|open|run|launch|close)\b/i;
+const SECOND_ACTION = /\b(?:and|then)\b\s+(?:then\s+)?(?:click|type|enter|write|press|right[- ]?click|double[- ]?click|scroll|drag|select|minimi[sz]e|maximi[sz]e|restore|focus|bring|open|run|launch|close)\b/i;
 
 /** Mirrors the daemon's allow-list (KeyChords.Allowed); the daemon re-validates every chord. */
 const ALLOWED_CHORDS = new Set([
   "Enter", "Tab", "Shift+Tab", "Escape", "Backspace", "Delete", "Space", "Up", "Down", "Left", "Right", "Home", "End",
   "PageUp", "PageDown", "F2", "Ctrl+A", "Ctrl+C", "Ctrl+X", "Ctrl+V", "Ctrl+Z", "Ctrl+Y", "Ctrl+Home", "Ctrl+End",
   "Shift+Home", "Shift+End", "Shift+Left", "Shift+Right",
+  // 2026-11-14 (mirrors KeyChords.Allowed): selection, word navigation and common shortcuts. Never Alt+F4, Alt+Tab, Win, Ctrl+W, Ctrl+Q.
+  "Shift+Up", "Shift+Down", "Shift+PageUp", "Shift+PageDown", "Ctrl+Left", "Ctrl+Right", "Ctrl+Up", "Ctrl+Down",
+  "Ctrl+Shift+Left", "Ctrl+Shift+Right", "Ctrl+Shift+Home", "Ctrl+Shift+End", "Ctrl+Backspace", "Ctrl+Delete",
+  "Ctrl+B", "Ctrl+I", "Ctrl+U", "Ctrl+F", "Ctrl+N", "Ctrl+S", "Ctrl+T", "Ctrl+L", "Ctrl+P", "Ctrl+Shift+Z", "Ctrl+Shift+T",
+  "Ctrl+Tab", "Ctrl+Shift+Tab", "Ctrl+PageUp", "Ctrl+PageDown", "Ctrl+Insert", "Shift+Insert", "Shift+Delete",
+  "F3", "Shift+F3", "F5", "F6", "F10", "Shift+F10",
 ]);
 const KEY_NAMES: Record<string, string> = {
   enter: "Enter", tab: "Tab", escape: "Escape", esc: "Escape", backspace: "Backspace", delete: "Delete", space: "Space",
   up: "Up", down: "Down", left: "Left", right: "Right", home: "Home", end: "End", pageup: "PageUp", pagedown: "PageDown", f2: "F2",
+  f3: "F3", f5: "F5", f6: "F6", f10: "F10", insert: "Insert",
 };
 
 /** "ctrl + a" -> "Ctrl+A"; null if it is not an allowed chord. */
@@ -535,7 +569,7 @@ export function canonicalChord(raw: string): string | null {
   for (const p of parts) {
     if (p === "ctrl" || p === "control") { if (ctrl) return null; ctrl = true; }
     else if (p === "shift") { if (shift) return null; shift = true; }
-    else if (key === null) key = KEY_NAMES[p] ?? (/^[acvxyz]$/.test(p) ? p.toUpperCase() : null);
+    else if (key === null) key = KEY_NAMES[p] ?? (/^[abcfilnpstuvxyz]$/.test(p) ? p.toUpperCase() : null);
     else return null;
     if (key === null && p !== "ctrl" && p !== "control" && p !== "shift") return null;
   }
@@ -595,7 +629,7 @@ export function appSession(o: string): AppSession | null {
   return { app: "notepad", process: "notepad.exe", text };
 }
 
-const INPUT_VERB = "(?:click|type|enter|write|press)";
+const INPUT_VERB = "(?:click|type|enter|write|press|right[- ]?click|double[- ]?click|scroll|drag|select|highlight)";
 /** Step separators, only where the next word starts another input step: ", then", " and then", " then", " and", ";". */
 const STEP_SPLIT = new RegExp(`(?:\\s*,\\s*(?:and\\s+)?(?:then\\s+)?|\\s*;\\s*(?:then\\s+)?|\\s+(?:and\\s+)?then\\s+|\\s+and\\s+)(?=${INPUT_VERB}\\b)`, "gi");
 /** A later step may leave out the control it shares with the step before it ("… then press Enter"). */
@@ -613,8 +647,25 @@ function onlyNamesWindow(rest: string | undefined): boolean {
   return WINDOW_NOUN.test(m) || /\.exe\b/i.test(m) || APPS.some(([re]) => re.test(m));
 }
 
+const unquote = (s: string) => s.replace(/^["“'‘]|["”'’]$/g, "").trim();
 function parseInputStep(seg: string, previous: InputActionRequest | null): InputActionRequest | null {
-  let m = TYPE_REQ.exec(seg);
+  let m = RIGHT_CLICK_REQ.exec(seg);
+  if (m) return { tool: "desktop.right_click_element", text: null, keys: null, target: unquote(m[1]!), controlType: typeOf(m[2]!) };
+  m = DOUBLE_CLICK_REQ.exec(seg);
+  if (m) return { tool: "desktop.double_click_element", text: null, keys: null, target: unquote(m[1]!), controlType: typeOf(m[2]!) };
+  m = SCROLL_REQ.exec(seg);
+  if (m) {
+    const n = m[2] ? (/^\d+$/.test(m[2]) ? Number(m[2]) : NUMBER_WORDS[m[2].toLowerCase()] ?? 3) : 3;
+    if (n < 1 || n > 15) return null;
+    return { tool: "desktop.scroll", text: null, keys: null, target: unquote(m[3]!), controlType: typeOf(m[4]!), direction: m[1]!.toLowerCase() as "up", amount: n };
+  }
+  m = DRAG_REQ.exec(seg);
+  if (m) return { tool: "desktop.drag_element", text: null, keys: null, target: unquote(m[1]!), controlType: typeOf(m[2]!), to: { target: unquote(m[3]!), controlType: typeOf(m[4]!) } };
+  m = SELECT_TEXT_REQ.exec(seg);
+  if (m) return { tool: "desktop.select_text", text: m[1]!, keys: null, target: unquote(m[2]!), controlType: typeOf(m[3]!) };
+  m = SELECT_ALL_REQ.exec(seg);
+  if (m) return { tool: "desktop.select_text", text: null, keys: null, target: unquote(m[1]!), controlType: typeOf(m[2]!) };
+  m = TYPE_REQ.exec(seg);
   if (m) return { tool: "desktop.type_text", text: m[1]!, keys: null, target: m[2]!.trim(), controlType: typeOf(m[3]!) };
   m = PRESS_REQ.exec(seg);
   if (m) { const keys = canonicalChord(m[1]!); return keys ? { tool: "desktop.press_keys", text: null, keys, target: m[2]!.trim(), controlType: typeOf(m[3]!) } : null; }
@@ -668,7 +719,8 @@ export function requestedInputAction(o: string): InputActionRequest | null {
  * (the model never picks a control, as it never picks a window). The daemon receives them as element {controlType, name};
  * it resolves exactly one control whose name OR automation id is exactly that identifier, and refuses anything ambiguous.
  */
-interface InputArgs { process?: string; titleContains?: string; controlType?: string; control?: string; text?: string; keys?: string }
+interface InputArgs { process?: string; titleContains?: string; controlType?: string; control?: string; text?: string; keys?: string;
+  toControlType?: string; toControl?: string; direction?: string; amount?: number }
 
 const offered = (b: DesktopBridge, tool: string): boolean => (b.offers ? b.offers(tool) : true);
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => x !== null))];
@@ -676,10 +728,23 @@ const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string =
 /** Whether the planned arguments are exactly this requested step (tool, control, and its text or keys). */
 function isStep(tool: string, input: InputArgs, a: InputActionRequest): boolean {
   return a.tool === tool && input.controlType === a.controlType && input.control === a.target &&
-    (input.text ?? null) === a.text && (input.keys ?? null) === a.keys;
+    (input.text ?? null) === a.text && (input.keys ?? null) === a.keys &&
+    (input.toControl ?? null) === (a.to?.target ?? null) && (input.toControlType ?? null) === (a.to?.controlType ?? null) &&
+    (input.direction ?? null) === (a.direction ?? null) && (input.amount ?? null) === (a.amount ?? null);
 }
 
-const verbOf = (a: InputActionRequest) => a.tool === "desktop.click_element" ? "click" : a.tool === "desktop.type_text" ? "type into" : `press ${a.keys} in`;
+const verbOf = (a: InputActionRequest) => {
+  switch (a.tool) {
+    case "desktop.click_element": return "click";
+    case "desktop.type_text": return "type into";
+    case "desktop.right_click_element": return "right-click";
+    case "desktop.double_click_element": return "double-click";
+    case "desktop.scroll": return `scroll ${a.direction} ${a.amount}x in`;
+    case "desktop.drag_element": return `drag onto the ${a.to?.target} control`;
+    case "desktop.select_text": return a.text === null ? "select all text in" : "select text in";
+    default: return `press ${a.keys} in`;
+  }
+};
 
 function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): ToolRequestCheck<InputArgs, any> {
   /** The request's steps, only if the daemon offers every input tool they need (otherwise the request is refused). */
@@ -693,6 +758,15 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       d.controlType = own.length ? { kind: "enum", values: uniq(own.map((a) => a.controlType)), optional: false } : none;
       d.control = own.length ? { kind: "enum", values: uniq(own.map((a) => a.target)), optional: false } : none;
       if (tool === "desktop.type_text") d.text = own.length ? { kind: "enum", values: uniq(own.map((a) => a.text)), optional: false } : { kind: "forbidden", reason: "the request quotes no text to type" };
+      if (tool === "desktop.select_text") d.text = own.some((a) => a.text !== null) ? { kind: "enum", values: uniq(own.map((a) => a.text)), optional: own.some((a) => a.text === null) } : { kind: "forbidden", reason: "the request selects all text" };
+      if (tool === "desktop.drag_element") {
+        d.toControl = own.length ? { kind: "enum", values: uniq(own.map((a) => a.to?.target ?? null)), optional: false } : none;
+        d.toControlType = own.length ? { kind: "enum", values: uniq(own.map((a) => a.to?.controlType ?? null)), optional: false } : none;
+      }
+      if (tool === "desktop.scroll") {
+        d.direction = own.length ? { kind: "enum", values: uniq(own.map((a) => a.direction ?? null)), optional: false } : none;
+        // amount is a number (enum domains hold text): it is pinned by ground()/isStep, which compares it exactly.
+      }
       if (tool === "desktop.press_keys") d.keys = own.length ? { kind: "enum", values: uniq(own.map((a) => a.keys)), optional: false } : { kind: "forbidden", reason: "the request names no allowed key" };
       return d;
     },
@@ -714,7 +788,7 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       const out: RequestFacet[] = [];
       steps.forEach((a, i) => {
         if (a.tool !== tool) return;
-        const data = { target: a.target, controlType: a.controlType, text: a.text, keys: a.keys };
+        const data = { target: a.target, controlType: a.controlType, text: a.text, keys: a.keys, to: a.to ?? null, direction: a.direction ?? null, amount: a.amount ?? null };
         out.push(total === 1
           ? { id: `desktop:input:${tool}:${p ?? "*"}:${t ?? "*"}`, tool, description: `${verbOf(a)} the ${a.target} control`, data }
           : { id: `desktop:input:${i + lead + 1}of${total}:${tool}:${p ?? "*"}:${t ?? "*"}`, tool, description: `input ${i + lead + 1} of ${total}: ${verbOf(a)} the ${a.target} control`,
@@ -737,9 +811,9 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
     // Satisfied only when the daemon performed THIS step's input AND an independent observation confirmed its effect.
     satisfies(facet, input, outcome) {
       const o = outcome.output;
-      const d = facet.data as { target: string; controlType: string; text: string | null; keys: string | null };
+      const d = facet.data as InputActionRequest;
       return outcome.ok && !!o && o.executed === true && o.verified === true &&
-        isStep(tool, input, { tool, target: d.target, controlType: d.controlType, text: d.text, keys: d.keys });
+        isStep(tool, input, { ...d, tool });
     },
     identicalStepsAllowed: (input, objective) => stepsOf(objective).filter((a) => isStep(tool, input as InputArgs, a)).length,
     stepFor(facet, objective) {
@@ -749,7 +823,9 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       const t = requestedTitle(objective);
       if (!a || a.tool !== tool || (!p && !t)) return null;
       const input: InputArgs = { ...(p ? { process: p } : {}), ...(t ? { titleContains: t } : {}), controlType: a.controlType, control: a.target,
-        ...(a.text != null ? { text: a.text } : {}), ...(a.keys != null ? { keys: a.keys } : {}) };
+        ...(a.text != null ? { text: a.text } : {}), ...(a.keys != null ? { keys: a.keys } : {}),
+        ...(a.to ? { toControl: a.to.target, toControlType: a.to.controlType } : {}),
+        ...(a.direction ? { direction: a.direction, amount: a.amount ?? 3 } : {}) };
       return this.ground(input, objective).status === "grounded" ? (input as Record<string, unknown>) : null;
     },
     vocabulary: (objective) => {
@@ -757,7 +833,10 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
       return [...VOCAB, "click", "on", "type", "enter", "write", "press", "into", "in", "field", "box", "textbox", "text", "edit", "input",
         "button", "checkbox", "check", "link", "tab", "menu", "item", "radio", "ctrl", "control", "shift", "esc", "escape", "backspace", "delete",
         "space", "up", "down", "left", "right", "home", "end", "page", "pageup", "pagedown", "then", "and", "again", "there", "too",
-        ...steps.flatMap((a) => [...contentWords(a.target), ...contentWords(a.text ?? ""), ...contentWords(a.keys?.replace(/\+/g, " ") ?? "")]),
+        "double", "double-click", "right-click", "doubleclick", "rightclick", "scroll", "by", "times", "notches", "steps", "clicks", "drag", "drop", "move",
+        "onto", "to", "over", "select", "highlight", "all", "everything", "whole", "of", "word", "words", "list", "item", "tree", "document", "pane", "inside",
+        "once", "twice", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        ...steps.flatMap((a) => [...contentWords(a.target), ...contentWords(a.text ?? ""), ...contentWords(a.keys?.replace(/\+/g, " ") ?? ""), ...contentWords(a.to?.target ?? "")]),
         ...appWords(objective)];
     },
   };
@@ -765,6 +844,18 @@ function inputCheck(tool: InputActionRequest["tool"], bridge: DesktopBridge): To
 
 const INPUT_LABEL: Record<InputActionRequest["tool"], string> = {
   "desktop.click_element": "Clicked", "desktop.type_text": "Typed the text into", "desktop.press_keys": "Pressed the keys in",
+  "desktop.right_click_element": "Right-clicked", "desktop.double_click_element": "Double-clicked", "desktop.scroll": "Scrolled",
+  "desktop.drag_element": "Dragged", "desktop.select_text": "Selected text in",
+};
+const INPUT_DESCRIPTION: Record<InputActionRequest["tool"], string> = {
+  "desktop.click_element": "Ask the user (in the HUD) to approve ONE left click on one control of a window they named. Give process and/or titleContains from the request, and element {controlType, automationId or name} exactly as desktop.inspect_window lists it. Never coordinates.",
+  "desktop.type_text": "Ask the user (in the HUD) to approve typing the exact quoted text into one text field of a window they named. Give the window selector, element {controlType, automationId or name} from desktop.inspect_window, and text.",
+  "desktop.press_keys": "Ask the user (in the HUD) to approve pressing ONE allowed key chord (e.g. Enter, Tab, Ctrl+A, Ctrl+S) in one control of a window they named. Give the window selector, element from desktop.inspect_window, and keys.",
+  "desktop.right_click_element": "Ask the user (in the HUD) to approve ONE right click (context menu) on one control of a window they named.",
+  "desktop.double_click_element": "Ask the user (in the HUD) to approve ONE double click on one control of a window they named.",
+  "desktop.scroll": "Ask the user (in the HUD) to approve scrolling up/down/left/right by a number of wheel notches over one control of a window they named.",
+  "desktop.drag_element": "Ask the user (in the HUD) to approve dragging one control and dropping it on another control of the same window.",
+  "desktop.select_text": "Ask the user (in the HUD) to approve selecting text (all of it, or an exact quoted part) in one text control, through UI Automation (no keys).",
 };
 
 /**
@@ -780,11 +871,7 @@ const inputProgress = new Map<string, InputProgress>();
 function createInputTool(bridge: DesktopBridge, tool: InputActionRequest["tool"]): ToolSpec<InputArgs, any> {
   return {
     name: tool,
-    description: tool === "desktop.click_element"
-      ? "Ask the user (in the HUD) to approve ONE left click on one control of a window they named. Give process and/or titleContains from the request, and element {controlType, automationId or name} exactly as desktop.inspect_window lists it. Never coordinates."
-      : tool === "desktop.type_text"
-        ? "Ask the user (in the HUD) to approve typing the exact quoted text into one text field of a window they named. Give the window selector, element {controlType, automationId or name} from desktop.inspect_window, and text."
-        : "Ask the user (in the HUD) to approve pressing ONE allowed key chord (e.g. Enter, Tab, Ctrl+A) in one control of a window they named. Give the window selector, element from desktop.inspect_window, and keys.",
+    description: INPUT_DESCRIPTION[tool],
     inputSchema: {
       type: "object",
       properties: {
@@ -794,8 +881,12 @@ function createInputTool(bridge: DesktopBridge, tool: InputActionRequest["tool"]
         control: { type: "string", minLength: 1, maxLength: 200 },
         ...(tool === "desktop.type_text" ? { text: { type: "string", minLength: 1, maxLength: 200 } } : {}),
         ...(tool === "desktop.press_keys" ? { keys: { type: "string", minLength: 1, maxLength: 32 } } : {}),
+        ...(tool === "desktop.select_text" ? { text: { type: "string", minLength: 1, maxLength: 200 } } : {}),
+        ...(tool === "desktop.drag_element" ? { toControlType: { type: "string", minLength: 1, maxLength: 40 }, toControl: { type: "string", minLength: 1, maxLength: 200 } } : {}),
+        ...(tool === "desktop.scroll" ? { direction: { type: "string", enum: ["up", "down", "left", "right"] }, amount: { type: "integer", minimum: 1, maximum: 15 } } : {}),
       },
-      required: ["controlType", "control", ...(tool === "desktop.type_text" ? ["text"] : tool === "desktop.press_keys" ? ["keys"] : [])],
+      required: ["controlType", "control", ...(tool === "desktop.type_text" ? ["text"] : tool === "desktop.press_keys" ? ["keys"]
+        : tool === "desktop.drag_element" ? ["toControlType", "toControl"] : tool === "desktop.scroll" ? ["direction"] : [])],
     },
     // Only to REQUEST input. The daemon owns the target, the approval, the per-event gates and the verification.
     permissions: ["request:desktop_action"],
@@ -832,6 +923,8 @@ function createInputTool(bridge: DesktopBridge, tool: InputActionRequest["tool"]
         element: { controlType: input.controlType, name: input.control },
         ...(input.text !== undefined ? { text: input.text } : {}),
         ...(input.keys !== undefined ? { keys: input.keys } : {}),
+        ...(input.toControl !== undefined ? { to: { controlType: input.toControlType, name: input.toControl } } : {}),
+        ...(input.direction !== undefined ? { direction: input.direction, amount: input.amount ?? 3 } : {}),
       };
       const { reply, error } = await callDaemon(bridge, tool, args, ctx, 55_000);
       const fail = (message: string, output?: unknown) => { prog.halted = true; return { ok: false, ...(output !== undefined ? { output } : {}), error: pre + message, evidence: "" }; };
@@ -929,8 +1022,10 @@ function createLaunchAppTool(bridge: DesktopBridge): ToolSpec<LaunchInput, any> 
   const catalog = () => offered(bridge, "desktop.launch_app") && offered(bridge, "desktop.list_apps");
   /** An application WITH a web search or a folder to open in it ("open Chrome and search for ...", "open the folder D:\x in VS Code"). */
   const targeted = (o: string): OpenTargetRequest | null => (catalog() ? openTargetRequest(o) : null);
+  /** "Open github.com in Chrome" belongs to the Chrome tools when the daemon offers them (2026-11-14). */
+  const chromeOwned = (o: string) => { const c = chromeRequest(o); return c !== null && offered(bridge, c.tool); };
   const generic = (o: string): string | null =>
-    targeted(o) === null && appSession(o) === null && catalog() ? openAppRequest(o) : null;
+    targeted(o) === null && appSession(o) === null && catalog() && !chromeOwned(o) ? openAppRequest(o) : null;
   const mine = (o: string) => fixedMine(o) || generic(o) !== null || targeted(o) !== null;
   const appOf = (o: string): string => (fixedMine(o) ? appSession(o)!.app : targeted(o)?.app ?? generic(o)!);
   /** Exactly what the request asks to open: the application name and, when given, its search or folder (all as the user said them). */
@@ -1288,5 +1383,64 @@ export const createDesktopTools = (bridge: DesktopBridge): ToolSpec<any, any>[] 
   createOfficeTool(bridge, "office.create_word_document"), createOfficeTool(bridge, "office.create_excel_workbook"),
   // Developer tasks (appended): build or test one project folder.
   createDevTaskTool(bridge),
+  // Complete desktop input (appended 2026-11-14): right/double click, scroll, drag and drop, text selection; clipboard.
+  createInputTool(bridge, "desktop.right_click_element"), createInputTool(bridge, "desktop.double_click_element"), createInputTool(bridge, "desktop.scroll"),
+  createInputTool(bridge, "desktop.drag_element"), createInputTool(bridge, "desktop.select_text"),
+  createClipboardTool(bridge, "desktop.clipboard_write"), createClipboardTool(bridge, "desktop.clipboard_read"),
 ];
+
+// ── desktop.clipboard_write / desktop.clipboard_read (each approved in the HUD; the daemon verifies a write by reading it back) ──
+
+const CLIP_WRITE = /^\s*(?:please\s+|can you\s+|could you\s+)?(?:copy|put|place|set)\s+["“'‘]([^"”'’]{1,4000})["”'’]\s+(?:to|on|onto|in|into)\s+(?:the\s+|my\s+)?clipboard\s*[.!]?\s*$/i;
+const CLIP_READ = /^\s*(?:please\s+|can you\s+|could you\s+)?(?:(?:read|show|tell|paste)\s+(?:me\s+)?(?:what(?:'s|\s+is)\s+(?:on|in)\s+)?(?:the\s+|my\s+)?clipboard|what(?:'s|\s+is)\s+(?:on|in)\s+(?:the\s+|my\s+)?clipboard)\s*[.!?]?\s*$/i;
+export function clipboardRequest(o: string): { tool: "desktop.clipboard_write"; text: string } | { tool: "desktop.clipboard_read" } | null {
+  const w = CLIP_WRITE.exec(o);
+  if (w) return { tool: "desktop.clipboard_write", text: w[1]! };
+  return CLIP_READ.test(o) ? { tool: "desktop.clipboard_read" } : null;
+}
+
+function createClipboardTool(bridge: DesktopBridge, tool: "desktop.clipboard_write" | "desktop.clipboard_read"): ToolSpec<{ text?: string }, any> {
+  const req = (o: string) => { const r = offered(bridge, tool) ? clipboardRequest(o) : null; return r && r.tool === tool ? r : null; };
+  const mine = (o: string) => req(o) !== null;
+  const write = tool === "desktop.clipboard_write";
+  return {
+    name: tool,
+    description: write ? "Put the exact quoted text on the Windows clipboard (approved in the HUD; verified by reading it back)."
+      : "Read the text on the Windows clipboard (approved in the HUD; secret-looking text is withheld).",
+    inputSchema: write ? { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: 4000 } }, required: ["text"] } : { type: "object", properties: {} },
+    permissions: ["request:desktop_action"],
+    risk: "medium",
+    requiresApproval: false,
+    timeoutMs: 60_000,
+    async execute(input, ctx) {
+      const { reply, error } = await callDaemon(bridge, tool, write ? { text: input.text } : {}, ctx, 55_000);
+      if (!reply) return { ok: false, error: error!, evidence: "" };
+      if (reply.status !== "ok") return { ok: false, error: reply.error?.message ?? "Nothing was done.", evidence: "" };
+      const r = reply.result ?? {};
+      if (r.verified !== true) return { ok: false, output: r, error: "The clipboard operation was not confirmed.", evidence: "" };
+      return write ? { ok: true, output: r, evidence: `Put ${r.textLength} character(s) on the clipboard: ${r.observed}.` }
+        : { ok: true, output: r, evidence: r.hasText ? `The clipboard holds ${r.length} character(s)${r.truncated ? " (first part shown)" : ""}:\n${r.text}` : "The clipboard holds no text." };
+    },
+    check: (_i, outcome) => (outcome.output?.verified === true ? { ok: true } : { ok: false, reason: "the clipboard operation was not confirmed" }),
+    requestCheck: {
+      argumentDomains: (o): Record<string, ArgumentDomain> => {
+        const r = req(o);
+        return write ? { text: r && "text" in r ? { kind: "enum", values: [r.text], optional: false } : { kind: "forbidden", reason: "the request quotes no text for the clipboard" } } : {};
+      },
+      relevant: mine,
+      claims: mine,
+      facets: (o) => (mine(o) ? [{ id: tool, tool, description: write ? "put the text on the clipboard" : "read the clipboard", data: req(o) }] : []),
+      ground: (input, o) => {
+        const r = req(o);
+        if (!r) return ungrounded("the request does not ask for the clipboard");
+        if (write && "text" in r && input.text !== r.text) return contradicted("use exactly the quoted text");
+        return grounded("the clipboard operation is the request's");
+      },
+      satisfies: (_f, _i, outcome) => outcome.ok && outcome.output?.verified === true,
+      stepFor: (f, o) => { const r = req(o); return f.tool === tool && r ? ("text" in r ? { text: r.text } : {}) : null; },
+      vocabulary: (o) => ["copy", "put", "place", "set", "to", "on", "onto", "in", "into", "the", "my", "clipboard", "read", "show", "tell", "me", "paste", "what", "what's", "is", "please",
+        ...contentWords((req(o) as { text?: string } | null)?.text ?? "")],
+    },
+  };
+}
 export type DesktopOutcome = ToolOutcome<unknown>;

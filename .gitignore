@@ -55,9 +55,19 @@ playwright-report/
 test-results/
 coverage/
 .nyc_output/
+results/*/
+!results/graphs/
+!results/logs/
+!results/screenshots/
+!results/universal-control-2/
+!results/universal-control-2/**
 results/*.out.txt
 results/*.log
 results/**/*.out.txt
+!results/universal-control-2/*.log
+results/*.png
+results/*.json
+!results/test_summary.json
 
 # ── Scratch Sub-Project Outputs & Ephemera ───────────────────────────────────
 scratch/Benchmark/bin/

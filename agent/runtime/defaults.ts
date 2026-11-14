@@ -6,6 +6,9 @@ import { ToolRegistry } from "./toolRegistry";
 import { createWorkspaceListDirTool, mathEvaluateTool, systemInfoTool, systemTimeTool } from "./tools/builtin";
 import { createFilesystemTools, type FileAccessConfig } from "./tools/filesystem";
 import { createDesktopTools, type DesktopBridge } from "./tools/desktop";
+import { createSystemAdminTools } from "./tools/systemAdmin";
+import { createChromeTools } from "./tools/chrome";
+import { createDevEditTool } from "./tools/devEdit";
 import { createWorkflowTools } from "./tools/workflows";
 import { createPluginTools } from "./tools/pluginTools";
 import { createNoteTools } from "./tools/notes";
@@ -43,6 +46,12 @@ export function createDefaultRegistry(
     registry.register(tool);
   }
   if (options.desktop) for (const tool of createDesktopTools(options.desktop)) registry.register(tool);
+  // Windows administration (2026-11-14): reads free, changes approved by the daemon; the tools act only if the daemon offers them.
+  if (options.desktop) for (const tool of createSystemAdminTools(options.desktop)) registry.register(tool);
+  // The user's own Chrome (2026-11-14): only requests that name Chrome; the daemon authorizes the session and sensitive actions.
+  if (options.desktop) for (const tool of createChromeTools(options.desktop)) registry.register(tool);
+  // Developer code edits (2026-11-14): one exact approved replacement, read back; optional tests through dev.run_task.
+  if (options.desktop) registry.register(createDevEditTool(options.desktop));
   // Workflows: daemon-owned store; the tools exist only with the bridge (and act only if the daemon offers them).
   if (options.desktop) for (const tool of createWorkflowTools(options.desktop)) registry.register(tool);
   // Plugin management requests (the daemon approves; the host runs approved plugins in its sandbox).

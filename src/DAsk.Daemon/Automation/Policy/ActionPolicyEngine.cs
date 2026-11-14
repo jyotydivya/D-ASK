@@ -302,7 +302,14 @@ public class ActionPolicyEngine
         // P1 / P2: element-bound mouse and keyboard input. Never auto-allowed.
         if (normalizedType.Equals(DesktopActionTypes.ClickElement, StringComparison.Ordinal) ||
             normalizedType.Equals(DesktopActionTypes.TypeText, StringComparison.Ordinal) ||
-            normalizedType.Equals(DesktopActionTypes.PressKeys, StringComparison.Ordinal))
+            normalizedType.Equals(DesktopActionTypes.PressKeys, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.RightClick, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.DoubleClick, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.Scroll, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.Drag, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.SelectText, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.ClipboardRead, StringComparison.Ordinal) ||
+            normalizedType.Equals(DesktopActionTypes.ClipboardWrite, StringComparison.Ordinal))
         {
             return (false, ActionRiskLevel.Elevated, "Desktop input requires explicit user approval of the exact action.");
         }
@@ -329,6 +336,14 @@ public class ActionPolicyEngine
         if (normalizedType.Equals(DesktopActionTypes.AppLaunch, StringComparison.Ordinal))
         {
             return (false, ActionRiskLevel.Elevated, "Opening an application requires explicit user approval of the exact application.");
+        }
+
+        // Windows administration, the user's own Chrome (session authorisation and sensitive actions) and approved code edits. Never auto-allowed.
+        if (normalizedType is DesktopActionTypes.ProcessEnd or DesktopActionTypes.ServiceControl or DesktopActionTypes.StartupToggle
+            or DesktopActionTypes.RadioToggle or DesktopActionTypes.VolumeSet or DesktopActionTypes.BrightnessSet or DesktopActionTypes.PowerAction
+            or DesktopActionTypes.PowerCancel or DesktopActionTypes.ChromeAuthorize or DesktopActionTypes.ChromeSensitive or DesktopActionTypes.DevEditFile)
+        {
+            return (false, ActionRiskLevel.Elevated, "This change requires explicit user approval of the exact action.");
         }
 
         // Creating a NEW Word document / Excel workbook with exactly the approved content (OfficeDocumentService). Never auto-allowed.
@@ -1163,6 +1178,28 @@ public static class DesktopActionTypes
     public const string ClickElement = "Desktop.ClickElement";
     public const string TypeText = "Desktop.TypeText";
     public const string PressKeys = "Desktop.PressKeys";
+    // Complete desktop input (2026-11-14): same element-bound pathway, each approved separately.
+    public const string RightClick = "Desktop.RightClick";
+    public const string DoubleClick = "Desktop.DoubleClick";
+    public const string Scroll = "Desktop.Scroll";
+    public const string Drag = "Desktop.Drag";
+    public const string SelectText = "Desktop.SelectText";
+    public const string ClipboardRead = "Desktop.ClipboardRead";
+    public const string ClipboardWrite = "Desktop.ClipboardWrite";
+    // Windows administration (2026-11-14): each consequential change approved separately; reads are not actions.
+    public const string ProcessEnd = "System.EndProcess";
+    public const string ServiceControl = "System.ServiceControl";
+    public const string StartupToggle = "System.StartupToggle";
+    public const string RadioToggle = "System.RadioToggle";
+    public const string VolumeSet = "System.SetVolume";
+    public const string BrightnessSet = "System.SetBrightness";
+    public const string PowerAction = "System.Power";
+    public const string PowerCancel = "System.CancelPower";
+    // The user's own Chrome (2026-11-14): the session is authorised once; sensitive actions each separately.
+    public const string ChromeAuthorize = "Chrome.AuthorizeSession";
+    public const string ChromeSensitive = "Chrome.SensitiveAction";
+    // Developer code edits (2026-11-14): exactly the approved replacement in one file.
+    public const string DevEditFile = "Dev.EditFile";
     public const string BrowserClick = "Browser.Click";
     public const string BrowserFill = "Browser.Fill";
     public const string FilesOrganize = "Files.Organize";

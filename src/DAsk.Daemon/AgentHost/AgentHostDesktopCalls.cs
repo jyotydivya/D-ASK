@@ -154,7 +154,8 @@ public sealed partial class AgentHostManager
                 }
                 rec.InputRequests++;
             }
-            else if (IsActionTool(tool) && !DAsk.Daemon.Automation.Workflows.WorkflowService.IsUnmetered(tool) && !DAsk.Daemon.Automation.Plugins.PluginService.IsUnmetered(tool) && !DAsk.Daemon.Automation.Desktop.WindowTextReadService.IsUnmetered(tool))
+            else if (IsActionTool(tool) && !DAsk.Daemon.Automation.Workflows.WorkflowService.IsUnmetered(tool) && !DAsk.Daemon.Automation.Plugins.PluginService.IsUnmetered(tool) && !DAsk.Daemon.Automation.Desktop.WindowTextReadService.IsUnmetered(tool)
+                && !DAsk.Daemon.Automation.SystemAdmin.SystemAdminService.IsUnmetered(tool) && !DAsk.Daemon.Automation.Chrome.ChromeService.IsUnmetered(tool))
             {
                 if (rec.ActionRequests >= MaxActionRequestsPerTask)
                 {

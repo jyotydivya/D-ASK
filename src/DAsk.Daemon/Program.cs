@@ -244,7 +244,15 @@ public class Program
                     sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId),
                     new DAsk.Daemon.Automation.Dev.DevTaskOptions { Enabled = hostOpts.DevProjectRoots.Length > 0, Roots = hostOpts.DevProjectRoots },
                     sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Dev.DevTaskService>>());
-                return new DAsk.Daemon.Automation.Input.CompositeDesktopActionRequestService(input, appLaunch, browserActions, fileOrganize, notes, workflows, plugins, windowText, office, devTasks, new DAsk.Daemon.Automation.Desktop.DesktopActionRequestService(
+                // Shared approval pathway for the 2026-11-14 services (clipboard, Windows administration, the user's Chrome, code edits).
+                DAsk.Daemon.Automation.Policy.ApprovalGate Gate(string source) => new(
+                    sp.GetRequiredService<ActionPolicyEngine>(), () => engine.IsEmergencyStopped, () => engine.CurrentStopGeneration, sp.GetService<IEvidenceRecorder>(),
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId), source, sp.GetRequiredService<ILoggerFactory>().CreateLogger(source));
+                var clipboard = new DAsk.Daemon.Automation.Input.ClipboardService(Gate("Clipboard"), new DAsk.Daemon.Automation.Input.Win32ClipboardPlatform(),
+                    new DAsk.Daemon.Automation.Input.ClipboardOptions { Enabled = hostOpts.Clipboard }, sp.GetRequiredService<ILoggerFactory>().CreateLogger("Clipboard"));
+                var extra = new List<DAsk.Daemon.Automation.Desktop.IDesktopActionRequestService> { clipboard };
+                extra.AddRange(DAsk.Daemon.Automation.ExtraServices.Create(sp, hostOpts, Gate, engine));
+                return new DAsk.Daemon.Automation.Input.CompositeDesktopActionRequestService(new DAsk.Daemon.Automation.Desktop.IDesktopActionRequestService[] { input, appLaunch, browserActions, fileOrganize, notes, workflows, plugins, windowText, office, devTasks }.Concat(extra).Append(new DAsk.Daemon.Automation.Desktop.DesktopActionRequestService(
                     sp.GetRequiredService<DAsk.Daemon.Automation.Desktop.DesktopReadService>(),
                     sp.GetRequiredService<ActionPolicyEngine>(),
                     () => engine.IsEmergencyStopped,
@@ -255,7 +263,7 @@ public class Program
                     sp.GetRequiredService<ILogger<DAsk.Daemon.Automation.Desktop.DesktopActionRequestService>>(),
                     new DAsk.Daemon.Automation.Desktop.Win32WindowOperationExecutor(),
                     // The owner's HUD lease, checked immediately before acting (resolved per call).
-                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId)));
+                    sessionId => sp.GetRequiredService<HudLivenessMonitor>().IsLive(sessionId))).ToArray());
             });
 
             // Workflows: one daemon-owned store, shared by the agent's tools and the scheduler (which only submits ordinary tasks).

@@ -83,6 +83,22 @@ public class AgentHostOptions
     public bool OfficeDocuments { get; set; } = false;
     /// <summary>Allow "open &lt;browser&gt; and search for …" (a web search needs internet access). Off by default (offline-first).</summary>
     public bool WebSearch { get; set; } = false;
+    /// <summary>desktop.clipboard_read / desktop.clipboard_write, each approved separately in the HUD. Off by default.</summary>
+    public bool Clipboard { get; set; } = false;
+    /// <summary>Windows administration (processes, services, network, audio, display, startup apps, power), reads free, changes approved. Off by default.</summary>
+    public bool SystemAdmin { get; set; } = false;
+    /// <summary>Service names D-ASK may start or stop (each after approval). Empty: services can only be listed and inspected.</summary>
+    public string[] SystemAdminServices { get; set; } = Array.Empty<string>();
+    /// <summary>The user's own Google Chrome through the D-ASK extension and Chrome Native Messaging (no debugging port). Off by default.</summary>
+    public bool ChromeControl { get; set; } = false;
+    /// <summary>dask-chrome-host.exe (the only process allowed on the broker pipe); default: the DAsk.ChromeHost Release build beside this repo.</summary>
+    public string? ChromeHostPath { get; set; }
+    /// <summary>The D-ASK extension id (from the key in extensions/dask-chrome/manifest.json).</summary>
+    public string ChromeExtensionId { get; set; } = "lkiheaganheamabgecpnafiefeiadlpi";
+    /// <summary>The broker pipe the native-messaging host connects to; default derived from the user SID.</summary>
+    public string? ChromeBrokerPipe { get; set; }
+    /// <summary>Folders inside which D-ASK may apply approved code edits (dev.edit_file). Empty: off.</summary>
+    public string[] DevEditRoots { get; set; } = Array.Empty<string>();
     /// <summary>Folders whose projects D-ASK may build or test (dev.run_task), each run after approval. Empty (default): off.</summary>
     public string[] DevProjectRoots { get; set; } = Array.Empty<string>();
     /// <summary>Browser stage 1: the agent may read web pages the user names (local Chromium, network locked to that site). Off by default.</summary>

@@ -25,7 +25,15 @@ public static class GuardedInputTools
     public const string ClickElement = "desktop.click_element";
     public const string TypeText = "desktop.type_text";
     public const string PressKeys = "desktop.press_keys";
-    public static readonly IReadOnlyList<string> All = new[] { ClickElement, TypeText, PressKeys };
+    // Complete desktop input (2026-11-14): the same element-bound, approval-gated pathway.
+    public const string RightClick = "desktop.right_click_element";
+    public const string DoubleClick = "desktop.double_click_element";
+    public const string Scroll = "desktop.scroll";
+    public const string Drag = "desktop.drag_element";
+    /// <summary>Selects text inside ONE text control through UI Automation's TextPattern (no synthetic input at all).</summary>
+    public const string SelectText = "desktop.select_text";
+    public static readonly IReadOnlyList<string> All = new[] { ClickElement, TypeText, PressKeys, RightClick, DoubleClick, Scroll, Drag, SelectText };
+    public static bool IsMouse(string tool) => tool is ClickElement or RightClick or DoubleClick or Scroll or Drag;
 }
 
 public enum InputKind { Mouse, Keyboard }
@@ -155,6 +163,14 @@ public static class ControlResolver
         return new("target_disappeared", "The approved control no longer exists.");
     }
 
+    /// <summary>Like <see cref="Signature"/> but with every element's bounds: a scroll or a drag moves elements without renaming them.</summary>
+    public static string LayoutSignature(UiaInspection insp)
+    {
+        var sb = new StringBuilder();
+        foreach (var n in insp.Nodes) sb.Append(n.ControlType).Append('|').Append(n.Name).Append('|').Append(string.Join(",", n.Bounds)).Append('|').Append(n.IsOffscreen ? '1' : '0').Append('\n');
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
     /// <summary>A coarse signature of what the window shows; a click or key chord is verified by a change in it.</summary>
     public static string Signature(UiaInspection insp)
     {
@@ -176,6 +192,9 @@ public static class KeyChords
         ["Up"] = 0x26, ["Down"] = 0x28, ["Left"] = 0x25, ["Right"] = 0x27, ["Home"] = 0x24, ["End"] = 0x23,
         ["PageUp"] = 0x21, ["PageDown"] = 0x22, ["F2"] = 0x71,
         ["A"] = 0x41, ["C"] = 0x43, ["V"] = 0x56, ["X"] = 0x58, ["Y"] = 0x59, ["Z"] = 0x5A,
+        // Shortcuts (2026-11-14): formatting, find, new, save, tabs, F3/F5/F6/F10; Shift+F10 opens a context menu.
+        ["B"] = 0x42, ["I"] = 0x49, ["U"] = 0x55, ["F"] = 0x46, ["N"] = 0x4E, ["S"] = 0x53, ["T"] = 0x54, ["L"] = 0x4C, ["P"] = 0x50,
+        ["F3"] = 0x72, ["F5"] = 0x74, ["F6"] = 0x75, ["F10"] = 0x79, ["Insert"] = 0x2D,
     };
 
     public static readonly IReadOnlySet<string> Allowed = new HashSet<string>(StringComparer.Ordinal)
@@ -183,6 +202,13 @@ public static class KeyChords
         "Enter", "Tab", "Shift+Tab", "Escape", "Backspace", "Delete", "Space", "Up", "Down", "Left", "Right", "Home", "End",
         "PageUp", "PageDown", "F2", "Ctrl+A", "Ctrl+C", "Ctrl+X", "Ctrl+V", "Ctrl+Z", "Ctrl+Y", "Ctrl+Home", "Ctrl+End",
         "Shift+Home", "Shift+End", "Shift+Left", "Shift+Right",
+        // Selection and word navigation.
+        "Shift+Up", "Shift+Down", "Shift+PageUp", "Shift+PageDown", "Ctrl+Left", "Ctrl+Right", "Ctrl+Up", "Ctrl+Down",
+        "Ctrl+Shift+Left", "Ctrl+Shift+Right", "Ctrl+Shift+Home", "Ctrl+Shift+End", "Ctrl+Backspace", "Ctrl+Delete",
+        // Common shortcuts. Never Alt+F4, Alt+Tab, the Windows key, Ctrl+Alt+…, Ctrl+W (close) or Ctrl+Q (quit).
+        "Ctrl+B", "Ctrl+I", "Ctrl+U", "Ctrl+F", "Ctrl+N", "Ctrl+S", "Ctrl+T", "Ctrl+L", "Ctrl+P", "Ctrl+Shift+Z", "Ctrl+Shift+T",
+        "Ctrl+Tab", "Ctrl+Shift+Tab", "Ctrl+PageUp", "Ctrl+PageDown", "Ctrl+Insert", "Shift+Insert", "Shift+Delete",
+        "F3", "Shift+F3", "F5", "F6", "F10", "Shift+F10",
     };
 
     /// <summary>Parses "Ctrl+A" style text into an allow-listed chord (canonical order Ctrl, Shift), or explains why not.</summary>
@@ -245,6 +271,9 @@ public sealed record MouseMoveTo(int X, int Y) : InputEvent;
 public sealed record MouseLeft(bool Down) : InputEvent;
 public sealed record UnicodeChar(char Unit, bool Down) : InputEvent;
 public sealed record VirtualKey(ushort Vk, bool Down) : InputEvent;
+public sealed record MouseRight(bool Down) : InputEvent;
+/// <summary>Wheel movement in WHEEL_DELTA units (120 = one notch; positive = up / right).</summary>
+public sealed record MouseWheel(int Delta, bool Horizontal) : InputEvent;
 
 /// <summary>Sends input to the OS. Implementations track nothing; <see cref="GuardedInputSequencer"/> tracks what is held.</summary>
 public interface IInputInjector
@@ -293,6 +322,7 @@ public static class GuardedInputSequencer
                 releaseNeeded = true;
                 var release = new List<InputEvent>();
                 if (heldButtons.Contains("left")) release.Add(new MouseLeft(false));
+                if (heldButtons.Contains("right")) release.Add(new MouseRight(false));
                 foreach (var vk in heldKeys) release.Add(new VirtualKey(vk, false));
                 try { releaseOk = injector.Send(release) == release.Count; } catch { releaseOk = false; }
             }
@@ -306,6 +336,8 @@ public static class GuardedInputSequencer
         {
             case MouseLeft { Down: true }: buttons.Add("left"); break;
             case MouseLeft { Down: false }: buttons.Remove("left"); break;
+            case MouseRight { Down: true }: buttons.Add("right"); break;
+            case MouseRight { Down: false }: buttons.Remove("right"); break;
             case VirtualKey { Down: true } k: keys.Add(k.Vk); break;
             case VirtualKey { Down: false } k: keys.Remove(k.Vk); break;
         }
@@ -316,6 +348,50 @@ public static class GuardedInputSequencer
         new InputStep("move", new InputEvent[] { new MouseMoveTo(at.X, at.Y) }),
         new InputStep("click", new InputEvent[] { new MouseLeft(true), new MouseLeft(false) }),
     };
+
+    public static IReadOnlyList<InputStep> RightClick((int X, int Y) at) => new[]
+    {
+        new InputStep("move", new InputEvent[] { new MouseMoveTo(at.X, at.Y) }),
+        new InputStep("click", new InputEvent[] { new MouseRight(true), new MouseRight(false) }),
+    };
+
+    /// <summary>Both clicks in ONE atomic batch, so they fall inside the system double-click time and nothing interleaves.</summary>
+    public static IReadOnlyList<InputStep> DoubleClick((int X, int Y) at) => new[]
+    {
+        new InputStep("move", new InputEvent[] { new MouseMoveTo(at.X, at.Y) }),
+        new InputStep("click", new InputEvent[] { new MouseLeft(true), new MouseLeft(false), new MouseLeft(true), new MouseLeft(false) }),
+    };
+
+    public const int MaxScrollNotches = 15;
+    /// <summary>Pointer onto the control, then one wheel notch per step (the gate runs before each notch).</summary>
+    public static IReadOnlyList<InputStep> Scroll((int X, int Y) at, string direction, int notches)
+    {
+        bool horizontal = direction is "left" or "right";
+        int delta = direction is "up" or "right" ? 120 : -120;
+        var steps = new List<InputStep> { new("move", new InputEvent[] { new MouseMoveTo(at.X, at.Y) }) };
+        for (int i = 0; i < Math.Clamp(notches, 1, MaxScrollNotches); i++) steps.Add(new InputStep("wheel", new InputEvent[] { new MouseWheel(delta, horizontal) }));
+        return steps;
+    }
+
+    public const int DragMoves = 12;
+    /// <summary>
+    /// Press on the source, move in small steps to the destination, release. The button is held ACROSS gates by necessity; if any gate
+    /// refuses, the sequencer's finally path releases it (the item is then dropped where the pointer is, which the result reports).
+    /// </summary>
+    public static IReadOnlyList<InputStep> Drag((int X, int Y) from, (int X, int Y) to)
+    {
+        var steps = new List<InputStep>
+        {
+            new("move", new InputEvent[] { new MouseMoveTo(from.X, from.Y) }),
+            new("press", new InputEvent[] { new MouseLeft(true) }),
+            // A first small move crosses the system drag threshold before the long path.
+            new("drag", new InputEvent[] { new MouseMoveTo(from.X + Math.Sign(to.X - from.X) * 8, from.Y + Math.Sign(to.Y - from.Y) * 8) }),
+        };
+        for (int i = 1; i <= DragMoves; i++)
+            steps.Add(new InputStep("drag", new InputEvent[] { new MouseMoveTo(from.X + (to.X - from.X) * i / DragMoves, from.Y + (to.Y - from.Y) * i / DragMoves) }));
+        steps.Add(new InputStep("release", new InputEvent[] { new MouseLeft(false) }));
+        return steps;
+    }
 
     public static IReadOnlyList<InputStep> Type(string text)
     {

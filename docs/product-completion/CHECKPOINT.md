@@ -1026,3 +1026,22 @@ Tests: knowledge 106/106 (+5), host-protocol 81, manage 30, native-agent 96, spo
 **Voice (person required)**: `scripts/hud/approval-live-voice-chain.ps1` (+ `offline-voice-chain-acceptance.ps1`): three spoken requests (verified tool answer; knowledge -> memory chain; recall). NOT RUN: it needs a person at the microphone.
 
 **Final package `dist/desktop/D-ASK-20261113T044615`** (manifest SHA-256 aa3bb59a…6b6f839, 205 files): `results/packaging/verify-20261113T044615` **26/26** through the real launcher (online). Contains every change of this round.
+
+
+## Universal control round 2 (2026-11-14 ~13:00-15:30): complete desktop input, Windows administration, the user's own Chrome, code-edit verification
+
+Evidence: `results/universal-control-2/*.log` (final-build runs). Nothing committed.
+
+**Implemented**
+- Desktop input (`GuardedInput*.cs`): right-click, double-click (one atomic batch), wheel scroll (per-notch gate), real OLE drag-and-drop (button released in finally on any stop), text selection through UIA TextPattern (no keys), 40+ more allow-listed chords (Ctrl+S/B/I/U/F/T, word selection, F3/F5/Shift+F10; still never Alt+F4/Win/Ctrl+W/Ctrl+Q). Hit test now accepts the approved control or an element in its subtree (WPF/modern buttons). `ClipboardService` (read and write each approved; write verified by read-back; secret-looking text withheld). New action types + HUD card summaries + Rust foreground grant.
+- `ApprovalGate` (shared approval pathway for the new services, same sequence as DevTaskService).
+- Windows administration (`Automation/SystemAdmin`): processes (list/info/end; Windows/security/D-ASK processes refused), services (list/info; start/stop only allow-listed, UAC respected), network + Wi-Fi/Bluetooth radios (WinRT), volume/mute (Core Audio), displays + brightness (WMI), current-user startup apps (Task Manager switch), power (sleep/restart/shutdown/sign-out always scheduled >=30 s, cancellable, Emergency Stop aborts). Fixed PowerShell scripts with validated tokens only; whole script is one try/catch (stdin mode runs line by line: found by the live test).
+- The user's Chrome: MV3 extension `extensions/dask-chrome` (id lkiheaganheamabgecpnafiefeiadlpi; nativeMessaging/tabs/scripting; host access only localhost + per-site grants from its popup), native host `src/DAsk.ChromeHost` (relay only), daemon `ChromeBroker` (user-only hardened pipe, exact host exe, Chrome parent check, extension origin check; no TCP) and `ChromeService` (one session authorization; separate approval for buy/pay/send/delete/submit/account clicks; password/card/OTP fields never filled; offline guard; Emergency Stop revokes in daemon and extension). `scripts/chrome/register-native-host.ps1` (HKCU).
+- Code edits: `DevEditService` (dev.edit_file: exact unique replacement inside AgentHost:DevEditRoots, diff on the card, SHA re-check after approval, backup first, atomic write, read-back; CRLF/BOM kept) + agent grammar incl. "... and run the tests in <folder>".
+- Agent: grammar + tools for all of the above (`systemAdmin.ts`, `chrome.ts`, `devEdit.ts`, desktop.ts extensions), protocol exact allowlist (+29 names, max 128).
+
+**Tested**
+- Live (real Windows; the test plays the HUD, NOT human-in-the-loop): CompleteInputLiveTests (WPF fixture: double/right click, scroll, drag-drop, select, clipboard, Emergency Stop mid-scroll) PASS; GuardedInputLiveTests PASS; SystemAdminLiveTests (Wi-Fi off->on, Bluetooth on->off, volume/mute, brightness, startup toggle, restart/shutdown scheduled+cancelled, Emergency Stop abort) PASS; ChromeLiveTests (real Chrome 157, throwaway profile; harness installs the extension over a CDP pipe because Chrome 137+ removed --load-extension) PASS; DevEditTests (real npm tests fail before, pass after) PASS.
+- Daemon suite 669 passed / 6 skipped / 1 intermittent (Phase7B1bLiveTests: passes alone, failed under concurrent load). 36 TS suites all pass (desktop 257, system-admin 40, chrome 22, dev-edit 4, ...). Agent host + frontend + Rust HUD (release) rebuilt. Package NOT rebuilt.
+
+**Not done / limits**: real-profile Chrome needs the user to load the unpacked extension once; Chrome host not yet in the package; display resolution change not offered (read-only); service start/stop needs admin for most services; HUD human-in-the-loop acceptance still deferred.
