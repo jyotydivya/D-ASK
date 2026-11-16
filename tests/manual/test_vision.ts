@@ -1,4 +1,4 @@
-import { visionControlService } from "./lib/agent/tools/desktop/visionControl";
+import { visionControlService } from "../../lib/agent/tools/desktop/visionControl";
 
 async function main() {
   console.log("Testing Vision Control Service...");

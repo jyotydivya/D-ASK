@@ -1,5 +1,5 @@
-import { mouseKeyboardService } from "./lib/agent/tools/desktop/mouseKeyboard";
-import { pcControlService } from "./lib/agent/tools/desktop/pcControl";
+import { mouseKeyboardService } from "../../lib/agent/tools/desktop/mouseKeyboard";
+import { pcControlService } from "../../lib/agent/tools/desktop/pcControl";
 
 async function main() {
   console.log("Testing PC Control and Mouse/Keyboard Services...");

@@ -4,7 +4,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011%20x64-blue.svg)](https://microsoft.com/windows)
 [![Offline First](https://img.shields.io/badge/offline--first-100%25%20air--gapped-success.svg)](docs/product-completion/FINAL-ACCEPTANCE-AUDIT-2026-11-16.md)
-[![QA Status](https://img.shields.io/badge/QA%20Verdict-PASS%20(Core%20Desktop)-brightgreen.svg)](DASK_INDEPENDENT_QA_REPORT.md)
+[![QA Status](https://img.shields.io/badge/QA%20Verdict-PASS%20%28Core%20Desktop%29-brightgreen.svg)](docs/audits/DASK_INDEPENDENT_QA_REPORT.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **D-ASK** is an offline-first, native Windows 11 AI desktop assistant. It combines an Iron Man–inspired holographic 3D orb HUD, local speech recognition, local language model reasoning, and verified desktop automation. 
@@ -25,11 +25,11 @@ D-ASK separates cognitive reasoning from operating system privileges:
 ```mermaid
 flowchart TD
     subgraph Presentation["Presentation & Native Control (Rust / wgpu / WebView2)"]
-        OVERLAY["Transparent Win32 Overlay<br/>(WS_EX_LAYERED + DirectComposition)"]
-        ORB["3D Holographic Orb<br/>(wgpu / WGSL Shader & Three.js)"]
-        HOTKEY["Isolated Panic Hotkey Thread<br/>(RegisterHotKey Ctrl+Shift+F12)"]
-        LATCH["Native Stop Latch<br/>(Monotonic Epoch Counter)"]
-        HUD_UI["React 19 HUD<br/>(ApprovalSurface / AgentStatus / VoiceIndicator)"]
+        OVERLAY["Transparent Win32 Overlay<br/>WS_EX_LAYERED + DirectComposition"]
+        ORB["3D Holographic Orb<br/>wgpu / WGSL Shader & Three.js"]
+        HOTKEY["Isolated Panic Hotkey Thread<br/>RegisterHotKey Ctrl+Shift+F12"]
+        LATCH["Native Stop Latch<br/>Monotonic Epoch Counter"]
+        HUD_UI["React 19 HUD<br/>ApprovalSurface / AgentStatus / VoiceIndicator"]
         
         OVERLAY --> HUD_UI
         OVERLAY --> ORB
@@ -37,11 +37,11 @@ flowchart TD
     end
 
     subgraph SecurityDaemon["Security & Operating System Core (C# .NET 8)"]
-        IPC["Hardened Named Pipe Server<br/>(\\\\.\\pipe\\dask-ipc)"]
-        POLICY["Action Policy Engine<br/>(Canonical SHA-256 Hashing)"]
-        EXEC["Action Execution Engine<br/>(Drain Integrity & LRU Stop Cache)"]
-        UIA["Observation & UI Automation<br/>(COM IUIAutomation + GDI BitBlt)"]
-        JOB["Agent Supervisor<br/>(Windows Job Object)"]
+        IPC["Hardened Named Pipe Server<br/>Named Pipe: dask-ipc"]
+        POLICY["Action Policy Engine<br/>Canonical SHA-256 Hashing"]
+        EXEC["Action Execution Engine<br/>Drain Integrity & LRU Stop Cache"]
+        UIA["Observation & UI Automation<br/>COM IUIAutomation + GDI BitBlt"]
+        JOB["Agent Supervisor<br/>Windows Job Object"]
         
         IPC --> EXEC
         IPC --> POLICY
@@ -50,11 +50,11 @@ flowchart TD
     end
 
     subgraph AgentHost["Reasoning Engine (TypeScript / Node.js)"]
-        HOST["Stdio Agent Host<br/>(agent/host/stdioHost.ts)"]
-        RUNTIME["Agent Runtime 2.0<br/>(Planner, Verifier & Grounding)"]
-        LOCAL_LLM["Local llama-server<br/>(GGUF: Qwen 0.5B / 1.5B / 3B)"]
-        WHISPER["Local whisper.cpp<br/>(16 kHz Mono GGML Base English)"]
-        RAG["Local Knowledge Base & Memory<br/>(SQLite FTS5 + bge-small-en-v1.5)"]
+        HOST["Stdio Agent Host<br/>agent/host/stdioHost.ts"]
+        RUNTIME["Agent Runtime 2.0<br/>Planner, Verifier & Grounding"]
+        LOCAL_LLM["Local llama-server<br/>GGUF: Qwen 0.5B / 1.5B / 3B"]
+        WHISPER["Local whisper.cpp<br/>16 kHz Mono GGML Base English"]
+        RAG["Local Knowledge Base & Memory<br/>SQLite FTS5 + bge-small-en-v1.5"]
         
         HOST --> RUNTIME
         RUNTIME --> LOCAL_LLM
@@ -63,9 +63,9 @@ flowchart TD
     end
 
     %% Communication Links
-    LATCH ==>|"Priority IPC Channel (Cap 16)<br/>EmergencyStop / Resume"| IPC
-    HUD_UI <-->|"Action Approvals / State Sync"| IPC
-    JOB <==|"Stdio JSON-RPC 2.0 (v2)<br/>Action Requests (Guarded)"| HOST
+    LATCH -->|Priority IPC: Emergency Stop / Resume| IPC
+    HUD_UI ---|Action Approvals & State Sync| IPC
+    JOB -->|Stdio JSON-RPC 2.0: Guarded Actions| HOST
 ```
 
 ### Key Architectural Guarantees
@@ -260,11 +260,11 @@ cargo test --manifest-path src/hud-native/Cargo.toml
 
 ### Comprehensive QA Reports
 - [FINAL-ACCEPTANCE-AUDIT-2026-11-16.md](docs/product-completion/FINAL-ACCEPTANCE-AUDIT-2026-11-16.md) — Authoritative final acceptance report.
-- [DASK_INDEPENDENT_QA_REPORT.md](DASK_INDEPENDENT_QA_REPORT.md) — Independent QA audit & defect verification report.
-- [DASK_FUNCTIONAL_COVERAGE_MATRIX.md](DASK_FUNCTIONAL_COVERAGE_MATRIX.md) — 8-domain multi-layer test coverage matrix.
-- [DASK_REPRODUCIBLE_BUG_REPORT.md](DASK_REPRODUCIBLE_BUG_REPORT.md) — Tracking and resolution verification of defects BUG-001 through BUG-008.
-- [DASK_REGRESSION_RESULTS.md](DASK_REGRESSION_RESULTS.md) — Cross-build regression comparison across builds `151233`, `210103`, and `223649`.
-- [DASK_MANUAL_TEST_REQUIREMENTS.md](DASK_MANUAL_TEST_REQUIREMENTS.md) — Human-in-the-loop and physical hardware test protocols.
+- [DASK_INDEPENDENT_QA_REPORT.md](docs/audits/DASK_INDEPENDENT_QA_REPORT.md) — Independent QA audit & defect verification report.
+- [DASK_FUNCTIONAL_COVERAGE_MATRIX.md](docs/audits/DASK_FUNCTIONAL_COVERAGE_MATRIX.md) — 8-domain multi-layer test coverage matrix.
+- [DASK_REPRODUCIBLE_BUG_REPORT.md](docs/audits/DASK_REPRODUCIBLE_BUG_REPORT.md) — Tracking and resolution verification of defects BUG-001 through BUG-008.
+- [DASK_REGRESSION_RESULTS.md](docs/audits/DASK_REGRESSION_RESULTS.md) — Cross-build regression comparison across builds `151233`, `210103`, and `223649`.
+- [DASK_MANUAL_TEST_REQUIREMENTS.md](docs/audits/DASK_MANUAL_TEST_REQUIREMENTS.md) — Human-in-the-loop and physical hardware test protocols.
 
 ---
 
