@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { DeviceInfo, HardwareDiagnostics } from "@/app/api/devices/route";
 
 interface DevicePanelProps {
@@ -9,6 +9,29 @@ interface DevicePanelProps {
   onControlDevice: (action: string, payload?: { targetApp?: string; searchQuery?: string; deviceIp?: string; pairPort?: string; pairCode?: string; pinCode?: string; targetDeviceId?: string; broadcastAll?: boolean; newDeviceName?: string; newDeviceOs?: "Android" | "iOS" }) => void;
   onRefreshDevices?: () => void;
   isExecuting?: boolean;
+}
+
+type DevicePayload = { targetApp?: string; searchQuery?: string; deviceIp?: string; pairPort?: string; pairCode?: string; newDeviceName?: string; newDeviceOs?: "Android" | "iOS" };
+
+/** One plain sentence for what a button will do, or null for an action this panel does not run. */
+function describeDeviceAction(action: string, payload: DevicePayload | undefined, phone: string): string | null {
+  switch (action) {
+    case "lock": return `Turn the screen of ${phone} off (lock it), once.`;
+    case "unlock": return `Wake the screen of ${phone}, once. No PIN or pattern is entered.`;
+    case "go_home":
+    case "home": return `Press the Home button on ${phone}, once.`;
+    case "volume_up": return `Press Volume Up on ${phone}, once.`;
+    case "volume_down": return `Press Volume Down on ${phone}, once.`;
+    case "launch_app":
+    case "launch": return `Open ${(payload?.targetApp ?? "an app").toUpperCase()} on ${phone}, once.`;
+    case "take_screenshot":
+    case "screenshot": return `Take a screenshot of ${phone}. It is saved in the phone's Gallery (Pictures/Screenshots) and shown in this panel.`;
+    case "enable_tcpip": return `Switch ${phone} to Wi-Fi debugging on port 5555 (adb tcpip 5555), once.`;
+    case "pair_connect": return "Pair this PC with the phone that is showing its pairing dialog, using the 6-digit code you typed, then connect to it over Wi-Fi (adb pair, then adb connect), once.";
+    // pair_discover only looks for phones (read-only) and goes straight through the setup modal.
+    // pair_bluetooth is no longer dispatched from this panel.
+    default: return null;
+  }
 }
 
 export default function DevicePanel({
@@ -24,12 +47,19 @@ export default function DevicePanel({
   const [broadcastAll, setBroadcastAll] = useState(true);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [bluetoothIp, setBluetoothIp] = useState("192.168.137.37:38765");
-  const [pairPortInput, setPairPortInput] = useState("");
+  // 6-digit pairing code — cleared from state as soon as the request is sent; never logged.
   const [pairCodeInput, setPairCodeInput] = useState("");
+  // Live status text shown in the setup modal during discover / pair / connect.
+  const [setupStatus, setSetupStatus] = useState<{ text: string; kind: "idle" | "busy" | "ok" | "err" }>({ text: "", kind: "idle" });
   const [newDevName, setNewDevName] = useState("iPhone 15 Pro");
   const [newDevOs, setNewDevOs] = useState<"Android" | "iOS">("iOS");
   const [savedPin, setSavedPin] = useState("");
+  // Every panel button first asks here; the action runs only after APPROVE. (A confirmation shown by this panel: the daemon does not
+  // enforce it, unlike the approval cards for requests typed into the console.)
+  const [pending, setPending] = useState<{ action: string; payload?: DevicePayload; run?: () => void } | null>(null);
+  const [showShot, setShowShot] = useState(false);
+  // Ref to the code input so we can focus it when the modal opens.
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   // Poll list of all devices & diagnostics
   useEffect(() => {
@@ -39,9 +69,6 @@ export default function DevicePanel({
         const data = (await res.json()) as { devices?: DeviceInfo[]; activeDevice?: DeviceInfo; diagnostics?: HardwareDiagnostics };
         if (data.diagnostics) {
           setDiagnostics(data.diagnostics);
-          if (data.diagnostics.discoveredMdnsDevice && bluetoothIp === "192.168.137.38:37517") {
-            setBluetoothIp(data.diagnostics.discoveredMdnsDevice);
-          }
         }
         if (data.devices && data.devices.length > 0) {
           setDevicesList(data.devices);
@@ -56,12 +83,20 @@ export default function DevicePanel({
     void fetchAll();
     const interval = setInterval(fetchAll, 2500);
     return () => clearInterval(interval);
-  }, [selectedDeviceId, bluetoothIp]);
+  }, [selectedDeviceId]);
 
   useEffect(() => {
     const pin = window.localStorage.getItem("ultron-device-pin");
     if (pin) setSavedPin(pin);
   }, []);
+
+  // Focus the code input each time the setup modal opens.
+  useEffect(() => {
+    if (showSetupGuide) {
+      setSetupStatus({ text: "", kind: "idle" });
+      setTimeout(() => codeInputRef.current?.focus(), 80);
+    }
+  }, [showSetupGuide]);
 
   const updatePin = (pin: string) => {
     setSavedPin(pin);
@@ -71,7 +106,7 @@ export default function DevicePanel({
   const connectedDevs = devicesList.filter((d) => d.status === "CONNECTED");
   const activeDev = connectedDevs.find((d) => d.id === selectedDeviceId) || connectedDevs[0] || null;
 
-  const dispatchAction = (action: string, payload?: { targetApp?: string; searchQuery?: string; deviceIp?: string; pairPort?: string; pairCode?: string; newDeviceName?: string; newDeviceOs?: "Android" | "iOS" }) => {
+  const runAction = (action: string, payload?: DevicePayload) => {
     onControlDevice(action, {
       ...payload,
       targetDeviceId: broadcastAll ? undefined : selectedDeviceId,
@@ -80,10 +115,247 @@ export default function DevicePanel({
     });
   };
 
+  // A button press asks first; an action this panel does not know goes straight through and is answered with an error.
+  const dispatchAction = (action: string, payload?: DevicePayload) => {
+    if (describeDeviceAction(action, payload, "x") === null) { runAction(action, payload); return; }
+    setPending({ action, payload });
+  };
+
+  // ── Wireless pairing flow ─────────────────────────────────────────────────────────────────────────────────────────
+
+  /** POST /api/devices with an action; returns the parsed JSON body. */
+  const postDevice = async (
+    action: string,
+    extra: Record<string, string> = {}
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    result?: string;
+    pairingEndpoints?: string[];
+    connectEndpoints?: string[];
+    connectedTo?: string;
+  }> => {
+    try {
+      const res = await fetch("/api/devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      return (await res.json()) as {
+        success: boolean;
+        error?: string;
+        result?: string;
+        pairingEndpoints?: string[];
+        connectEndpoints?: string[];
+        connectedTo?: string;
+      };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  };
+
+  /** "FIND PHONE" button: runs pair_discover and updates status text. No phone pairing happens here. */
+  const handleFindPhone = async () => {
+    setSetupStatus({ text: "🔍 Scanning for phones with an open pairing dialog…", kind: "busy" });
+    const data = await postDevice("pair_discover");
+    if (!data.success) {
+      setSetupStatus({ text: `❌ Scan failed: ${data.error ?? "unknown error"}`, kind: "err" });
+      return;
+    }
+    const pairCount = data.pairingEndpoints?.length ?? 0;
+    const connCount = data.connectEndpoints?.length ?? 0;
+    if (pairCount === 0 && connCount === 0) {
+      setSetupStatus({ text: "⚠️ No phone found. Make sure the phone's 'Pair device with pairing code' dialog is open.", kind: "err" });
+    } else if (pairCount > 0) {
+      const eps = data.pairingEndpoints!.join(", ");
+      setSetupStatus({ text: `✅ Found pairing dialog on: ${eps}. Enter the 6-digit code and press PAIR AND CONNECT.`, kind: "ok" });
+    } else {
+      setSetupStatus({ text: `✅ Phone already reachable at: ${data.connectEndpoints!.join(", ")}. You can close this dialog.`, kind: "ok" });
+    }
+  };
+
+  /** "PAIR AND CONNECT" button: validates code locally, posts pair_connect. Code is cleared from state immediately after. */
+  const handlePairAndConnect = () => {
+    const code = pairCodeInput.trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+      setSetupStatus({ text: "❌ The code must be exactly 6 digits (0–9). Check the phone screen.", kind: "err" });
+      return;
+    }
+    // Clear the code from state at once — it must not persist in the component; the closure below holds it only until APPROVE/DENY.
+    setPairCodeInput("");
+    setSetupStatus({ text: "Waiting for your approval…", kind: "busy" });
+    setPending({ action: "pair_connect", run: () => { void sendPair(code); } });
+  };
+
+  const sendPair = async (sentCode: string) => {
+    setSetupStatus({ text: "🔗 Pairing… (this takes up to 25 seconds, keep the phone dialog open)", kind: "busy" });
+    const data = await postDevice("pair_connect", { pairCode: sentCode });
+    // sentCode goes out of scope here; it was never logged or written to disk by this component.
+    if (data.success) {
+      setSetupStatus({ text: `✅ ${data.result ?? `Connected to ${data.connectedTo ?? "the phone"}`}`, kind: "ok" });
+      if (onRefreshDevices) onRefreshDevices();
+      // Auto-close the modal after a short delay so the user can read the confirmation.
+      setTimeout(() => setShowSetupGuide(false), 2200);
+    } else {
+      setSetupStatus({ text: `❌ ${data.error ?? "Pairing failed for an unknown reason."}`, kind: "err" });
+    }
+  };
+
+  const approvalCard = pending ? (
+    <div className="device-approval-backdrop" data-hud-interactive>
+      <div className="device-approval-card" role="alertdialog" aria-label="Approval required">
+        <div className="device-approval-title">APPROVAL REQUIRED: ONE ACTION</div>
+        <div className="device-approval-text">{describeDeviceAction(pending.action, pending.payload, activeDev?.name ?? "the phone")}</div>
+        <div className="device-approval-note">Nothing runs until you press APPROVE. DENY cancels.</div>
+        <div className="device-approval-buttons">
+          <button type="button" className="dev-btn device-approve" onClick={() => { const p = pending; setPending(null); if (p.run) p.run(); else runAction(p.action, p.payload); }}>APPROVE</button>
+          <button type="button" className="dev-btn device-deny" onClick={() => { if (pending.run) setSetupStatus({ text: "Pairing cancelled. Type the code again to retry.", kind: "idle" }); setPending(null); }}>DENY</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const shotOverlay = showShot && activeDev?.screenshotUrl ? (
+    <div className="device-shot-backdrop" data-hud-interactive onClick={() => setShowShot(false)}>
+      <img className="device-shot-full" src={activeDev.screenshotUrl} alt="Phone screenshot, full size" />
+      <div className="device-shot-hint">CLICK ANYWHERE TO CLOSE</div>
+    </div>
+  ) : null;
+
+  // ── Status badge style inside the setup modal ────────────────────────────────────────────────────────────────────
+  const statusColor: Record<string, string> = { idle: "transparent", busy: "rgba(255,170,0,0.15)", ok: "rgba(0,255,150,0.15)", err: "rgba(255,60,60,0.15)" };
+  const statusBorder: Record<string, string> = { idle: "transparent", busy: "#ffaa00", ok: "#00ffaa", err: "#ff5533" };
+
+  // ── The pairing setup modal (shared between "no phone" state and the connected state's bottom bar) ───────────────
+  const setupModal = showSetupGuide ? (
+    <div className="modal-backdrop" data-hud-interactive onClick={() => setShowSetupGuide(false)}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>CONNECT PHONE VIA WIRELESS DEBUGGING</span>
+          <button type="button" className="modal-close" onClick={() => setShowSetupGuide(false)}>✕</button>
+        </div>
+        <div className="modal-body">
+
+          {/* 3-step instructions */}
+          <div className="guide-steps" style={{ fontSize: "10px", lineHeight: "1.5" }}>
+            <div className="step">
+              <span className="step-num">1</span>
+              <span>On your phone: <strong>Settings → Developer Options → Wireless Debugging</strong><br />
+                Tap <strong>&quot;Pair device with pairing code&quot;</strong> and <strong>keep that dialog open</strong>.</span>
+            </div>
+            <div className="step">
+              <span className="step-num">2</span>
+              <span>Press <strong>FIND PHONE</strong> below (this PC and the phone must be on the same Wi-Fi).</span>
+            </div>
+            <div className="step">
+              <span className="step-num">3</span>
+              <span>Type the <strong>6-digit code</strong> shown on the phone&apos;s pairing dialog, then press <strong>PAIR AND CONNECT</strong>.</span>
+            </div>
+          </div>
+
+          {/* Status banner */}
+          {setupStatus.kind !== "idle" && (
+            <div style={{
+              marginTop: "10px",
+              background: statusColor[setupStatus.kind],
+              border: `1px solid ${statusBorder[setupStatus.kind]}`,
+              borderRadius: "4px",
+              padding: "7px 10px",
+              fontSize: "9px",
+              lineHeight: "1.4",
+              color: setupStatus.kind === "err" ? "#ff9988" : setupStatus.kind === "ok" ? "#88ffcc" : "#ffcc66",
+            }}>
+              {setupStatus.text}
+            </div>
+          )}
+
+          {/* Code input + action buttons */}
+          <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "9px", opacity: 0.8, display: "block", marginBottom: "4px", color: "#88ffcc" }}>
+                6-DIGIT PAIRING CODE (from the phone screen):
+              </label>
+              <input
+                ref={codeInputRef}
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={pairCodeInput}
+                onChange={(e) => setPairCodeInput(e.target.value.replace(/\D/g, ""))}
+                placeholder="e.g. 492817"
+                className="command-input"
+                style={{
+                  width: "100%",
+                  border: "1px solid var(--hud-border)",
+                  borderRadius: "3px",
+                  padding: "8px 12px",
+                  fontSize: "20px",
+                  fontFamily: "monospace",
+                  letterSpacing: "0.3em",
+                  textAlign: "center",
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") void handlePairAndConnect(); }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="dev-btn"
+                style={{ flex: 1, padding: "8px", fontWeight: "bold", fontSize: "9px" }}
+                disabled={setupStatus.kind === "busy"}
+                onClick={() => void handleFindPhone()}
+              >
+                🔍 FIND PHONE
+              </button>
+              <button
+                type="button"
+                className="modal-btn-primary"
+                style={{ flex: 2, padding: "8px", fontWeight: "bold", background: "var(--hud-color)", color: "#000" }}
+                disabled={setupStatus.kind === "busy" || pairCodeInput.length !== 6}
+                onClick={() => void handlePairAndConnect()}
+              >
+                ⚡ PAIR AND CONNECT
+              </button>
+            </div>
+          </div>
+
+          {/* Alternative: USB tcpip */}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "10px", marginTop: "12px" }}>
+            <div style={{ fontSize: "9px", opacity: 0.7, marginBottom: "4px" }}>
+              ALTERNATIVE: Plug phone in via USB once and click below to permanently enable Wireless ADB on port 5555:
+            </div>
+            <button
+              type="button"
+              className="dev-btn"
+              style={{ width: "100%", padding: "6px", fontSize: "9px" }}
+              onClick={() => { dispatchAction("enable_tcpip"); }}
+            >
+              🔌 ENABLE WI-FI ADB PORT 5555 (VIA USB CABLE)
+            </button>
+          </div>
+
+          <div className="modal-actions" style={{ marginTop: "12px" }}>
+            <button
+              type="button"
+              className="dev-btn"
+              onClick={() => {
+                if (onRefreshDevices) onRefreshDevices();
+                setShowSetupGuide(false);
+              }}
+            >
+              RE-SCAN ADB DEVICES
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!activeDev) {
     return (
       <>
-        <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
+        {approvalCard}{shotOverlay}<aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
           <div className="device-header">
             <div className="device-title-wrap">
               <span className="device-indicator" data-physical={false} />
@@ -143,9 +415,7 @@ export default function DevicePanel({
                   color: "#00ffaa",
                   cursor: "pointer",
                 }}
-                onClick={() => {
-                  dispatchAction("enable_tcpip");
-                }}
+                onClick={() => { dispatchAction("enable_tcpip"); }}
               >
                 🔌 ENABLE WI-FI ADB PORT 5555 (VIA USB CABLE)
               </button>
@@ -153,123 +423,7 @@ export default function DevicePanel({
           </div>
         </aside>
 
-        {showSetupGuide && (
-          <div className="modal-backdrop" data-hud-interactive onClick={() => setShowSetupGuide(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <span>WIRELESS PHONE CONNECTION</span>
-                <button type="button" className="modal-close" onClick={() => setShowSetupGuide(false)}>✕</button>
-              </div>
-              <div className="modal-body">
-                {diagnostics?.hotspotIps && diagnostics.hotspotIps.length > 0 && (
-                  <div style={{ background: "rgba(0, 180, 255, 0.15)", border: "1px solid #00b4ff", padding: "6px 10px", borderRadius: "4px", marginBottom: "10px", fontSize: "10px", color: "#88ddff" }}>
-                    🔥 Laptop Hotspot Device Detected:{" "}
-                    {diagnostics.hotspotIps.map((ip) => (
-                      <button
-                        key={ip}
-                        type="button"
-                        onClick={() => setBluetoothIp(`${ip}:38765`)}
-                        style={{
-                          background: "#00b4ff",
-                          color: "#000",
-                          border: "none",
-                          borderRadius: "3px",
-                          padding: "2px 6px",
-                          fontSize: "9px",
-                          fontWeight: "bold",
-                          marginLeft: "4px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {ip} (Fill)
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {diagnostics?.discoveredMdnsDevice && (
-                  <div style={{ background: "rgba(0,255,150,0.15)", border: "1px solid #00ffaa", padding: "6px 10px", borderRadius: "4px", marginBottom: "10px", fontSize: "10px", color: "#88ffcc" }}>
-                    ✨ Discovered phone on Wi-Fi at: <code>{diagnostics.discoveredMdnsDevice}</code>
-                  </div>
-                )}
-
-                <div className="guide-steps" style={{ fontSize: "10px", lineHeight: "1.4" }}>
-                  <div className="step">
-                    <span className="step-num">1</span>
-                    <span>Connect phone to your <strong>Laptop Mobile Hotspot</strong> or Wi-Fi.</span>
-                  </div>
-                  <div className="step">
-                    <span className="step-num">2</span>
-                    <span>On phone: <strong>Settings → Developer Options</strong> → TAP DIRECTLY ON THE TEXT <strong>"Wireless Debugging"</strong> (not just the switch!).</span>
-                  </div>
-                  <div className="step">
-                    <span className="step-num">3</span>
-                    <span>Copy the <strong>IP &amp; PORT</strong> shown inside that menu (e.g. <code>192.168.137.37:38765</code>) and click <strong>CONNECT PHONE NOW</strong>.</span>
-                  </div>
-                </div>
-
-                <div className="ip-pair-form" style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div>
-                    <label style={{ fontSize: "9px", opacity: 0.8, display: "block", marginBottom: "3px", color: "#88ffcc" }}>
-                      PHONE IP ADDRESS &amp; PORT (e.g. 192.168.137.37:38765):
-                    </label>
-                    <input
-                      type="text"
-                      value={bluetoothIp}
-                      onChange={(e) => setBluetoothIp(e.target.value)}
-                      placeholder="192.168.137.37:38765"
-                      className="command-input"
-                      style={{ width: "100%", border: "1px solid var(--hud-border)", borderRadius: "3px", padding: "6px 10px", fontSize: "11px", fontFamily: "monospace" }}
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    className="modal-btn-primary"
-                    style={{ padding: "8px", fontWeight: "bold", background: "var(--hud-color)", color: "#000" }}
-                    onClick={() => {
-                      dispatchAction("pair_bluetooth", {
-                        deviceIp: bluetoothIp,
-                      });
-                      setShowSetupGuide(false);
-                    }}
-                  >
-                    ⚡ CONNECT PHONE NOW
-                  </button>
-
-                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "10px", marginTop: "4px" }}>
-                    <div style={{ fontSize: "9px", opacity: 0.7, marginBottom: "4px" }}>
-                      ALTERNATIVE: Plug phone into USB cable ONCE and click below to permanently enable Wireless ADB on Port 5555:
-                    </div>
-                    <button
-                      type="button"
-                      className="dev-btn"
-                      style={{ width: "100%", padding: "6px", fontSize: "9px" }}
-                      onClick={() => {
-                        dispatchAction("enable_tcpip");
-                      }}
-                    >
-                      🔌 ENABLE WI-FI ADB PORT 5555 (VIA USB CABLE)
-                    </button>
-                  </div>
-                </div>
-
-                <div className="modal-actions" style={{ marginTop: "16px" }}>
-                  <button
-                    type="button"
-                    className="dev-btn"
-                    onClick={() => {
-                      if (onRefreshDevices) onRefreshDevices();
-                      setShowSetupGuide(false);
-                    }}
-                  >
-                    RE-SCAN ADB DEVICES
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {setupModal}
       </>
     );
   }
@@ -279,11 +433,9 @@ export default function DevicePanel({
   const isPhysical = activeDev.isPhysical;
   const isIos = activeDev.os === "iOS";
 
-
-
   return (
     <>
-      <aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
+      {approvalCard}{shotOverlay}<aside className="device-hud-panel" aria-label="Connected Devices HUD Panel" data-hud-interactive>
         {/* HUD Top Bar & Multi-Device Selector */}
         <div className="device-header">
           <div className="device-title-wrap">
@@ -399,21 +551,23 @@ export default function DevicePanel({
         </div>
 
         {/* Live Device Screen Display / Real Screenshot Preview */}
-        <div className="device-screen-preview">
+        <div className={`device-screen-preview${activeDev.screenshotUrl ? " has-shot" : ""}`}>
           <div className="screen-frame">
             <div className="screen-notch" />
             <div className="screen-content" data-app={currentAppUpper}>
               {activeDev.screenshotUrl ? (
                 <img
                   src={activeDev.screenshotUrl}
-                  alt="Captured Device Screen"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  alt="Captured Device Screen (click to enlarge)"
+                  title="Click to enlarge"
+                  onClick={() => setShowShot(true)}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", cursor: "zoom-in" }}
                 />
               ) : isLocked ? (
                 <div className="screen-locked">
                   <span className="lock-icon">🔒</span>
                   <span className="lock-text">{activeDev.name.toUpperCase()} LOCKED</span>
-                  <span className="lock-sub">SAY "D-ASK UNLOCK PHONE"</span>
+                  <span className="lock-sub">SAY &quot;D-ASK UNLOCK PHONE&quot;</span>
                 </div>
               ) : currentAppUpper.includes("YOUTUBE") ? (
                 <div className="screen-app app-youtube">
@@ -581,9 +735,7 @@ export default function DevicePanel({
                 color: "#00ffaa",
                 cursor: "pointer",
               }}
-              onClick={() => {
-                dispatchAction("enable_tcpip");
-              }}
+              onClick={() => { dispatchAction("enable_tcpip"); }}
             >
               🔌 ENABLE WI-FI ADB PORT 5555 (VIA USB CABLE)
             </button>
@@ -651,79 +803,7 @@ export default function DevicePanel({
       )}
 
       {/* Wireless Setup Guide Modal */}
-      {showSetupGuide && (
-        <div className="modal-backdrop" data-hud-interactive onClick={() => setShowSetupGuide(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span>WIRELESS PHONE CONNECTION GUIDE</span>
-              <button type="button" className="modal-close" onClick={() => setShowSetupGuide(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              {diagnostics?.discoveredMdnsDevice && (
-                <div style={{ background: "rgba(0,255,150,0.15)", border: "1px solid #00ffaa", padding: "6px 10px", borderRadius: "4px", marginBottom: "10px", fontSize: "10px", color: "#88ffcc" }}>
-                  ✨ Discovered active phone at: <code>{diagnostics.discoveredMdnsDevice}</code>
-                </div>
-              )}
-
-              <div className="guide-steps" style={{ fontSize: "10px", lineHeight: "1.4" }}>
-                <div className="step">
-                  <span className="step-num">1</span>
-                  <span>Connect phone and PC to the <strong>same Wi-Fi network</strong>.</span>
-                </div>
-                <div className="step">
-                  <span className="step-num">2</span>
-                  <span>On your phone: Open <strong>Settings → Developer Options → Wireless Debugging</strong>.</span>
-                </div>
-                <div className="step">
-                  <span className="step-num">3</span>
-                  <span>Enter the <strong>IP Address &amp; Port</strong> shown on your phone screen below and click <strong>CONNECT PHONE NOW</strong>.</span>
-                </div>
-              </div>
-
-              <div className="ip-pair-form" style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                <div>
-                  <label style={{ fontSize: "9px", opacity: 0.8, display: "block", marginBottom: "3px" }}>PHONE IP ADDRESS &amp; PORT:</label>
-                  <input
-                    type="text"
-                    value={bluetoothIp}
-                    onChange={(e) => setBluetoothIp(e.target.value)}
-                    placeholder="192.168.137.38:37517"
-                    className="command-input"
-                    style={{ width: "100%", border: "1px solid var(--hud-border)", borderRadius: "3px", padding: "6px 10px", fontSize: "11px", fontFamily: "monospace" }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="modal-btn-primary"
-                  style={{ padding: "8px", fontWeight: "bold" }}
-                  onClick={() => {
-                    dispatchAction("pair_bluetooth", {
-                      deviceIp: bluetoothIp,
-                    });
-                    setShowSetupGuide(false);
-                  }}
-                >
-                  ⚡ CONNECT PHONE NOW
-                </button>
-              </div>
-
-              <div className="modal-actions" style={{ marginTop: "16px" }}>
-                <button
-                  type="button"
-                  className="dev-btn"
-                  onClick={() => {
-                    if (onRefreshDevices) onRefreshDevices();
-                    setShowSetupGuide(false);
-                  }}
-                >
-                  RE-SCAN ADB DEVICES
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {setupModal}
     </>
   );
 }

@@ -365,6 +365,40 @@ body {
   white-space: nowrap;
 }
 
+/* Phone panel: a real screenshot gets room (the mock home screen stays small), and the approval card / full-size view. */
+.device-screen-preview.has-shot { height: 280px; }
+
+.device-approval-backdrop,
+.device-shot-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+.device-approval-card {
+  width: min(440px, 90vw);
+  background: #0b1220;
+  border: 1px solid #ffb300;
+  border-radius: 8px;
+  padding: 18px 20px;
+  color: #fff;
+  font-family: monospace;
+  box-shadow: 0 0 24px rgba(255, 179, 0, 0.35);
+}
+.device-approval-title { font-weight: bold; letter-spacing: 0.08em; margin-bottom: 10px; color: #ffb300; }
+.device-approval-text { font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
+.device-approval-note { font-size: 10px; opacity: 0.7; margin-bottom: 14px; }
+.device-approval-buttons { display: flex; gap: 10px; }
+.device-approval-buttons .dev-btn { flex: 1; padding: 8px; font-weight: bold; }
+.device-approve { border-color: #00ffaa; color: #00ffaa; }
+.device-deny { border-color: #ff4d4d; color: #ff4d4d; }
+.device-shot-full { max-width: 90vw; max-height: 88vh; object-fit: contain; border: 1px solid #555; border-radius: 6px; cursor: zoom-out; }
+.device-shot-hint { margin-top: 8px; font-size: 10px; letter-spacing: 0.1em; color: #fff; opacity: 0.7; font-family: monospace; }
+
 /* Device Screen Preview */
 .device-screen-preview {
   width: 100%;

@@ -8,6 +8,7 @@ pub mod tts;
 pub mod stt;
 pub mod whisper;
 pub mod voice_gate;
+pub mod devices;
 #[cfg(feature = "approval-fixture")]
 mod approval_fixture;
 
@@ -493,6 +494,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => { warn!("[STT] Transcription failed: {}", e); responder.respond(json(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "error": "transcription failed", "reason": e }))) }
                     }
                 });
+                return;
+            }
+
+            // Hardware Matrix (devices.rs). GET lists the Android phones adb sees. POST runs one of a FIXED set of adb actions for the
+            // panel's buttons (lock, home, volume, a short app list, screenshot, Wi-Fi adb) and reports only what it could confirm;
+            // anything else is refused. adb runs on its own thread, never on this one. The old fixed reply answered every method,
+            // which made the page print "EXECUTED ... ON YOUR PHONE" for commands that never ran.
+            if path == "/api/devices" {
+                let json_reply = |status: u16, body: String| Response::builder()
+                    .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .body(Cow::Owned(body.into_bytes()))
+                    .unwrap();
+                if req.method() == "GET" {
+                    responder.respond(json_reply(200, devices::json()));
+                } else {
+                    let body = req.into_body();
+                    std::thread::spawn(move || {
+                        let (status, text) = devices::control(&body);
+                        responder.respond(json_reply(status, text));
+                    });
+                }
+                return;
+            }
+            // The last phone screenshot, held in memory only (devices.rs).
+            if path == "/phone-screenshot.png" {
+                match devices::screenshot_png() {
+                    Some(png) => responder.respond(Response::builder()
+                        .header("Content-Type", "image/png")
+                        .header("Cache-Control", "no-store")
+                        .body(Cow::Owned(png))
+                        .unwrap()),
+                    None => responder.respond(Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .header("Content-Type", "text/plain")
+                        .body(Cow::Borrowed(b"no screenshot" as &[u8]))
+                        .unwrap()),
+                }
                 return;
             }
 
